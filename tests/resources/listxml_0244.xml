@@ -1,0 +1,1088 @@
+<?xml version="1.0"?>
+<!DOCTYPE mame [
+    <!ELEMENT mame (machine+)>
+    <!ATTLIST mame build CDATA #IMPLIED>
+    <!ATTLIST mame debug (yes|no) "no">
+    <!ATTLIST mame mameconfig CDATA #REQUIRED>
+    <!ELEMENT machine (description, year?, manufacturer?, biosset*, rom*, disk*, device_ref*, sample*, chip*, display*, sound?, input?, dipswitch*, configuration*, port*, adjuster*, driver?, feature*, device*, slot*, softwarelist*, ramoption*)>
+    <!ATTLIST machine name CDATA #REQUIRED>
+    <!ATTLIST machine sourcefile CDATA #IMPLIED>
+    <!ATTLIST machine isbios (yes|no) "no">
+    <!ATTLIST machine isdevice (yes|no) "no">
+    <!ATTLIST machine ismechanical (yes|no) "no">
+    <!ATTLIST machine runnable (yes|no) "yes">
+    <!ATTLIST machine cloneof CDATA #IMPLIED>
+    <!ATTLIST machine romof CDATA #IMPLIED>
+    <!ATTLIST machine sampleof CDATA #IMPLIED>
+    <!ELEMENT description (#PCDATA)>
+    <!ELEMENT year (#PCDATA)>
+    <!ELEMENT manufacturer (#PCDATA)>
+    <!ELEMENT biosset EMPTY>
+    <!ATTLIST biosset name CDATA #REQUIRED>
+    <!ATTLIST biosset description CDATA #REQUIRED>
+    <!ATTLIST biosset default (yes|no) "no">
+    <!ELEMENT rom EMPTY>
+    <!ATTLIST rom name CDATA #REQUIRED>
+    <!ATTLIST rom bios CDATA #IMPLIED>
+    <!ATTLIST rom size CDATA #REQUIRED>
+    <!ATTLIST rom crc CDATA #IMPLIED>
+    <!ATTLIST rom sha1 CDATA #IMPLIED>
+    <!ATTLIST rom merge CDATA #IMPLIED>
+    <!ATTLIST rom region CDATA #IMPLIED>
+    <!ATTLIST rom offset CDATA #IMPLIED>
+    <!ATTLIST rom status (baddump|nodump|good) "good">
+    <!ATTLIST rom optional (yes|no) "no">
+    <!ELEMENT disk EMPTY>
+    <!ATTLIST disk name CDATA #REQUIRED>
+    <!ATTLIST disk sha1 CDATA #IMPLIED>
+    <!ATTLIST disk merge CDATA #IMPLIED>
+    <!ATTLIST disk region CDATA #IMPLIED>
+    <!ATTLIST disk index CDATA #IMPLIED>
+    <!ATTLIST disk writable (yes|no) "no">
+    <!ATTLIST disk status (baddump|nodump|good) "good">
+    <!ATTLIST disk optional (yes|no) "no">
+    <!ELEMENT device_ref EMPTY>
+    <!ATTLIST device_ref name CDATA #REQUIRED>
+    <!ELEMENT sample EMPTY>
+    <!ATTLIST sample name CDATA #REQUIRED>
+    <!ELEMENT chip EMPTY>
+    <!ATTLIST chip name CDATA #REQUIRED>
+    <!ATTLIST chip tag CDATA #IMPLIED>
+    <!ATTLIST chip type (cpu|audio) #REQUIRED>
+    <!ATTLIST chip clock CDATA #IMPLIED>
+    <!ELEMENT display EMPTY>
+    <!ATTLIST display tag CDATA #IMPLIED>
+    <!ATTLIST display type (raster|vector|lcd|svg|unknown) #REQUIRED>
+    <!ATTLIST display rotate (0|90|180|270) #IMPLIED>
+    <!ATTLIST display flipx (yes|no) "no">
+    <!ATTLIST display width CDATA #IMPLIED>
+    <!ATTLIST display height CDATA #IMPLIED>
+    <!ATTLIST display refresh CDATA #REQUIRED>
+    <!ATTLIST display pixclock CDATA #IMPLIED>
+    <!ATTLIST display htotal CDATA #IMPLIED>
+    <!ATTLIST display hbend CDATA #IMPLIED>
+    <!ATTLIST display hbstart CDATA #IMPLIED>
+    <!ATTLIST display vtotal CDATA #IMPLIED>
+    <!ATTLIST display vbend CDATA #IMPLIED>
+    <!ATTLIST display vbstart CDATA #IMPLIED>
+    <!ELEMENT sound EMPTY>
+    <!ATTLIST sound channels CDATA #REQUIRED>
+    <!ELEMENT condition EMPTY>
+    <!ATTLIST condition tag CDATA #REQUIRED>
+    <!ATTLIST condition mask CDATA #REQUIRED>
+    <!ATTLIST condition relation (eq|ne|gt|le|lt|ge) #REQUIRED>
+    <!ATTLIST condition value CDATA #REQUIRED>
+    <!ELEMENT input (control*)>
+    <!ATTLIST input service (yes|no) "no">
+    <!ATTLIST input tilt (yes|no) "no">
+    <!ATTLIST input players CDATA #REQUIRED>
+    <!ATTLIST input coins CDATA #IMPLIED>
+    <!ELEMENT control EMPTY>
+    <!ATTLIST control type CDATA #REQUIRED>
+    <!ATTLIST control player CDATA #IMPLIED>
+    <!ATTLIST control buttons CDATA #IMPLIED>
+    <!ATTLIST control reqbuttons CDATA #IMPLIED>
+    <!ATTLIST control minimum CDATA #IMPLIED>
+    <!ATTLIST control maximum CDATA #IMPLIED>
+    <!ATTLIST control sensitivity CDATA #IMPLIED>
+    <!ATTLIST control keydelta CDATA #IMPLIED>
+    <!ATTLIST control reverse (yes|no) "no">
+    <!ATTLIST control ways CDATA #IMPLIED>
+    <!ATTLIST control ways2 CDATA #IMPLIED>
+    <!ATTLIST control ways3 CDATA #IMPLIED>
+    <!ELEMENT dipswitch (condition?, diplocation*, dipvalue*)>
+    <!ATTLIST dipswitch name CDATA #REQUIRED>
+    <!ATTLIST dipswitch tag CDATA #REQUIRED>
+    <!ATTLIST dipswitch mask CDATA #REQUIRED>
+    <!ELEMENT diplocation EMPTY>
+    <!ATTLIST diplocation name CDATA #REQUIRED>
+    <!ATTLIST diplocation number CDATA #REQUIRED>
+    <!ATTLIST diplocation inverted (yes|no) "no">
+    <!ELEMENT dipvalue (condition?)>
+    <!ATTLIST dipvalue name CDATA #REQUIRED>
+    <!ATTLIST dipvalue value CDATA #REQUIRED>
+    <!ATTLIST dipvalue default (yes|no) "no">
+    <!ELEMENT configuration (condition?, conflocation*, confsetting*)>
+    <!ATTLIST configuration name CDATA #REQUIRED>
+    <!ATTLIST configuration tag CDATA #REQUIRED>
+    <!ATTLIST configuration mask CDATA #REQUIRED>
+    <!ELEMENT conflocation EMPTY>
+    <!ATTLIST conflocation name CDATA #REQUIRED>
+    <!ATTLIST conflocation number CDATA #REQUIRED>
+    <!ATTLIST conflocation inverted (yes|no) "no">
+    <!ELEMENT confsetting (condition?)>
+    <!ATTLIST confsetting name CDATA #REQUIRED>
+    <!ATTLIST confsetting value CDATA #REQUIRED>
+    <!ATTLIST confsetting default (yes|no) "no">
+    <!ELEMENT port (analog*)>
+    <!ATTLIST port tag CDATA #REQUIRED>
+    <!ELEMENT analog EMPTY>
+    <!ATTLIST analog mask CDATA #REQUIRED>
+    <!ELEMENT adjuster (condition?)>
+    <!ATTLIST adjuster name CDATA #REQUIRED>
+    <!ATTLIST adjuster default CDATA #REQUIRED>
+    <!ELEMENT driver EMPTY>
+    <!ATTLIST driver status (good|imperfect|preliminary) #REQUIRED>
+    <!ATTLIST driver emulation (good|imperfect|preliminary) #REQUIRED>
+    <!ATTLIST driver cocktail (good|imperfect|preliminary) #IMPLIED>
+    <!ATTLIST driver savestate (supported|unsupported) #REQUIRED>
+    <!ATTLIST driver requiresartwork (yes|no) "no">
+    <!ATTLIST driver unofficial (yes|no) "no">
+    <!ATTLIST driver nosoundhardware (yes|no) "no">
+    <!ATTLIST driver incomplete (yes|no) "no">
+    <!ELEMENT feature EMPTY>
+    <!ATTLIST feature type (protection|timing|graphics|palette|sound|capture|camera|microphone|controls|keyboard|mouse|media|disk|printer|tape|punch|drum|rom|comms|lan|wan) #REQUIRED>
+    <!ATTLIST feature status (unemulated|imperfect) #IMPLIED>
+    <!ATTLIST feature overall (unemulated|imperfect) #IMPLIED>
+    <!ELEMENT device (instance?, extension*)>
+    <!ATTLIST device type CDATA #REQUIRED>
+    <!ATTLIST device tag CDATA #IMPLIED>
+    <!ATTLIST device fixed_image CDATA #IMPLIED>
+    <!ATTLIST device mandatory CDATA #IMPLIED>
+    <!ATTLIST device interface CDATA #IMPLIED>
+    <!ELEMENT instance EMPTY>
+    <!ATTLIST instance name CDATA #REQUIRED>
+    <!ATTLIST instance briefname CDATA #REQUIRED>
+    <!ELEMENT extension EMPTY>
+    <!ATTLIST extension name CDATA #REQUIRED>
+    <!ELEMENT slot (slotoption*)>
+    <!ATTLIST slot name CDATA #REQUIRED>
+    <!ELEMENT slotoption EMPTY>
+    <!ATTLIST slotoption name CDATA #REQUIRED>
+    <!ATTLIST slotoption devname CDATA #REQUIRED>
+    <!ATTLIST slotoption default (yes|no) "no">
+    <!ELEMENT softwarelist EMPTY>
+    <!ATTLIST softwarelist tag CDATA #REQUIRED>
+    <!ATTLIST softwarelist name CDATA #REQUIRED>
+    <!ATTLIST softwarelist status (original|compatible) #REQUIRED>
+    <!ATTLIST softwarelist filter CDATA #IMPLIED>
+    <!ELEMENT ramoption (#PCDATA)>
+    <!ATTLIST ramoption name CDATA #REQUIRED>
+    <!ATTLIST ramoption default CDATA #IMPLIED>
+]>
+
+<mame build="0.244 (mame0244)" debug="no" mameconfig="10">
+    <machine name="005" sourcefile="segag80r.cpp" sampleof="005">
+        <description>005</description>
+        <year>1981</year>
+        <manufacturer>Sega</manufacturer>
+        <rom name="1346b.cpu-u25" size="2048" crc="8e68533e" sha1="a257c556d31691068ed5c991f1fb2b51da4826db" region="maincpu" offset="0"/>
+        <rom name="5092.prom-u1" size="2048" crc="29e10a81" sha1="c4b4e6c75bcf276e53f39a456d8d633c83dcf485" region="maincpu" offset="800"/>
+        <rom name="5093.prom-u2" size="2048" crc="e1edc3df" sha1="4f593546bbb0f50850dc6286cb514af6831c27a7" region="maincpu" offset="1000"/>
+        <rom name="5094.prom-u3" size="2048" crc="995773bb" sha1="98dd826527853bc031edfb9a821778cc3e906150" region="maincpu" offset="1800"/>
+        <rom name="5095.prom-u4" size="2048" crc="f887f575" sha1="de96573a91b60b090b1f441f1410ecad63c9467c" region="maincpu" offset="2000"/>
+        <rom name="5096.prom-u5" size="2048" crc="5545241e" sha1="ee504ccaab469100137717341a1b461175ff792d" region="maincpu" offset="2800"/>
+        <rom name="5097.prom-u6" size="2048" crc="428edb54" sha1="4f3df6017068d939014a8f638f28e3228acb7add" region="maincpu" offset="3000"/>
+        <rom name="5098.prom-u7" size="2048" crc="5bcb9d63" sha1="c0c91bc9f75ad88a6e15c554a980d5c075725fe8" region="maincpu" offset="3800"/>
+        <rom name="5099.prom-u8" size="2048" crc="0ea24ba3" sha1="95a30c9b63ef1c346df0da71af3fdecd1a75cb8f" region="maincpu" offset="4000"/>
+        <rom name="5100.prom-u9" size="2048" crc="a79af131" sha1="0ba34130174e196015bc9b9c135c420209dfd524" region="maincpu" offset="4800"/>
+        <rom name="5101.prom-u10" size="2048" crc="8a1cdae0" sha1="f7c617f9bdb7818e6069a981d0c8820deade134c" region="maincpu" offset="5000"/>
+        <rom name="5102.prom-u11" size="2048" crc="70826a15" sha1="a86322d0e8a88534e9b78dcde42ae4c441276913" region="maincpu" offset="5800"/>
+        <rom name="5103.prom-u12" size="2048" crc="7f80c5b0" sha1="00748cd5fc7f75fdca194e748524d406c006296d" region="maincpu" offset="6000"/>
+        <rom name="5104.prom-u13" size="2048" crc="0140930e" sha1="f8ef894c46d3663bd89d2d817675a67075d3e0d6" region="maincpu" offset="6800"/>
+        <rom name="5105.prom-u14" size="2048" crc="17807a05" sha1="bd99f5beab0155f6e4d2fab2fa5f4e147c5730d5" region="maincpu" offset="7000"/>
+        <rom name="5106.prom-u15" size="2048" crc="c7cdfa9d" sha1="6ab7adc60ac7bb53a7175e8de51924008737c9ac" region="maincpu" offset="7800"/>
+        <rom name="5107.prom-u16" size="2048" crc="95f8a2e6" sha1="89c92e000b3e1630380db779370cf9f5b13e5719" region="maincpu" offset="8000"/>
+        <rom name="5108.prom-u17" size="2048" crc="d371cacd" sha1="8f2cdcc0b4e3b77e0958d257e37accefc5749cde" region="maincpu" offset="8800"/>
+        <rom name="5109.prom-u18" size="2048" crc="48a20617" sha1="5b4bc3beda0404ff0a61bb42751b87f71817f363" region="maincpu" offset="9000"/>
+        <rom name="5110.prom-u19" size="2048" crc="7d26111a" sha1="a6d3652ae606a5b75026e524c9d6aaa78300741e" region="maincpu" offset="9800"/>
+        <rom name="5111.prom-u20" size="2048" crc="a888e175" sha1="4c0af94441bf51dfc852372a5b90d0830df81363" region="maincpu" offset="a000"/>
+        <rom name="epr-1286.sound-16" size="2048" crc="fbe0d501" sha1="bfa277689790f835d8a43be4beee0581e1096bcc" region="005" offset="0"/>
+        <rom name="6331.sound-u8" size="32" crc="1d298cb0" sha1="bb0bb62365402543e3154b9a77be9c75010e6abc" status="baddump" region="proms" offset="0"/>
+        <device_ref name="z80"/>
+        <device_ref name="gfxdecode"/>
+        <device_ref name="palette"/>
+        <device_ref name="screen"/>
+        <device_ref name="speaker"/>
+        <device_ref name="i8255"/>
+        <device_ref name="samples"/>
+        <device_ref name="sega005_sound"/>
+        <sample name="lexplode"/>
+        <sample name="sexplode"/>
+        <sample name="dropbomb"/>
+        <sample name="shoot"/>
+        <sample name="missile"/>
+        <sample name="helicopt"/>
+        <sample name="whistle"/>
+        <chip type="cpu" tag="maincpu" name="Zilog Z80" clock="3867120"/>
+        <chip type="audio" tag="speaker" name="Speaker"/>
+        <chip type="audio" tag="samples" name="Samples"/>
+        <chip type="audio" tag="005" name="Sega 005 Custom Sound"/>
+        <display tag="screen" type="raster" rotate="270" width="256" height="224" refresh="60.000000" pixclock="5156160" htotal="328" hbend="0" hbstart="256" vtotal="262" vbend="0" vbstart="224" />
+        <sound channels="1"/>
+        <input players="2" coins="2" service="yes">
+            <control type="joy" player="1" buttons="1" ways="4"/>
+            <control type="joy" player="2" buttons="1" ways="4"/>
+        </input>
+        <dipswitch name="Coin A" tag="D1D0" mask="15">
+            <diplocation name="SW2" number="8"/>
+            <diplocation name="SW2" number="7"/>
+            <diplocation name="SW2" number="6"/>
+            <diplocation name="SW2" number="5"/>
+            <dipvalue name="4 Coins/1 Credit" value="0"/>
+            <dipvalue name="3 Coins/1 Credit" value="1"/>
+            <dipvalue name="2 Coins/1 Credit" value="2"/>
+            <dipvalue name="2 Coins/1 Credit 5/3 6/4" value="9"/>
+            <dipvalue name="2 Coins/1 Credit 4/3" value="10"/>
+            <dipvalue name="1 Coin/1 Credit" value="3" default="yes"/>
+            <dipvalue name="1 Coin/1 Credit 5/6" value="11"/>
+            <dipvalue name="1 Coin/1 Credit 4/5" value="12"/>
+            <dipvalue name="1 Coin/1 Credit 2/3" value="13"/>
+            <dipvalue name="1 Coin/2 Credits" value="4"/>
+            <dipvalue name="1 Coin/2 Credits 5/11" value="14"/>
+            <dipvalue name="1 Coin/2 Credits 4/9" value="15"/>
+            <dipvalue name="1 Coin/3 Credits" value="5"/>
+            <dipvalue name="1 Coin/4 Credits" value="6"/>
+            <dipvalue name="1 Coin/5 Credits" value="7"/>
+            <dipvalue name="1 Coin/6 Credits" value="8"/>
+        </dipswitch>
+        <dipswitch name="Coin B" tag="D1D0" mask="240">
+            <diplocation name="SW2" number="4"/>
+            <diplocation name="SW2" number="3"/>
+            <diplocation name="SW2" number="2"/>
+            <diplocation name="SW2" number="1"/>
+            <dipvalue name="4 Coins/1 Credit" value="0"/>
+            <dipvalue name="3 Coins/1 Credit" value="16"/>
+            <dipvalue name="2 Coins/1 Credit" value="32"/>
+            <dipvalue name="2 Coins/1 Credit 5/3 6/4" value="144"/>
+            <dipvalue name="2 Coins/1 Credit 4/3" value="160"/>
+            <dipvalue name="1 Coin/1 Credit" value="48" default="yes"/>
+            <dipvalue name="1 Coin/1 Credit 5/6" value="176"/>
+            <dipvalue name="1 Coin/1 Credit 4/5" value="192"/>
+            <dipvalue name="1 Coin/1 Credit 2/3" value="208"/>
+            <dipvalue name="1 Coin/2 Credits" value="64"/>
+            <dipvalue name="1 Coin/2 Credits 5/11" value="224"/>
+            <dipvalue name="1 Coin/2 Credits 4/9" value="240"/>
+            <dipvalue name="1 Coin/3 Credits" value="80"/>
+            <dipvalue name="1 Coin/4 Credits" value="96"/>
+            <dipvalue name="1 Coin/5 Credits" value="112"/>
+            <dipvalue name="1 Coin/6 Credits" value="128"/>
+        </dipswitch>
+        <dipswitch name="Lives" tag="D3D2" mask="3">
+            <diplocation name="SW1" number="8"/>
+            <diplocation name="SW1" number="7"/>
+            <dipvalue name="3" value="0" default="yes"/>
+            <dipvalue name="4" value="2"/>
+            <dipvalue name="5" value="1"/>
+            <dipvalue name="6" value="3"/>
+        </dipswitch>
+        <dipswitch name="Cabinet" tag="D3D2" mask="4">
+            <diplocation name="SW1" number="6"/>
+            <dipvalue name="Upright" value="4" default="yes"/>
+            <dipvalue name="Cocktail" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="D3D2" mask="8">
+            <diplocation name="SW1" number="5"/>
+            <dipvalue name="Off" value="8" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="D3D2" mask="16">
+            <diplocation name="SW1" number="4"/>
+            <dipvalue name="Off" value="16" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="D3D2" mask="32">
+            <diplocation name="SW1" number="3"/>
+            <dipvalue name="Off" value="32" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="D3D2" mask="64">
+            <diplocation name="SW1" number="2"/>
+            <dipvalue name="Off" value="64" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="D3D2" mask="128">
+            <diplocation name="SW1" number="1"/>
+            <dipvalue name="Off" value="128" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <port tag=":D1D0">
+        </port>
+        <port tag=":D3D2">
+        </port>
+        <port tag=":D5D4">
+        </port>
+        <port tag=":D7D6">
+        </port>
+        <port tag=":FC">
+        </port>
+        <port tag=":SERVICESW">
+        </port>
+        <driver status="imperfect" emulation="good" savestate="unsupported"/>
+        <feature type="sound" status="imperfect"/>
+    </machine>
+    <machine name="100lions" sourcefile="aristmk6.cpp" romof="aristmk6">
+		<description>100 Lions (10219211, NSW/ACT)</description>
+		<year>2006</year>
+		<manufacturer>Aristocrat</manufacturer>
+		<biosset name="au-nsw1" description="Aristocrat MK6 Base (24013001, NSW/ACT)"/>
+		<biosset name="au-nsw2" description="Aristocrat MK6 Base (21012901, NSW/ACT)"/>
+		<biosset name="au-nsw3" description="Aristocrat MK6 Base (19012801, NSW/ACT)"/>
+		<biosset name="au-nsw4" description="Aristocrat MK6 Base (14011913, NSW/ACT)"/>
+		<biosset name="au-nsw5" description="Aristocrat MK6 Base (13012001, NSW/ACT)"/>
+		<biosset name="au-nsw6" description="Aristocrat MK6 Base (11011901, NSW/ACT)"/>
+		<biosset name="au-nsw7" description="Aristocrat MK6 Base (11011501, NSW/ACT)"/>
+		<biosset name="au-nsw8" description="Aristocrat MK6 Base (09011001, NSW/ACT)"/>
+		<biosset name="au-nsw9" description="Aristocrat MK6 Base (07010801, NSW/ACT)"/>
+		<biosset name="au-nsw10" description="Aristocrat MK6 Base (05010601, NSW/ACT)"/>
+		<biosset name="au-nsw11" description="Aristocrat MK6 Base (04010501, NSW/ACT)"/>
+		<biosset name="au-nsw12" description="Aristocrat MK6 Base (03010301, NSW/ACT)"/>
+		<biosset name="au-nsw13" description="Aristocrat MK6 Base (02061013, NSW/ACT)"/>
+		<biosset name="au-nsw14" description="Aristocrat MK6 Base (02010201, NSW/ACT)"/>
+		<biosset name="au-nsw15" description="Aristocrat MK6 Base (02010114, NSW/ACT)"/>
+		<biosset name="au-sa1" description="Aristocrat MK6 Base (03030708, South Australia)"/>
+		<biosset name="my" description="Aristocrat MK6 Base (15011025, Malaysia)"/>
+		<biosset name="au-qld1" description="Aristocrat MK6 Base (25012805, Queensland)"/>
+		<biosset name="au-qld2" description="Aristocrat MK6 Base (20012605, Queensland)"/>
+		<biosset name="au-qld3" description="Aristocrat MK6 Base (20012305, Queensland)"/>
+		<biosset name="au-qld4" description="Aristocrat MK6 Base (14011605, Queensland))"/>
+		<biosset name="au-qld5" description="Aristocrat MK6 Base (04041205, Queensland)"/>
+		<biosset name="au-qld6" description="Aristocrat MK6 Base (03130334, Queensland)"/>
+		<biosset name="au-qld7" description="Aristocrat MK6 Base (01040505, Queensland)"/>
+		<biosset name="us1" description="Aristocrat MK6 Base (01.04.11, US)"/>
+		<biosset name="us2" description="Aristocrat MK6 Base (01.04.10, US)"/>
+		<biosset name="us3" description="Aristocrat MK6 Base (01.04.08, US)"/>
+		<biosset name="us4" description="Aristocrat MK6 Base (01.04.07, US)"/>
+		<biosset name="us5" description="Aristocrat MK6 Base (01.04.04, US)"/>
+		<biosset name="us6" description="Aristocrat MK6 Base (01.03.17, US)"/>
+		<biosset name="us7" description="Aristocrat MK6 Base (01.03.14, US)"/>
+		<biosset name="us8" description="Aristocrat MK6 Base (01.03.07, US)"/>
+		<biosset name="us9" description="Aristocrat MK6 Base (01.03.06, US)"/>
+		<biosset name="us10" description="Aristocrat MK6 Base (01.03.05, US)"/>
+		<biosset name="us11" description="Aristocrat MK6 Base (01.03.03e, US)"/>
+		<biosset name="us12" description="Aristocrat MK6 Base (01.03.03a, US)"/>
+		<biosset name="us13" description="Aristocrat MK6 Base (01.02.08, US)"/>
+		<biosset name="set-us1" description="Aristocrat MK6 Set Chips (06.03.04, US)"/>
+		<biosset name="set-us2" description="Aristocrat MK6 Set Chips (06.03.03, US)"/>
+		<biosset name="set-us3" description="Aristocrat MK6 Set Chips (06.02.20, US)"/>
+		<biosset name="set-us4" description="Aristocrat MK6 Set Chips (06.02.04, US)"/>
+		<rom name="24013001_right.u83" merge="24013001_right.u83" bios="au-nsw1" size="2097152" crc="e97afedf" sha1="10ca3b015afaff5d7812f0f5207b2535602136a5" region="maincpu" offset="0"/>
+		<rom name="24013001_left.u70" merge="24013001_left.u70" bios="au-nsw1" size="2097152" crc="06ae7e07" sha1="39a45575b66906d73b519988d1001c99b05c5f34" region="maincpu" offset="2"/>
+		<rom name="21012901_right.u83" merge="21012901_right.u83" bios="au-nsw2" size="2097152" crc="757618f2" sha1="43f9a3e7d544979f8c6974945914d9e099b02abd" region="maincpu" offset="0"/>
+		<rom name="21012901_left.u70" merge="21012901_left.u70" bios="au-nsw2" size="2097152" crc="0d271470" sha1="5cd4b604bfe2fd7e9a8d08e1c7c97f17ae068479" region="maincpu" offset="2"/>
+		<rom name="19012801_right.u83" merge="19012801_right.u83" bios="au-nsw3" size="2097152" crc="5b20a96c" sha1="5fd916b7cc2cdd51bf7dd212c1114f94dc9c7926" region="maincpu" offset="0"/>
+		<rom name="19012801_left.u70" merge="19012801_left.u70" bios="au-nsw3" size="2097152" crc="b03bd17c" sha1="f281e80f6dda5b727ed71d2deebe3b0ff548773f" region="maincpu" offset="2"/>
+		<rom name="14011913_right.u83" merge="14011913_right.u83" bios="au-nsw4" size="2097152" crc="01d13b89" sha1="b1013366d0803dfbec5a5f90f6a5cea862de0513" region="maincpu" offset="0"/>
+		<rom name="14011913_left.u70" merge="14011913_left.u70" bios="au-nsw4" size="2097152" crc="9a4cefdf" sha1="6c15bc565ede8af19361d60ee1e6657a8055c92c" region="maincpu" offset="2"/>
+		<rom name="13012001_right.u83" merge="13012001_right.u83" bios="au-nsw5" size="2097152" crc="e627dbfa" sha1="4fedbe0975ceb7dc0ebebf18a7708d78984db9b7" region="maincpu" offset="0"/>
+		<rom name="13012001_left.u70" merge="13012001_left.u70" bios="au-nsw5" size="2097152" crc="38e8f659" sha1="88c6acba99b0aca023c6f4d27c061c231490e9e0" region="maincpu" offset="2"/>
+		<rom name="11011901_right.u83" merge="11011901_right.u83" bios="au-nsw6" size="2097152" crc="73dcb11c" sha1="69ae4f32a0c9141b2a82ff3935b0cd20333d2964" region="maincpu" offset="0"/>
+		<rom name="11011901_left.u70" merge="11011901_left.u70" bios="au-nsw6" size="2097152" crc="d3dd2210" sha1="3548f8cc39859d3f44a55f6bae48966a2d48e0eb" region="maincpu" offset="2"/>
+		<rom name="11011501_right.u83" merge="11011501_right.u83" bios="au-nsw7" size="2097152" crc="de4c3aed" sha1="21596a2edd20eb7de7a4ec8900a270b09c8f326f" region="maincpu" offset="0"/>
+		<rom name="11011501_left.u70" merge="11011501_left.u70" bios="au-nsw7" size="2097152" crc="c5cc3461" sha1="5b43c4cb6110a6ccf67cd0f3789253f6872b20c4" region="maincpu" offset="2"/>
+		<rom name="09011001_right.u83" merge="09011001_right.u83" bios="au-nsw8" size="2097152" crc="8a853f80" sha1="9a75498f7b02c81a483b4e1c158f35f0ee4c0112" region="maincpu" offset="0"/>
+		<rom name="09011001_left.u70" merge="09011001_left.u70" bios="au-nsw8" size="2097152" crc="229c2e63" sha1="91fd2b1acb69efe073647e93db9f11042add2feb" region="maincpu" offset="2"/>
+		<rom name="07010801_right.u83" merge="07010801_right.u83" bios="au-nsw9" size="2097152" crc="8c148c11" sha1="5ff3be18455b4f04675fec8d5b9d881295c65e23" region="maincpu" offset="0"/>
+		<rom name="07010801_left.u70" merge="07010801_left.u70" bios="au-nsw9" size="2097152" crc="8e92af68" sha1="00d2bb655b7964a9652896741210ec534df0b0d2" region="maincpu" offset="2"/>
+		<rom name="05010601_right.u83" merge="05010601_right.u83" bios="au-nsw10" size="1048576" crc="c12eac11" sha1="683b9ddc323865ace7dca37d13b55de6e42759a5" region="maincpu" offset="0"/>
+		<rom name="05010601_left.u70" merge="05010601_left.u70" bios="au-nsw10" size="1048576" crc="b3e6b4a0" sha1="3bf398c9257579f8e51ce716d6ebfa74fa510273" region="maincpu" offset="2"/>
+		<rom name="04010501_right.u83" merge="04010501_right.u83" bios="au-nsw11" size="1048576" crc="3daefb7a" sha1="411471713219f4bab5ccf5fe7a12a6c138c8c550" region="maincpu" offset="0"/>
+		<rom name="04010501_left.u70" merge="04010501_left.u70" bios="au-nsw11" size="1048576" crc="21182775" sha1="7c5b7f5aba3babc85f512a8f7d4ebc0d83eb842a" region="maincpu" offset="2"/>
+		<rom name="03010301.u84" merge="03010301.u84" bios="au-nsw12" size="1048576" crc="a34a9f16" sha1="b8750e6ceb1715da8e5ac2f0183254e29a042641" region="maincpu" offset="0"/>
+		<rom name="03010301.u71" merge="03010301.u71" bios="au-nsw12" size="1048576" crc="d793440a" sha1="dced4c04bde13293af77a9a1f4c5c606e3758de0" region="maincpu" offset="2"/>
+		<rom name="03010301.u83" merge="03010301.u83" bios="au-nsw12" size="1048576" crc="c8580554" sha1="58b8bfff2f8d298c4e3be2b01900800c45fa7ad7" region="maincpu" offset="4"/>
+		<rom name="03010301.u70" merge="03010301.u70" bios="au-nsw12" size="1048576" crc="5ae69121" sha1="36dd3f9aaf5f7d2751d1954d67f898bc3ec71f3b" region="maincpu" offset="6"/>
+		<rom name="02061013_right.u83" merge="02061013_right.u83" bios="au-nsw13" size="1048576" crc="7a8619a5" sha1="bd03ddb68817c1660b009e102ccf69e5b603b875" region="maincpu" offset="0"/>
+		<rom name="02061013_left.u70" merge="02061013_left.u70" bios="au-nsw13" size="1048576" crc="e70a7007" sha1="0935f924866162d9c0fbdbb99391cbf730a04b76" region="maincpu" offset="2"/>
+		<rom name="02010201.u84" merge="02010201.u84" bios="au-nsw14" size="1048576" crc="0920930f" sha1="771b0f62442d1c75b1bb59ad82365b7ab8747173" region="maincpu" offset="0"/>
+		<rom name="02010201.u71" merge="02010201.u71" bios="au-nsw14" size="1048576" crc="24d5614a" sha1="fdcf3826dccc72b74b66379b1411cf211d5a1670" region="maincpu" offset="2"/>
+		<rom name="02010201.u83" merge="02010201.u83" bios="au-nsw14" size="1048576" crc="5f64a20c" sha1="397404ab6d2a1aa3c1fc77bb9421fef7079b65a5" region="maincpu" offset="4"/>
+		<rom name="02010201.u70" merge="02010201.u70" bios="au-nsw14" size="1048576" crc="9b2db442" sha1="d512398a2d9257bd385dc50d61c63cd1a47300ba" region="maincpu" offset="6"/>
+		<rom name="02010114.u84" merge="02010114.u84" bios="au-nsw15" size="1048576" crc="183e3836" sha1="4c802d0cd010bc007acb3a83e37aaa29b2d13d87" region="maincpu" offset="0"/>
+		<rom name="02010114.u71" merge="02010114.u71" bios="au-nsw15" size="1048576" crc="8f83c3dd" sha1="a5f9d80b4b515b24299d0241e1665cfd9da8bab7" region="maincpu" offset="2"/>
+		<rom name="02010114.u83" merge="02010114.u83" bios="au-nsw15" size="1048576" crc="945104d7" sha1="e372d0cf889c72b5d001b26fe4a925a28486537f" region="maincpu" offset="4"/>
+		<rom name="02010114.u70" merge="02010114.u70" bios="au-nsw15" size="1048576" crc="3ba4379f" sha1="84367f12c4c9224d2ab9cae83ae8727de338408c" region="maincpu" offset="6"/>
+		<rom name="03030708_right.u83" merge="03030708_right.u83" bios="au-sa1" size="1048576" crc="b4b3c6a5" sha1="5747f98a6eaa5c24a23d1d76a28b33a3bfbbfd1f" region="maincpu" offset="0"/>
+		<rom name="03030708_left.u70" merge="03030708_left.u70" bios="au-sa1" size="1048576" crc="4e5ad823" sha1="77ab1c29c6172cfdcef776222a72b2b44114d4da" region="maincpu" offset="2"/>
+		<rom name="15011025_right.u83" merge="15011025_right.u83" bios="my" size="2097152" crc="bf21a975" sha1="a251b1a7342387300689cd50fe4ce7975b903ac5" region="maincpu" offset="0"/>
+		<rom name="15011025_left.u70" merge="15011025_left.u70" bios="my" size="2097152" crc="c02e14b0" sha1="6bf98927813519dfe60e582dbe5be3ccd87f7c91" region="maincpu" offset="2"/>
+		<rom name="25012805_right.u83" merge="25012805_right.u83" bios="au-qld1" size="2097152" crc="2ecd8da8" sha1="389e9668b2ba4fffed5d2721b2ce70d502fb9f67" region="maincpu" offset="0"/>
+		<rom name="25012805_left.u70" merge="25012805_left.u70" bios="au-qld1" size="2097152" crc="996f32ce" sha1="cf21bef745986fcbd298167453c7b8e5945ce602" region="maincpu" offset="2"/>
+		<rom name="20012605_right.u83" merge="20012605_right.u83" bios="au-qld2" size="2097152" crc="045b82ad" sha1="b8e4f9f826970d83ae5fd2f2898de12ad1bf2d24" region="maincpu" offset="0"/>
+		<rom name="20012605_left.u70" merge="20012605_left.u70" bios="au-qld2" size="2097152" crc="87331111" sha1="6cdc2d81f68de23af18a975a6f27ddec246be405" region="maincpu" offset="2"/>
+		<rom name="20012305_right.u83" merge="20012305_right.u83" bios="au-qld3" size="2097152" crc="e436c1f5" sha1="62ee529cc971fd76aa2ccc15778e3f0c40e3e47f" region="maincpu" offset="0"/>
+		<rom name="20012305_left.u70" merge="20012305_left.u70" bios="au-qld3" size="2097152" crc="ea8961cc" sha1="0ebc7c3b94a6e01ee984af4711043130d9670bd3" region="maincpu" offset="2"/>
+		<rom name="14011605_right.u83" merge="14011605_right.u83" bios="au-qld4" size="2097152" crc="2bec5b74" sha1="854733cada75e632f01f7096d4740ed4941a3d5b" region="maincpu" offset="0"/>
+		<rom name="14011605_left.u70" merge="14011605_left.u70" bios="au-qld4" size="2097152" crc="cd26d4f0" sha1="40822714abf08aeb08d827dbd8cd099f86803754" region="maincpu" offset="2"/>
+		<rom name="04041205_right.u83" merge="04041205_right.u83" bios="au-qld5" size="1048576" crc="ca6bc86c" sha1="69fe7fc35694e4cd7f861bff4ec3a6165a81df6e" region="maincpu" offset="0"/>
+		<rom name="04041205_left.u70" merge="04041205_left.u70" bios="au-qld5" size="1048576" crc="dfb9a119" sha1="814a5a7877392aec4e4871d7f0e19d2fbd717409" region="maincpu" offset="2"/>
+		<rom name="03130334_right.u83" merge="03130334_right.u83" bios="au-qld6" size="2097152" crc="bce3d97f" sha1="da36377cc1465022a2434703adee63bf48c71a9c" region="maincpu" offset="0"/>
+		<rom name="03130334_left.u70" merge="03130334_left.u70" bios="au-qld6" size="2097152" crc="02175fde" sha1="4e9a9e1e803a0c84b06aec99dc3147dd7a919eee" region="maincpu" offset="2"/>
+		<rom name="01040505.u84" merge="01040505.u84" bios="au-qld7" size="1048576" crc="cf5a9d1e" sha1="0ebba478fc883831d70b0fa95f43e5f93b07ae9e" region="maincpu" offset="0"/>
+		<rom name="01040505.u71" merge="01040505.u71" bios="au-qld7" size="1048576" crc="f56ea77e" sha1="319be1bee66a289e2c1f6beec07758f79aa0cf16" region="maincpu" offset="2"/>
+		<rom name="01040505.u83" merge="01040505.u83" bios="au-qld7" size="1048576" crc="90f32169" sha1="228be8b4a9eb6b2acf7f7a7561bd194009936026" region="maincpu" offset="4"/>
+		<rom name="01040505.u70" merge="01040505.u70" bios="au-qld7" size="1048576" crc="b9ddea66" sha1="f4bfdeada39a3f0094d6468b7374a34f88f5df7f" region="maincpu" offset="6"/>
+		<rom name="01.04.11_right.u83" merge="01.04.11_right.u83" bios="us1" size="2097152" crc="2dae8ca0" sha1="7a0fb38b4c1ac7195d15bdab6f0cfb16c78430f0" region="maincpu" offset="0"/>
+		<rom name="01.04.11_left.u70" merge="01.04.11_left.u70" bios="us1" size="2097152" crc="787f2b07" sha1="2548289e44f4b935346b759afb5383bdbac04c3e" region="maincpu" offset="2"/>
+		<rom name="01.04.10_right.u83" merge="01.04.10_right.u83" bios="us2" size="2097152" crc="82ce2fcc" sha1="4c8fb3db084a67e99d1420b3f895a06ce9ef5ec2" region="maincpu" offset="0"/>
+		<rom name="01.04.10_left.u70" merge="01.04.10_left.u70" bios="us2" size="2097152" crc="9d9d52c1" sha1="b957220cdbedd516c219d1bfc28807ce466df93f" region="maincpu" offset="2"/>
+		<rom name="01.04.08_right.u83" merge="01.04.08_right.u83" bios="us3" size="2097152" crc="95333304" sha1="7afe49d6c5e4d6820f349778557daa88c5366a51" region="maincpu" offset="0"/>
+		<rom name="01.04.08_left.u70" merge="01.04.08_left.u70" bios="us3" size="2097152" crc="0dfcad10" sha1="53798be000304aed38909f5fd8470a68bedd8229" region="maincpu" offset="2"/>
+		<rom name="01.04.07_right.u83" merge="01.04.07_right.u83" bios="us4" size="2097152" crc="23c28e22" sha1="98f24a1f86232b6c2c288a61ec7d60c867f192e5" region="maincpu" offset="0"/>
+		<rom name="01.04.07_left.u70" merge="01.04.07_left.u70" bios="us4" size="2097152" crc="acfb0fe0" sha1="b1a772d7978e6ff4406a5bb39a71cb3f89608e72" region="maincpu" offset="2"/>
+		<rom name="01.04.04_right.u83" merge="01.04.04_right.u83" bios="us5" size="2097152" crc="e57ba02d" sha1="8e29403e6b619eeab41dc171221720bc7820ccdc" region="maincpu" offset="0"/>
+		<rom name="01.04.04_left.u70" merge="01.04.04_left.u70" bios="us5" size="2097152" crc="b984a92c" sha1="90f7a61302caee40195c08565bdac856a3234c1d" region="maincpu" offset="2"/>
+		<rom name="01.03.17_right.u83" merge="01.03.17_right.u83" bios="us6" size="2097152" crc="1582714b" sha1="92d0a15314ffe526159bef9a364898dd1ebdfde7" region="maincpu" offset="0"/>
+		<rom name="01.03.17_left.u70" merge="01.03.17_left.u70" bios="us6" size="2097152" crc="a88193dc" sha1="c9e1d483edaecd318d2e5fc8a54e84516c93e0ca" region="maincpu" offset="2"/>
+		<rom name="01.03.14_right.u83" merge="01.03.14_right.u83" bios="us7" size="2097152" crc="889ffd82" sha1="9c98c9cdcf5f7d05095f11006418133029e9f0f8" region="maincpu" offset="0"/>
+		<rom name="01.03.14_left.u70" merge="01.03.14_left.u70" bios="us7" size="2097152" crc="7138fec4" sha1="f81331d1875ac574d3e6c98be218ff25c6c7be5a" region="maincpu" offset="2"/>
+		<rom name="01.03.07_right.u83" merge="01.03.07_right.u83" bios="us8" size="2097152" crc="2ebccc4e" sha1="9342724e4451e9ab24ceae208284b50abd4f0be3" region="maincpu" offset="0"/>
+		<rom name="01.03.07_left.u70" merge="01.03.07_left.u70" bios="us8" size="2097152" crc="a3632da4" sha1="1c96a88e86095b81801ab88e36a4cdfa4b893265" region="maincpu" offset="2"/>
+		<rom name="01.03.06_right.u83" merge="01.03.06_right.u83" bios="us9" size="2097152" crc="bd48ca55" sha1="8fb1576cbeb1c64c358880714740195d2e73e03e" region="maincpu" offset="0"/>
+		<rom name="01.03.06_left.u70" merge="01.03.06_left.u70" bios="us9" size="2097152" crc="2f9d9a29" sha1="fdebfaca9a579d7249379f19aef22fbfd66bf943" region="maincpu" offset="2"/>
+		<rom name="01.03.05_right.u83" merge="01.03.05_right.u83" bios="us10" size="2097152" crc="2c7f1ec3" sha1="d03167f43ed6f9596080d91472695829378cef0a" region="maincpu" offset="0"/>
+		<rom name="01.03.05_left.u70" merge="01.03.05_left.u70" bios="us10" size="2097152" crc="0095e3f9" sha1="d2e8786158b1ab0a614aab21cf1d14cbc04754af" region="maincpu" offset="2"/>
+		<rom name="01.03.03e_right.u83" merge="01.03.03e_right.u83" bios="us11" size="2097152" crc="2255e263" sha1="5e9e093aaa17172f47a14c3baf7f6f0f73b19398" region="maincpu" offset="0"/>
+		<rom name="01.03.03e_left.u70" merge="01.03.03e_left.u70" bios="us11" size="2097152" crc="ea50729a" sha1="14b5a71bfb91ac366ddcb5f77fb54127808f8163" region="maincpu" offset="2"/>
+		<rom name="01.03.03a_right.u83" merge="01.03.03a_right.u83" bios="us12" size="2097152" crc="253415f4" sha1="50dc77ad87bc6be1932dda2fd4865602c8c49729" region="maincpu" offset="0"/>
+		<rom name="01.03.03a_left.u70" merge="01.03.03a_left.u70" bios="us12" size="2097152" crc="4ab5dd40" sha1="a6812cc624e6a98ea7b0697e2797fe10ba8e303e" region="maincpu" offset="2"/>
+		<rom name="01.02.08_right.u2" merge="01.02.08_right.u2" bios="us13" size="1048576" crc="aaaeac8c" sha1="a565e5fcb4f55f31e7d36be40eec234248a66efd" region="maincpu" offset="0"/>
+		<rom name="01.02.08_left.u3" merge="01.02.08_left.u3" bios="us13" size="1048576" crc="f29fd1bf" sha1="33e043d2616e10a1c7a0936c3d208f9bcc2ca6f3" region="maincpu" offset="2"/>
+		<rom name="06.03.04_right.u2" merge="06.03.04_right.u2" bios="set-us1" size="1048576" crc="6f5f5ef1" sha1="70a43fba4de47ed8dcf38b25eafd5873f3428e72" region="maincpu" offset="0"/>
+		<rom name="06.03.04_left.u3" merge="06.03.04_left.u3" bios="set-us1" size="1048576" crc="7034f26b" sha1="7be78f23bec38d05240cdfe1186ec0c8291f5a1c" region="maincpu" offset="2"/>
+		<rom name="06.03.03_right.u2" merge="06.03.03_right.u2" bios="set-us2" size="1048576" crc="98763498" sha1="246e95cc12eb34f946b2f4938c59217718f6d841" region="maincpu" offset="0"/>
+		<rom name="06.03.03_left.u3" merge="06.03.03_left.u3" bios="set-us2" size="1048576" crc="a6924238" sha1="b71ab39bf9c1fdbab556028138749e8c040ec83c" region="maincpu" offset="2"/>
+		<rom name="06.02.20_right.u83" merge="06.02.20_right.u83" bios="set-us3" size="1048576" crc="e4001f60" sha1="5da34efb1ac0f7c84a48e09363d20cfecda4bcf1" region="maincpu" offset="0"/>
+		<rom name="06.02.20_left.u70" merge="06.02.20_left.u70" bios="set-us3" size="1048576" crc="199ed3b9" sha1="e3ee81ffd713f09e35a10c38e4f59282e2c5cd30" region="maincpu" offset="2"/>
+		<rom name="06.02.04_right.u2" merge="06.02.04_right.u2" bios="set-us4" size="1048576" crc="1cf5a853" sha1="64d17efcce702df7a0b0e151293199478e25226d" region="maincpu" offset="0"/>
+		<rom name="06.02.04_left.u3" merge="06.02.04_left.u3" bios="set-us4" size="1048576" crc="117b75f2" sha1="2129286853d3c50b8a943b71334d4ef6b98adc05" region="maincpu" offset="2"/>
+		<rom name="10219211.u86" size="4194304" crc="a1c71dd2" sha1="9a859df876cf6a2fadcc5ae7183021881dc08887" region="game_rom" offset="0"/>
+		<rom name="10219211.u73" size="4194304" crc="da7d2ed7" sha1="1f81cad150c013848988e6f995a45f7ea5c6d95c" region="game_rom" offset="2"/>
+		<device_ref name="sh4le"/>
+		<device_ref name="ns16550"/>
+		<device_ref name="ns16550"/>
+		<device_ref name="93c56_16"/>
+		<device_ref name="screen"/>
+		<device_ref name="palette"/>
+		<chip type="cpu" tag="maincpu" name="Hitachi SH-4 (little)" clock="200000000"/>
+		<display tag="screen" type="raster" rotate="0" width="640" height="480" refresh="60.000000" />
+		<sound channels="0"/>
+		<input players="0">
+		</input>
+		<driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+		<feature type="sound" status="unemulated"/>
+	</machine>
+    <machine name="aristmk6" sourcefile="aristmk6.cpp" isbios="yes">
+        <description>MK6 System Software/Setchips</description>
+        <year>2000</year>
+        <manufacturer>Aristocrat</manufacturer>
+        <biosset name="au-nsw1" description="Aristocrat MK6 Base (24013001, NSW/ACT)"/>
+        <biosset name="au-nsw2" description="Aristocrat MK6 Base (21012901, NSW/ACT)"/>
+        <biosset name="au-nsw3" description="Aristocrat MK6 Base (19012801, NSW/ACT)"/>
+        <biosset name="au-nsw4" description="Aristocrat MK6 Base (14011913, NSW/ACT)"/>
+        <biosset name="au-nsw5" description="Aristocrat MK6 Base (13012001, NSW/ACT)"/>
+        <biosset name="au-nsw6" description="Aristocrat MK6 Base (11011901, NSW/ACT)"/>
+        <biosset name="au-nsw7" description="Aristocrat MK6 Base (11011501, NSW/ACT)"/>
+        <biosset name="au-nsw8" description="Aristocrat MK6 Base (09011001, NSW/ACT)"/>
+        <biosset name="au-nsw9" description="Aristocrat MK6 Base (07010801, NSW/ACT)"/>
+        <biosset name="au-nsw10" description="Aristocrat MK6 Base (05010601, NSW/ACT)"/>
+        <biosset name="au-nsw11" description="Aristocrat MK6 Base (04010501, NSW/ACT)"/>
+        <biosset name="au-nsw12" description="Aristocrat MK6 Base (03010301, NSW/ACT)"/>
+        <biosset name="au-nsw13" description="Aristocrat MK6 Base (02061013, NSW/ACT)"/>
+        <biosset name="au-nsw14" description="Aristocrat MK6 Base (02010201, NSW/ACT)"/>
+        <biosset name="au-nsw15" description="Aristocrat MK6 Base (02010114, NSW/ACT)"/>
+        <biosset name="au-sa1" description="Aristocrat MK6 Base (03030708, South Australia)"/>
+        <biosset name="my" description="Aristocrat MK6 Base (15011025, Malaysia)"/>
+        <biosset name="au-qld1" description="Aristocrat MK6 Base (25012805, Queensland)"/>
+        <biosset name="au-qld2" description="Aristocrat MK6 Base (20012605, Queensland)"/>
+        <biosset name="au-qld3" description="Aristocrat MK6 Base (20012305, Queensland)"/>
+        <biosset name="au-qld4" description="Aristocrat MK6 Base (14011605, Queensland))"/>
+        <biosset name="au-qld5" description="Aristocrat MK6 Base (04041205, Queensland)"/>
+        <biosset name="au-qld6" description="Aristocrat MK6 Base (03130334, Queensland)"/>
+        <biosset name="au-qld7" description="Aristocrat MK6 Base (01040505, Queensland)"/>
+        <biosset name="us1" description="Aristocrat MK6 Base (01.04.11, US)"/>
+        <biosset name="us2" description="Aristocrat MK6 Base (01.04.10, US)"/>
+        <biosset name="us3" description="Aristocrat MK6 Base (01.04.08, US)"/>
+        <biosset name="us4" description="Aristocrat MK6 Base (01.04.07, US)"/>
+        <biosset name="us5" description="Aristocrat MK6 Base (01.04.04, US)"/>
+        <biosset name="us6" description="Aristocrat MK6 Base (01.03.17, US)"/>
+        <biosset name="us7" description="Aristocrat MK6 Base (01.03.14, US)"/>
+        <biosset name="us8" description="Aristocrat MK6 Base (01.03.07, US)"/>
+        <biosset name="us9" description="Aristocrat MK6 Base (01.03.06, US)"/>
+        <biosset name="us10" description="Aristocrat MK6 Base (01.03.05, US)"/>
+        <biosset name="us11" description="Aristocrat MK6 Base (01.03.03e, US)"/>
+        <biosset name="us12" description="Aristocrat MK6 Base (01.03.03a, US)"/>
+        <biosset name="us13" description="Aristocrat MK6 Base (01.02.08, US)"/>
+        <biosset name="set-us1" description="Aristocrat MK6 Set Chips (06.03.04, US)"/>
+        <biosset name="set-us2" description="Aristocrat MK6 Set Chips (06.03.03, US)"/>
+        <biosset name="set-us3" description="Aristocrat MK6 Set Chips (06.02.20, US)"/>
+        <biosset name="set-us4" description="Aristocrat MK6 Set Chips (06.02.04, US)"/>
+        <rom name="24013001_right.u83" bios="au-nsw1" size="2097152" crc="e97afedf" sha1="10ca3b015afaff5d7812f0f5207b2535602136a5" region="maincpu" offset="0"/>
+        <rom name="24013001_left.u70" bios="au-nsw1" size="2097152" crc="06ae7e07" sha1="39a45575b66906d73b519988d1001c99b05c5f34" region="maincpu" offset="2"/>
+        <rom name="21012901_right.u83" bios="au-nsw2" size="2097152" crc="757618f2" sha1="43f9a3e7d544979f8c6974945914d9e099b02abd" region="maincpu" offset="0"/>
+        <rom name="21012901_left.u70" bios="au-nsw2" size="2097152" crc="0d271470" sha1="5cd4b604bfe2fd7e9a8d08e1c7c97f17ae068479" region="maincpu" offset="2"/>
+        <rom name="19012801_right.u83" bios="au-nsw3" size="2097152" crc="5b20a96c" sha1="5fd916b7cc2cdd51bf7dd212c1114f94dc9c7926" region="maincpu" offset="0"/>
+        <rom name="19012801_left.u70" bios="au-nsw3" size="2097152" crc="b03bd17c" sha1="f281e80f6dda5b727ed71d2deebe3b0ff548773f" region="maincpu" offset="2"/>
+        <rom name="14011913_right.u83" bios="au-nsw4" size="2097152" crc="01d13b89" sha1="b1013366d0803dfbec5a5f90f6a5cea862de0513" region="maincpu" offset="0"/>
+        <rom name="14011913_left.u70" bios="au-nsw4" size="2097152" crc="9a4cefdf" sha1="6c15bc565ede8af19361d60ee1e6657a8055c92c" region="maincpu" offset="2"/>
+        <rom name="13012001_right.u83" bios="au-nsw5" size="2097152" crc="e627dbfa" sha1="4fedbe0975ceb7dc0ebebf18a7708d78984db9b7" region="maincpu" offset="0"/>
+        <rom name="13012001_left.u70" bios="au-nsw5" size="2097152" crc="38e8f659" sha1="88c6acba99b0aca023c6f4d27c061c231490e9e0" region="maincpu" offset="2"/>
+        <rom name="11011901_right.u83" bios="au-nsw6" size="2097152" crc="73dcb11c" sha1="69ae4f32a0c9141b2a82ff3935b0cd20333d2964" region="maincpu" offset="0"/>
+        <rom name="11011901_left.u70" bios="au-nsw6" size="2097152" crc="d3dd2210" sha1="3548f8cc39859d3f44a55f6bae48966a2d48e0eb" region="maincpu" offset="2"/>
+        <rom name="11011501_right.u83" bios="au-nsw7" size="2097152" crc="de4c3aed" sha1="21596a2edd20eb7de7a4ec8900a270b09c8f326f" region="maincpu" offset="0"/>
+        <rom name="11011501_left.u70" bios="au-nsw7" size="2097152" crc="c5cc3461" sha1="5b43c4cb6110a6ccf67cd0f3789253f6872b20c4" region="maincpu" offset="2"/>
+        <rom name="09011001_right.u83" bios="au-nsw8" size="2097152" crc="8a853f80" sha1="9a75498f7b02c81a483b4e1c158f35f0ee4c0112" region="maincpu" offset="0"/>
+        <rom name="09011001_left.u70" bios="au-nsw8" size="2097152" crc="229c2e63" sha1="91fd2b1acb69efe073647e93db9f11042add2feb" region="maincpu" offset="2"/>
+        <rom name="07010801_right.u83" bios="au-nsw9" size="2097152" crc="8c148c11" sha1="5ff3be18455b4f04675fec8d5b9d881295c65e23" region="maincpu" offset="0"/>
+        <rom name="07010801_left.u70" bios="au-nsw9" size="2097152" crc="8e92af68" sha1="00d2bb655b7964a9652896741210ec534df0b0d2" region="maincpu" offset="2"/>
+        <rom name="05010601_right.u83" bios="au-nsw10" size="1048576" crc="c12eac11" sha1="683b9ddc323865ace7dca37d13b55de6e42759a5" region="maincpu" offset="0"/>
+        <rom name="05010601_left.u70" bios="au-nsw10" size="1048576" crc="b3e6b4a0" sha1="3bf398c9257579f8e51ce716d6ebfa74fa510273" region="maincpu" offset="2"/>
+        <rom name="04010501_right.u83" bios="au-nsw11" size="1048576" crc="3daefb7a" sha1="411471713219f4bab5ccf5fe7a12a6c138c8c550" region="maincpu" offset="0"/>
+        <rom name="04010501_left.u70" bios="au-nsw11" size="1048576" crc="21182775" sha1="7c5b7f5aba3babc85f512a8f7d4ebc0d83eb842a" region="maincpu" offset="2"/>
+        <rom name="03010301.u84" bios="au-nsw12" size="1048576" crc="a34a9f16" sha1="b8750e6ceb1715da8e5ac2f0183254e29a042641" region="maincpu" offset="0"/>
+        <rom name="03010301.u71" bios="au-nsw12" size="1048576" crc="d793440a" sha1="dced4c04bde13293af77a9a1f4c5c606e3758de0" region="maincpu" offset="2"/>
+        <rom name="03010301.u83" bios="au-nsw12" size="1048576" crc="c8580554" sha1="58b8bfff2f8d298c4e3be2b01900800c45fa7ad7" region="maincpu" offset="4"/>
+        <rom name="03010301.u70" bios="au-nsw12" size="1048576" crc="5ae69121" sha1="36dd3f9aaf5f7d2751d1954d67f898bc3ec71f3b" region="maincpu" offset="6"/>
+        <rom name="02061013_right.u83" bios="au-nsw13" size="1048576" crc="7a8619a5" sha1="bd03ddb68817c1660b009e102ccf69e5b603b875" region="maincpu" offset="0"/>
+        <rom name="02061013_left.u70" bios="au-nsw13" size="1048576" crc="e70a7007" sha1="0935f924866162d9c0fbdbb99391cbf730a04b76" region="maincpu" offset="2"/>
+        <rom name="02010201.u84" bios="au-nsw14" size="1048576" crc="0920930f" sha1="771b0f62442d1c75b1bb59ad82365b7ab8747173" region="maincpu" offset="0"/>
+        <rom name="02010201.u71" bios="au-nsw14" size="1048576" crc="24d5614a" sha1="fdcf3826dccc72b74b66379b1411cf211d5a1670" region="maincpu" offset="2"/>
+        <rom name="02010201.u83" bios="au-nsw14" size="1048576" crc="5f64a20c" sha1="397404ab6d2a1aa3c1fc77bb9421fef7079b65a5" region="maincpu" offset="4"/>
+        <rom name="02010201.u70" bios="au-nsw14" size="1048576" crc="9b2db442" sha1="d512398a2d9257bd385dc50d61c63cd1a47300ba" region="maincpu" offset="6"/>
+        <rom name="02010114.u84" bios="au-nsw15" size="1048576" crc="183e3836" sha1="4c802d0cd010bc007acb3a83e37aaa29b2d13d87" region="maincpu" offset="0"/>
+        <rom name="02010114.u71" bios="au-nsw15" size="1048576" crc="8f83c3dd" sha1="a5f9d80b4b515b24299d0241e1665cfd9da8bab7" region="maincpu" offset="2"/>
+        <rom name="02010114.u83" bios="au-nsw15" size="1048576" crc="945104d7" sha1="e372d0cf889c72b5d001b26fe4a925a28486537f" region="maincpu" offset="4"/>
+        <rom name="02010114.u70" bios="au-nsw15" size="1048576" crc="3ba4379f" sha1="84367f12c4c9224d2ab9cae83ae8727de338408c" region="maincpu" offset="6"/>
+        <rom name="03030708_right.u83" bios="au-sa1" size="1048576" crc="b4b3c6a5" sha1="5747f98a6eaa5c24a23d1d76a28b33a3bfbbfd1f" region="maincpu" offset="0"/>
+        <rom name="03030708_left.u70" bios="au-sa1" size="1048576" crc="4e5ad823" sha1="77ab1c29c6172cfdcef776222a72b2b44114d4da" region="maincpu" offset="2"/>
+        <rom name="15011025_right.u83" bios="my" size="2097152" crc="bf21a975" sha1="a251b1a7342387300689cd50fe4ce7975b903ac5" region="maincpu" offset="0"/>
+        <rom name="15011025_left.u70" bios="my" size="2097152" crc="c02e14b0" sha1="6bf98927813519dfe60e582dbe5be3ccd87f7c91" region="maincpu" offset="2"/>
+        <rom name="25012805_right.u83" bios="au-qld1" size="2097152" crc="2ecd8da8" sha1="389e9668b2ba4fffed5d2721b2ce70d502fb9f67" region="maincpu" offset="0"/>
+        <rom name="25012805_left.u70" bios="au-qld1" size="2097152" crc="996f32ce" sha1="cf21bef745986fcbd298167453c7b8e5945ce602" region="maincpu" offset="2"/>
+        <rom name="20012605_right.u83" bios="au-qld2" size="2097152" crc="045b82ad" sha1="b8e4f9f826970d83ae5fd2f2898de12ad1bf2d24" region="maincpu" offset="0"/>
+        <rom name="20012605_left.u70" bios="au-qld2" size="2097152" crc="87331111" sha1="6cdc2d81f68de23af18a975a6f27ddec246be405" region="maincpu" offset="2"/>
+        <rom name="20012305_right.u83" bios="au-qld3" size="2097152" crc="e436c1f5" sha1="62ee529cc971fd76aa2ccc15778e3f0c40e3e47f" region="maincpu" offset="0"/>
+        <rom name="20012305_left.u70" bios="au-qld3" size="2097152" crc="ea8961cc" sha1="0ebc7c3b94a6e01ee984af4711043130d9670bd3" region="maincpu" offset="2"/>
+        <rom name="14011605_right.u83" bios="au-qld4" size="2097152" crc="2bec5b74" sha1="854733cada75e632f01f7096d4740ed4941a3d5b" region="maincpu" offset="0"/>
+        <rom name="14011605_left.u70" bios="au-qld4" size="2097152" crc="cd26d4f0" sha1="40822714abf08aeb08d827dbd8cd099f86803754" region="maincpu" offset="2"/>
+        <rom name="04041205_right.u83" bios="au-qld5" size="1048576" crc="ca6bc86c" sha1="69fe7fc35694e4cd7f861bff4ec3a6165a81df6e" region="maincpu" offset="0"/>
+        <rom name="04041205_left.u70" bios="au-qld5" size="1048576" crc="dfb9a119" sha1="814a5a7877392aec4e4871d7f0e19d2fbd717409" region="maincpu" offset="2"/>
+        <rom name="03130334_right.u83" bios="au-qld6" size="2097152" crc="bce3d97f" sha1="da36377cc1465022a2434703adee63bf48c71a9c" region="maincpu" offset="0"/>
+        <rom name="03130334_left.u70" bios="au-qld6" size="2097152" crc="02175fde" sha1="4e9a9e1e803a0c84b06aec99dc3147dd7a919eee" region="maincpu" offset="2"/>
+        <rom name="01040505.u84" bios="au-qld7" size="1048576" crc="cf5a9d1e" sha1="0ebba478fc883831d70b0fa95f43e5f93b07ae9e" region="maincpu" offset="0"/>
+        <rom name="01040505.u71" bios="au-qld7" size="1048576" crc="f56ea77e" sha1="319be1bee66a289e2c1f6beec07758f79aa0cf16" region="maincpu" offset="2"/>
+        <rom name="01040505.u83" bios="au-qld7" size="1048576" crc="90f32169" sha1="228be8b4a9eb6b2acf7f7a7561bd194009936026" region="maincpu" offset="4"/>
+        <rom name="01040505.u70" bios="au-qld7" size="1048576" crc="b9ddea66" sha1="f4bfdeada39a3f0094d6468b7374a34f88f5df7f" region="maincpu" offset="6"/>
+        <rom name="01.04.11_right.u83" bios="us1" size="2097152" crc="2dae8ca0" sha1="7a0fb38b4c1ac7195d15bdab6f0cfb16c78430f0" region="maincpu" offset="0"/>
+        <rom name="01.04.11_left.u70" bios="us1" size="2097152" crc="787f2b07" sha1="2548289e44f4b935346b759afb5383bdbac04c3e" region="maincpu" offset="2"/>
+        <rom name="01.04.10_right.u83" bios="us2" size="2097152" crc="82ce2fcc" sha1="4c8fb3db084a67e99d1420b3f895a06ce9ef5ec2" region="maincpu" offset="0"/>
+        <rom name="01.04.10_left.u70" bios="us2" size="2097152" crc="9d9d52c1" sha1="b957220cdbedd516c219d1bfc28807ce466df93f" region="maincpu" offset="2"/>
+        <rom name="01.04.08_right.u83" bios="us3" size="2097152" crc="95333304" sha1="7afe49d6c5e4d6820f349778557daa88c5366a51" region="maincpu" offset="0"/>
+        <rom name="01.04.08_left.u70" bios="us3" size="2097152" crc="0dfcad10" sha1="53798be000304aed38909f5fd8470a68bedd8229" region="maincpu" offset="2"/>
+        <rom name="01.04.07_right.u83" bios="us4" size="2097152" crc="23c28e22" sha1="98f24a1f86232b6c2c288a61ec7d60c867f192e5" region="maincpu" offset="0"/>
+        <rom name="01.04.07_left.u70" bios="us4" size="2097152" crc="acfb0fe0" sha1="b1a772d7978e6ff4406a5bb39a71cb3f89608e72" region="maincpu" offset="2"/>
+        <rom name="01.04.04_right.u83" bios="us5" size="2097152" crc="e57ba02d" sha1="8e29403e6b619eeab41dc171221720bc7820ccdc" region="maincpu" offset="0"/>
+        <rom name="01.04.04_left.u70" bios="us5" size="2097152" crc="b984a92c" sha1="90f7a61302caee40195c08565bdac856a3234c1d" region="maincpu" offset="2"/>
+        <rom name="01.03.17_right.u83" bios="us6" size="2097152" crc="1582714b" sha1="92d0a15314ffe526159bef9a364898dd1ebdfde7" region="maincpu" offset="0"/>
+        <rom name="01.03.17_left.u70" bios="us6" size="2097152" crc="a88193dc" sha1="c9e1d483edaecd318d2e5fc8a54e84516c93e0ca" region="maincpu" offset="2"/>
+        <rom name="01.03.14_right.u83" bios="us7" size="2097152" crc="889ffd82" sha1="9c98c9cdcf5f7d05095f11006418133029e9f0f8" region="maincpu" offset="0"/>
+        <rom name="01.03.14_left.u70" bios="us7" size="2097152" crc="7138fec4" sha1="f81331d1875ac574d3e6c98be218ff25c6c7be5a" region="maincpu" offset="2"/>
+        <rom name="01.03.07_right.u83" bios="us8" size="2097152" crc="2ebccc4e" sha1="9342724e4451e9ab24ceae208284b50abd4f0be3" region="maincpu" offset="0"/>
+        <rom name="01.03.07_left.u70" bios="us8" size="2097152" crc="a3632da4" sha1="1c96a88e86095b81801ab88e36a4cdfa4b893265" region="maincpu" offset="2"/>
+        <rom name="01.03.06_right.u83" bios="us9" size="2097152" crc="bd48ca55" sha1="8fb1576cbeb1c64c358880714740195d2e73e03e" region="maincpu" offset="0"/>
+        <rom name="01.03.06_left.u70" bios="us9" size="2097152" crc="2f9d9a29" sha1="fdebfaca9a579d7249379f19aef22fbfd66bf943" region="maincpu" offset="2"/>
+        <rom name="01.03.05_right.u83" bios="us10" size="2097152" crc="2c7f1ec3" sha1="d03167f43ed6f9596080d91472695829378cef0a" region="maincpu" offset="0"/>
+        <rom name="01.03.05_left.u70" bios="us10" size="2097152" crc="0095e3f9" sha1="d2e8786158b1ab0a614aab21cf1d14cbc04754af" region="maincpu" offset="2"/>
+        <rom name="01.03.03e_right.u83" bios="us11" size="2097152" crc="2255e263" sha1="5e9e093aaa17172f47a14c3baf7f6f0f73b19398" region="maincpu" offset="0"/>
+        <rom name="01.03.03e_left.u70" bios="us11" size="2097152" crc="ea50729a" sha1="14b5a71bfb91ac366ddcb5f77fb54127808f8163" region="maincpu" offset="2"/>
+        <rom name="01.03.03a_right.u83" bios="us12" size="2097152" crc="253415f4" sha1="50dc77ad87bc6be1932dda2fd4865602c8c49729" region="maincpu" offset="0"/>
+        <rom name="01.03.03a_left.u70" bios="us12" size="2097152" crc="4ab5dd40" sha1="a6812cc624e6a98ea7b0697e2797fe10ba8e303e" region="maincpu" offset="2"/>
+        <rom name="01.02.08_right.u2" bios="us13" size="1048576" crc="aaaeac8c" sha1="a565e5fcb4f55f31e7d36be40eec234248a66efd" region="maincpu" offset="0"/>
+        <rom name="01.02.08_left.u3" bios="us13" size="1048576" crc="f29fd1bf" sha1="33e043d2616e10a1c7a0936c3d208f9bcc2ca6f3" region="maincpu" offset="2"/>
+        <rom name="06.03.04_right.u2" bios="set-us1" size="1048576" crc="6f5f5ef1" sha1="70a43fba4de47ed8dcf38b25eafd5873f3428e72" region="maincpu" offset="0"/>
+        <rom name="06.03.04_left.u3" bios="set-us1" size="1048576" crc="7034f26b" sha1="7be78f23bec38d05240cdfe1186ec0c8291f5a1c" region="maincpu" offset="2"/>
+        <rom name="06.03.03_right.u2" bios="set-us2" size="1048576" crc="98763498" sha1="246e95cc12eb34f946b2f4938c59217718f6d841" region="maincpu" offset="0"/>
+        <rom name="06.03.03_left.u3" bios="set-us2" size="1048576" crc="a6924238" sha1="b71ab39bf9c1fdbab556028138749e8c040ec83c" region="maincpu" offset="2"/>
+        <rom name="06.02.20_right.u83" bios="set-us3" size="1048576" crc="e4001f60" sha1="5da34efb1ac0f7c84a48e09363d20cfecda4bcf1" region="maincpu" offset="0"/>
+        <rom name="06.02.20_left.u70" bios="set-us3" size="1048576" crc="199ed3b9" sha1="e3ee81ffd713f09e35a10c38e4f59282e2c5cd30" region="maincpu" offset="2"/>
+        <rom name="06.02.04_right.u2" bios="set-us4" size="1048576" crc="1cf5a853" sha1="64d17efcce702df7a0b0e151293199478e25226d" region="maincpu" offset="0"/>
+        <rom name="06.02.04_left.u3" bios="set-us4" size="1048576" crc="117b75f2" sha1="2129286853d3c50b8a943b71334d4ef6b98adc05" region="maincpu" offset="2"/>
+        <device_ref name="sh4le"/>
+        <device_ref name="ns16550"/>
+        <device_ref name="ns16550"/>
+        <device_ref name="93c56_16"/>
+        <device_ref name="screen"/>
+        <device_ref name="palette"/>
+        <chip type="cpu" tag="maincpu" name="Hitachi SH-4 (little)" clock="200000000"/>
+        <display tag="screen" type="raster" rotate="0" width="640" height="480" refresh="60.000000" />
+        <sound channels="0"/>
+        <input players="0">
+        </input>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <feature type="sound" status="unemulated"/>
+    </machine>
+    <machine name="a24play" sourcefile="src/devices/bus/a2bus/4play.cpp" isdevice="yes" runnable="no">
+        <description>4play Joystick Card (rev. B)</description>
+        <input players="3">
+            <control type="joy" player="1" buttons="3" ways="8"/>
+            <control type="joy" player="2" buttons="3" ways="8"/>
+            <control type="joy" player="3" buttons="3" ways="8"/>
+        </input>
+    </machine>
+    <machine name="3dobios" sourcefile="3do.cpp" isbios="yes">
+        <description>3DO Bios</description>
+        <year>1993</year>
+        <manufacturer>The 3DO Company</manufacturer>
+        <biosset name="panafz10" description="Panasonic FZ-10 R.E.A.L. 3DO Interactive Multiplayer"/>
+        <biosset name="goldstar" description="Goldstar 3DO Interactive Multiplayer v1.01m"/>
+        <biosset name="panafz1" description="Panasonic FZ-1 R.E.A.L. 3DO Interactive Multiplayer"/>
+        <biosset name="sanyotry" description="Sanyo TRY 3DO Interactive Multiplayer"/>
+        <rom name="panafz10.bin" bios="panafz10" size="1048576" crc="58242cee" sha1="3c912300775d1ad730dc35757e279c274c0acaad" region="bios" offset="0"/>
+        <rom name="goldstar.bin" bios="goldstar" size="1048576" crc="b6f5028b" sha1="c4a2e5336f77fb5f743de1eea2cda43675ee2de7" region="bios" offset="0"/>
+        <rom name="panafz1.bin" bios="panafz1" size="1048576" crc="c8c8ff89" sha1="34bf189111295f74d7b7dfc1f304d98b8d36325a" region="bios" offset="0"/>
+        <rom name="sanyotry.bin" bios="sanyotry" size="1048576" crc="d5cbc509" sha1="b01c53da256dde43ffec4ad3fc3adfa8d635e943" region="bios" offset="0"/>
+        <device_ref name="arm7_be"/>
+        <device_ref name="nvram"/>
+        <device_ref name="timer"/>
+        <device_ref name="screen"/>
+        <device_ref name="cdrom_image"/>
+        <chip type="cpu" tag="maincpu" name="ARM7 (big)" clock="12500000"/>
+        <display tag="screen" type="raster" rotate="0" width="1280" height="240" refresh="58.622485" pixclock="24545000" htotal="1592" hbend="254" hbstart="1534" vtotal="263" vbend="22" vbstart="262" />
+        <sound channels="0"/>
+        <input players="1">
+            <control type="joy" buttons="3" ways="8"/>
+        </input>
+        <port tag=":P1">
+        </port>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <feature type="sound" status="unemulated"/>
+        <device type="cdrom" tag="cdrom">
+            <instance name="cdrom" briefname="cdrm"/>
+            <extension name="chd"/>
+            <extension name="cue"/>
+            <extension name="toc"/>
+            <extension name="nrg"/>
+            <extension name="gdi"/>
+            <extension name="iso"/>
+            <extension name="cdr"/>
+        </device>
+    </machine>
+    <machine name="sv801" sourcefile="src/devices/bus/svi3x8/slot/sv801.cpp" isdevice="yes" runnable="no">
+        <description>SV-801 Disk Controller</description>
+        <device_ref name="fd1793"/>
+        <device_ref name="floppy_connector"/>
+        <device_ref name="floppy_connector"/>
+        <device_ref name="software_list"/>
+        <slot name=":fdc:0">
+            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
+        </slot>
+        <slot name=":fdc:1">
+            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
+        </slot>
+        <softwarelist tag=":disk_list" name="svi318_flop" status="original"/>
+    </machine>
+    <machine name="99bottles" sourcefile="gammagic.cpp" cloneof="gammagic" romof="gammagic">
+        <description>99 Bottles of Beer</description>
+        <year>1999</year>
+        <manufacturer>Bally Gaming Co.</manufacturer>
+        <rom name="trident_tgui9680_bios.bin" merge="trident_tgui9680_bios.bin" size="32768" crc="1eebde64" sha1="67896a854d43a575037613b3506aea6dae5d6a19" status="baddump" region="isa" offset="0"/>
+        <rom name="5hx29.bin" merge="5hx29.bin" size="131072" crc="07719a55" sha1="b63993fd5186cdb4f28c117428a507cd069e1f68" status="baddump" region="isa" offset="20000"/>
+        <rom name="v8000.bin" size="131072" status="nodump" region="v8000" offset="0"/>
+        <disk name="99bottles" sha1="0b874178c8dd3cfc451deb53dc7936dc4ad5a04f" status="baddump" region="cdrom" index="0" writable="no"/>
+        <device_ref name="pentium"/>
+        <device_ref name="pic8259"/>
+        <device_ref name="pic8259"/>
+        <device_ref name="am9517a"/>
+        <device_ref name="am9517a"/>
+        <device_ref name="pit8254"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="mc146818"/>
+        <device_ref name="kbdc8042"/>
+        <device_ref name="at_keyb"/>
+        <device_ref name="pci_root"/>
+        <device_ref name="screen"/>
+        <device_ref name="vga"/>
+        <chip type="cpu" tag="maincpu" name="Intel Pentium" clock="133000000"/>
+        <chip type="cpu" tag="dma8237_1" name="AM9517A" clock="4772727"/>
+        <chip type="cpu" tag="dma8237_2" name="AM9517A" clock="4772727"/>
+        <display tag="screen" type="raster" rotate="0" width="640" height="480" refresh="53.178707" pixclock="25174800" htotal="900" hbend="0" hbstart="640" vtotal="526" vbend="0" vbstart="480" />
+        <sound channels="0"/>
+        <input players="1">
+            <control type="keyboard" buttons="103"/>
+        </input>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_0">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_1">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_2">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_3">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_4">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_5">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_6">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_7">
+        </port>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <feature type="sound" status="unemulated"/>
+    </machine>
+    <machine name="elevatora" sourcefile="taitosj.cpp" cloneof="elevator" romof="elevator">
+        <description>Elevator Action (EA, 5 PCB version, 1.1)</description>
+        <year>1983</year>
+        <manufacturer>Taito Corporation</manufacturer>
+        <rom name="ea_12.2732.ic69" size="4096" crc="24e277ef" sha1="764e3b3a34bf0ec849d58023f710e5b0a0d0ccb5" region="maincpu" offset="0"/>
+        <rom name="ea_13.2732.ic68" size="4096" crc="13702e39" sha1="b72fea84f8322463ff224e3b06698a1ed7e305b7" region="maincpu" offset="1000"/>
+        <rom name="ea_14.2732.ic67" size="4096" crc="46f52646" sha1="11b68b89ab0f580bfe88047e59bd9bba237a2eb4" region="maincpu" offset="2000"/>
+        <rom name="ea_15.2732.ic66" size="4096" crc="e22fe57e" sha1="50888975e698c4d2a124e5731d0922df43eb01ef" region="maincpu" offset="3000"/>
+        <rom name="ea_16.2732.ic65" size="4096" crc="c10691d7" sha1="a7657d3d661421d1fca3b04e4025725272b77203" region="maincpu" offset="4000"/>
+        <rom name="ea_17.2732.ic64" size="4096" crc="8913b293" sha1="163daa07b6d45469f18e4f4a1904b60a890c8699" region="maincpu" offset="5000"/>
+        <rom name="ea_18.2732.ic55" size="4096" crc="1cabda08" sha1="8fff75a354ee7589bd0ffe8b0271fd9111b2b241" region="maincpu" offset="6000"/>
+        <rom name="ea_19.2732.ic54" size="4096" crc="f4647b4f" sha1="711a9447d30b35bc38e149e0cf6e835ff06efd54" region="maincpu" offset="7000"/>
+        <rom name="ea_9.2732.ic70" merge="ba3__09.2732.ic70" size="4096" crc="6d5f57cb" sha1="abb916d675ee85032697d656121d4f525202cab3" region="audiocpu" offset="0"/>
+        <rom name="ea_10.2732.ic71" merge="ba3__10.2732.ic71" size="4096" crc="f0a769a1" sha1="9970fba3afeaaaa7fd217f0704fb9df9cf13cf65" region="audiocpu" offset="1000"/>
+        <rom name="ww15.pal16l8.ic24.jed.bin" merge="ww15.pal16l8.ic24.jed.bin" size="279" crc="c3ec20d6" sha1="4bcdd92ca6b75ba825a7f90b1f35d8dcaeaf8a96" region="pal" offset="0"/>
+        <rom name="ba3__11.mc68705p3.ic4" merge="ba3__11.mc68705p3.ic24" size="2048" crc="9ce75afc" sha1="4c8f5d926ae2bec8fcb70692125b9e1c863166c6" region="bmcu:mcu" offset="0"/>
+        <rom name="ea_20.2732.ic1" size="4096" crc="bbbb3fba" sha1="a8e3a0886ea5dc8e70aa280b4cef5fb26ca0e125" region="gfx" offset="0"/>
+        <rom name="ea_21.2732.ic2" size="4096" crc="639cc2fd" sha1="0ba292ac34dbf779a929db6358cd842d38077b3d" region="gfx" offset="1000"/>
+        <rom name="ea_22.2732.ic3" size="4096" crc="61317eea" sha1="f1a18c09e31edb4ec3ad7ab853f425383ca22314" region="gfx" offset="2000"/>
+        <rom name="ea_23.2732.ic4" size="4096" crc="55446482" sha1="0767701213920d30d5a3a226b25cfbbd3f24437a" region="gfx" offset="3000"/>
+        <rom name="ea_24.2732.ic5" size="4096" crc="77895c0f" sha1="fe116c53a7e8ac523a17249a56df9f40b503b30d" region="gfx" offset="4000"/>
+        <rom name="ea_25.2732.ic6" size="4096" crc="9a1b6901" sha1="646491c1d28904d9e662b1bff554bb74ec47708d" region="gfx" offset="5000"/>
+        <rom name="ea_26.2732.ic7" size="4096" crc="839112ec" sha1="30bca7f5214bf424aa10184094947496f054ddf4" region="gfx" offset="6000"/>
+        <rom name="ea_27.2732.ic8" size="4096" crc="db7ff692" sha1="4d0d9ab0c9d8d758e121f2bcfc6422ffadf2d760" region="gfx" offset="7000"/>
+        <rom name="eb16.ic22" merge="eb16.ic22" size="256" crc="b833b5ea" sha1="d233f1bf8a3e6cd876853ffd721b9b64c61c9047" region="proms" offset="0"/>
+        <device_ref name="z80"/>
+        <device_ref name="z80"/>
+        <device_ref name="screen"/>
+        <device_ref name="gfxdecode"/>
+        <device_ref name="palette"/>
+        <device_ref name="speaker"/>
+        <device_ref name="ipt_merge_all_hi"/>
+        <device_ref name="ipt_merge_any_hi"/>
+        <device_ref name="ay8910"/>
+        <device_ref name="ay8910"/>
+        <device_ref name="ay8910"/>
+        <device_ref name="ay8910"/>
+        <device_ref name="watchdog"/>
+        <device_ref name="dac_8bit_r2r"/>
+        <device_ref name="discrete"/>
+        <device_ref name="taitosjsecmcu"/>
+        <device_ref name="m68705p5"/>
+        <chip type="cpu" tag="maincpu" name="Zilog Z80" clock="4000000"/>
+        <chip type="cpu" tag="audiocpu" name="Zilog Z80" clock="3000000"/>
+        <chip type="cpu" tag="bmcu:mcu" name="Motorola MC68705P5" clock="3000000"/>
+        <chip type="audio" tag="speaker" name="Speaker"/>
+        <chip type="audio" tag="ay1" name="AY-3-8910A PSG" clock="1500000"/>
+        <chip type="audio" tag="ay2" name="AY-3-8910A PSG" clock="1500000"/>
+        <chip type="audio" tag="ay3" name="AY-3-8910A PSG" clock="1500000"/>
+        <chip type="audio" tag="ay4" name="AY-3-8910A PSG" clock="1500000"/>
+        <chip type="audio" tag="dac" name="8-Bit R-2R DAC"/>
+        <chip type="audio" tag="dacvol" name="Discrete Sound"/>
+        <display tag="screen" type="raster" rotate="0" width="256" height="224" refresh="60.000000" />
+        <sound channels="1"/>
+        <input players="2" coins="3" tilt="yes">
+            <control type="joy" player="1" buttons="2" ways="8"/>
+            <control type="joy" player="2" buttons="2" ways="8"/>
+        </input>
+        <dipswitch name="Bonus Life" tag="DSW1" mask="3">
+            <diplocation name="SWA" number="1"/>
+            <diplocation name="SWA" number="2"/>
+            <dipvalue name="10000" value="3" default="yes"/>
+            <dipvalue name="15000" value="2"/>
+            <dipvalue name="20000" value="1"/>
+            <dipvalue name="25000" value="0"/>
+        </dipswitch>
+        <dipswitch name="Free Play" tag="DSW1" mask="4">
+            <diplocation name="SWA" number="3"/>
+            <dipvalue name="Off" value="4" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Lives" tag="DSW1" mask="24">
+            <diplocation name="SWA" number="4"/>
+            <diplocation name="SWA" number="5"/>
+            <dipvalue name="3" value="24" default="yes"/>
+            <dipvalue name="4" value="16"/>
+            <dipvalue name="5" value="8"/>
+            <dipvalue name="6" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unknown" tag="DSW1" mask="32">
+            <diplocation name="SWA" number="6"/>
+            <dipvalue name="Off" value="32" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Flip Screen" tag="DSW1" mask="64">
+            <diplocation name="SWA" number="7"/>
+            <dipvalue name="Off" value="64" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Cabinet" tag="DSW1" mask="128">
+            <diplocation name="SWA" number="8"/>
+            <dipvalue name="Upright" value="0" default="yes"/>
+            <dipvalue name="Cocktail" value="128"/>
+        </dipswitch>
+        <dipswitch name="Coin A" tag="DSW2" mask="15">
+            <diplocation name="SWB" number="1"/>
+            <diplocation name="SWB" number="2"/>
+            <diplocation name="SWB" number="3"/>
+            <diplocation name="SWB" number="4"/>
+            <dipvalue name="9 Coins/1 Credit" value="15"/>
+            <dipvalue name="8 Coins/1 Credit" value="14"/>
+            <dipvalue name="7 Coins/1 Credit" value="13"/>
+            <dipvalue name="6 Coins/1 Credit" value="12"/>
+            <dipvalue name="5 Coins/1 Credit" value="11"/>
+            <dipvalue name="4 Coins/1 Credit" value="10"/>
+            <dipvalue name="3 Coins/1 Credit" value="9"/>
+            <dipvalue name="2 Coins/1 Credit" value="8"/>
+            <dipvalue name="1 Coin/1 Credit" value="0" default="yes"/>
+            <dipvalue name="1 Coin/2 Credits" value="1"/>
+            <dipvalue name="1 Coin/3 Credits" value="2"/>
+            <dipvalue name="1 Coin/4 Credits" value="3"/>
+            <dipvalue name="1 Coin/5 Credits" value="4"/>
+            <dipvalue name="1 Coin/6 Credits" value="5"/>
+            <dipvalue name="1 Coin/7 Credits" value="6"/>
+            <dipvalue name="1 Coin/8 Credits" value="7"/>
+        </dipswitch>
+        <dipswitch name="Coin B" tag="DSW2" mask="240">
+            <diplocation name="SWB" number="5"/>
+            <diplocation name="SWB" number="6"/>
+            <diplocation name="SWB" number="7"/>
+            <diplocation name="SWB" number="8"/>
+            <dipvalue name="9 Coins/1 Credit" value="240"/>
+            <dipvalue name="8 Coins/1 Credit" value="224"/>
+            <dipvalue name="7 Coins/1 Credit" value="208"/>
+            <dipvalue name="6 Coins/1 Credit" value="192"/>
+            <dipvalue name="5 Coins/1 Credit" value="176"/>
+            <dipvalue name="4 Coins/1 Credit" value="160"/>
+            <dipvalue name="3 Coins/1 Credit" value="144"/>
+            <dipvalue name="2 Coins/1 Credit" value="128"/>
+            <dipvalue name="1 Coin/1 Credit" value="0" default="yes"/>
+            <dipvalue name="1 Coin/2 Credits" value="16"/>
+            <dipvalue name="1 Coin/3 Credits" value="32"/>
+            <dipvalue name="1 Coin/4 Credits" value="48"/>
+            <dipvalue name="1 Coin/5 Credits" value="64"/>
+            <dipvalue name="1 Coin/6 Credits" value="80"/>
+            <dipvalue name="1 Coin/7 Credits" value="96"/>
+            <dipvalue name="1 Coin/8 Credits" value="112"/>
+        </dipswitch>
+        <dipswitch name="Difficulty" tag="DSW3" mask="3">
+            <diplocation name="SWC" number="1"/>
+            <diplocation name="SWC" number="2"/>
+            <dipvalue name="Easiest" value="3" default="yes"/>
+            <dipvalue name="Easy" value="2"/>
+            <dipvalue name="Normal" value="1"/>
+            <dipvalue name="Hard" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unknown" tag="DSW3" mask="4">
+            <diplocation name="SWC" number="3"/>
+            <dipvalue name="Off" value="4" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unknown" tag="DSW3" mask="8">
+            <diplocation name="SWC" number="4"/>
+            <dipvalue name="Off" value="8" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Coinage Display" tag="DSW3" mask="16">
+            <diplocation name="SWC" number="5"/>
+            <dipvalue name="Coins/Credits" value="16" default="yes"/>
+            <dipvalue name="Insert Coin" value="0"/>
+        </dipswitch>
+        <dipswitch name="Year Display" tag="DSW3" mask="32">
+            <diplocation name="SWC" number="6"/>
+            <dipvalue name="No" value="0"/>
+            <dipvalue name="Yes" value="32" default="yes"/>
+        </dipswitch>
+        <dipswitch name="Hit Detection" tag="DSW3" mask="64">
+            <diplocation name="SWC" number="7"/>
+            <dipvalue name="Normal Game" value="64" default="yes"/>
+            <dipvalue name="No Hit" value="0"/>
+        </dipswitch>
+        <dipswitch name="Coin Slots" tag="DSW3" mask="128">
+            <diplocation name="SWC" number="8"/>
+            <dipvalue name="A and B" value="128" default="yes"/>
+            <dipvalue name="A only" value="0"/>
+        </dipswitch>
+        <port tag=":DSW1">
+        </port>
+        <port tag=":DSW2">
+        </port>
+        <port tag=":DSW3">
+        </port>
+        <port tag=":IN0">
+        </port>
+        <port tag=":IN1">
+        </port>
+        <port tag=":IN2">
+        </port>
+        <port tag=":IN3">
+        </port>
+        <port tag=":IN4">
+        </port>
+        <driver status="good" emulation="good" savestate="supported"/>
+    </machine>
+    <machine name="robocop" sourcefile="dec0.cpp">
+        <description>Robocop (World revision 4)</description>
+        <year>1988</year>
+        <manufacturer>Data East Corporation</manufacturer>
+        <rom name="ep05-4.11c" size="65536" crc="29c35379" sha1="a352c2d0dff843c1e0b5cade506a8b33c2d781f1" region="maincpu" offset="0"/>
+        <rom name="ep01-4.11b" size="65536" crc="77507c69" sha1="843b678b4a297d6d99ea7d797dedde33e5003119" region="maincpu" offset="1"/>
+        <rom name="ep04-3" size="65536" crc="39181778" sha1="f91b63e541ef547d34d144c80bc0344b6acf8de0" region="maincpu" offset="20000"/>
+        <rom name="ep00-3" size="65536" crc="e128541f" sha1="c123b6ba282b552890319d97348015361264fa3b" region="maincpu" offset="20001"/>
+        <rom name="ep03-3" size="32768" crc="5b164b24" sha1="b217a2ac8b26aebd208631a13030487ed27d232e" region="audiocpu" offset="8000"/>
+        <rom name="en_24_mb7124e.a2" size="512" crc="b8e2ca98" sha1="bd1e193c544dc17a665aa6c4d3b844775ed08b43" region="sub" offset="1e00"/>
+        <rom name="ep23" size="65536" crc="a77e4ab1" sha1="d06cc847192b6c7f642e4ff7128e298d0aa034b2" region="gfx1" offset="0"/>
+        <rom name="ep22" size="65536" crc="9fbd6903" sha1="9ac6ac8a18c23e915e8ae3782867d10c0bd65778" region="gfx1" offset="10000"/>
+        <rom name="ep20" size="65536" crc="1d8d38b8" sha1="9add6349f8a578fb86b678cef921d6ec0cfccdad" region="gfx2" offset="0"/>
+        <rom name="ep21" size="65536" crc="187929b2" sha1="deca1f0a52584769caee1d2302617aa957c56a71" region="gfx2" offset="10000"/>
+        <rom name="ep18" size="65536" crc="b6580b5e" sha1="ee216d8db89b8cb7a51a4e19bf6f17788547156b" region="gfx2" offset="20000"/>
+        <rom name="ep19" size="65536" crc="9bad01c7" sha1="947c7f9d0facaea13a924274adde0e996be7b999" region="gfx2" offset="30000"/>
+        <rom name="ep14" size="32768" crc="ca56ceda" sha1="edbaa29fc166cddf071ff5e59cfcfb7eeb127d68" region="gfx3" offset="0"/>
+        <rom name="ep15" size="32768" crc="a945269c" sha1="de0b387e8699298f7682d6d7ca803a209888f7a1" region="gfx3" offset="8000"/>
+        <rom name="ep16" size="32768" crc="e7fa4d58" sha1="32e3f649b4f112a4e6be00068473b82c627bc8d1" region="gfx3" offset="10000"/>
+        <rom name="ep17" size="32768" crc="84aae89d" sha1="037520bd0f291f862c2211a6f35b2a8a54f10b2a" region="gfx3" offset="18000"/>
+        <rom name="ep07" size="65536" crc="495d75cf" sha1="0ffe677d53b7675073902e9bd40e4150f2cdfb1a" region="gfx4" offset="0"/>
+        <rom name="ep06" size="32768" crc="a2ae32e2" sha1="4e8182205563da9d50a831c65951645e278b03e6" region="gfx4" offset="10000"/>
+        <rom name="ep11" size="65536" crc="62fa425a" sha1="be88c1a6436df8a456c405822e28c472e3e79a69" region="gfx4" offset="20000"/>
+        <rom name="ep10" size="32768" crc="cce3bd95" sha1="00bbb197824d970b0e404167ca4ae53e1955ad94" region="gfx4" offset="30000"/>
+        <rom name="ep09" size="65536" crc="11bed656" sha1="6a7d984a32982d9aef8ea7d8a720925036e7046e" region="gfx4" offset="40000"/>
+        <rom name="ep08" size="32768" crc="c45c7b4c" sha1="70e3e475fe767eefa4cc1d6ca052271a099ff7a8" region="gfx4" offset="50000"/>
+        <rom name="ep13" size="65536" crc="8fca9f28" sha1="cac85bf2b66e49e22c33c85bdb5712feef6aae7e" region="gfx4" offset="60000"/>
+        <rom name="ep12" size="32768" crc="3cd1d0c3" sha1="ca3546cf51ebb10dfa4e78954f0212e8fcdb3d57" region="gfx4" offset="70000"/>
+        <rom name="ep02" size="65536" crc="711ce46f" sha1="939a8545e53776ff2180d2c7e63bc997689c088e" region="oki" offset="0"/>
+        <rom name="mb7116e_a-1.12c" size="512" crc="86e775f8" sha1="e8dee3d56fb5ca0fd7f9ce05a84674abb139d008" region="proms" offset="0"/>
+        <rom name="mb7122e_a-2.17e" size="1024" crc="a5cda23e" sha1="d6c8534ae3c95b47a0701047fef67f15dd71f3fe" region="proms" offset="200"/>
+        <device_ref name="buffered_spriteram16"/>
+        <device_ref name="screen"/>
+        <device_ref name="gfxdecode"/>
+        <device_ref name="palette"/>
+        <device_ref name="deco_back06"/>
+        <device_ref name="deco_back06"/>
+        <device_ref name="deco_back06"/>
+        <device_ref name="deco_mxc06"/>
+        <device_ref name="generic_latch_8"/>
+        <device_ref name="m68000"/>
+        <device_ref name="m6502"/>
+        <device_ref name="speaker"/>
+        <device_ref name="ym2203"/>
+        <device_ref name="ym3812"/>
+        <device_ref name="okim6295"/>
+        <device_ref name="h6280"/>
+        <device_ref name="c6280"/>
+        <device_ref name="mb8421"/>
+        <chip type="cpu" tag="maincpu" name="Motorola MC68000" clock="10000000"/>
+        <chip type="cpu" tag="audiocpu" name="MOS Technology 6502" clock="1500000"/>
+        <chip type="cpu" tag="sub" name="Hudson Soft HuC6280" clock="1342329"/>
+        <chip type="audio" tag="mono" name="Speaker"/>
+        <chip type="audio" tag="ym1" name="YM2203 OPN" clock="1500000"/>
+        <chip type="audio" tag="ym2" name="YM3812 OPL2" clock="3000000"/>
+        <chip type="audio" tag="oki" name="OKI MSM6295 ADPCM" clock="1000000"/>
+        <chip type="audio" tag="sub" name="Hudson Soft HuC6280" clock="1342329"/>
+        <chip type="audio" tag="sub:psg" name="Hudson Soft HuC6280 PSG" clock="671164"/>
+        <display tag="screen" type="raster" rotate="0" width="256" height="240" refresh="57.444853" pixclock="6000000" htotal="384" hbend="0" hbstart="256" vtotal="272" vbend="8" vbstart="248" />
+        <sound channels="1"/>
+        <input players="2" coins="2">
+            <control type="joy" player="1" buttons="2" ways="8"/>
+            <control type="joy" player="2" buttons="2" ways="8"/>
+        </input>
+        <dipswitch name="Coin A" tag="DSW" mask="3">
+            <diplocation name="SW1" number="1"/>
+            <diplocation name="SW1" number="2"/>
+            <dipvalue name="3 Coins/1 Credit" value="0"/>
+            <dipvalue name="2 Coins/1 Credit" value="1"/>
+            <dipvalue name="1 Coin/1 Credit" value="3" default="yes"/>
+            <dipvalue name="1 Coin/2 Credits" value="2"/>
+        </dipswitch>
+        <dipswitch name="Coin B" tag="DSW" mask="12">
+            <diplocation name="SW1" number="3"/>
+            <diplocation name="SW1" number="4"/>
+            <dipvalue name="3 Coins/1 Credit" value="0"/>
+            <dipvalue name="2 Coins/1 Credit" value="4"/>
+            <dipvalue name="1 Coin/1 Credit" value="12" default="yes"/>
+            <dipvalue name="1 Coin/2 Credits" value="8"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="DSW" mask="16">
+            <diplocation name="SW1" number="5"/>
+            <dipvalue name="Off" value="16" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Demo Sounds" tag="DSW" mask="32">
+            <diplocation name="SW1" number="6"/>
+            <dipvalue name="Off" value="0"/>
+            <dipvalue name="On" value="32" default="yes"/>
+        </dipswitch>
+        <dipswitch name="Flip Screen" tag="DSW" mask="64">
+            <diplocation name="SW1" number="7"/>
+            <dipvalue name="Off" value="64" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <dipswitch name="Cabinet" tag="DSW" mask="128">
+            <diplocation name="SW1" number="8"/>
+            <dipvalue name="Upright" value="0" default="yes"/>
+            <dipvalue name="Cocktail" value="128"/>
+        </dipswitch>
+        <dipswitch name="Player Energy" tag="DSW" mask="768">
+            <diplocation name="SW2" number="1"/>
+            <diplocation name="SW2" number="2"/>
+            <dipvalue name="Low" value="256"/>
+            <dipvalue name="Medium" value="768" default="yes"/>
+            <dipvalue name="High" value="512"/>
+            <dipvalue name="Very High" value="0"/>
+        </dipswitch>
+        <dipswitch name="Difficulty" tag="DSW" mask="3072">
+            <diplocation name="SW2" number="3"/>
+            <diplocation name="SW2" number="4"/>
+            <dipvalue name="Easy" value="2048"/>
+            <dipvalue name="Normal" value="3072" default="yes"/>
+            <dipvalue name="Hard" value="1024"/>
+            <dipvalue name="Hardest" value="0"/>
+        </dipswitch>
+        <dipswitch name="Allow Continue" tag="DSW" mask="4096">
+            <diplocation name="SW2" number="5"/>
+            <dipvalue name="No" value="0"/>
+            <dipvalue name="Yes" value="4096" default="yes"/>
+        </dipswitch>
+        <dipswitch name="Bonus Stage Energy" tag="DSW" mask="8192">
+            <diplocation name="SW2" number="6"/>
+            <dipvalue name="Low" value="0"/>
+            <dipvalue name="High" value="8192" default="yes"/>
+        </dipswitch>
+        <dipswitch name="Brink Time" tag="DSW" mask="16384">
+            <diplocation name="SW2" number="7"/>
+            <dipvalue name="Normal" value="16384" default="yes"/>
+            <dipvalue name="Less" value="0"/>
+        </dipswitch>
+        <dipswitch name="Unused" tag="DSW" mask="32768">
+            <diplocation name="SW2" number="8"/>
+            <dipvalue name="Off" value="32768" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <port tag=":AN0">
+        </port>
+        <port tag=":AN1">
+        </port>
+        <port tag=":DSW">
+        </port>
+        <port tag=":INPUTS">
+        </port>
+        <port tag=":SYSTEM">
+        </port>
+        <driver status="imperfect" emulation="good" savestate="supported"/>
+        <feature type="sound" overall="imperfect"/>
+    </machine>
+    <machine name="as_acp" sourcefile="astrafr.cpp" ismechanical="yes">
+        <description>unknown Astra 'ACP' (Astra, V403)</description>
+        <year>200?</year>
+        <manufacturer>Astra</manufacturer>
+        <rom name="acpv403.u1" size="1048576" crc="b1af78be" sha1="6cacd0e815cea236130d35ac742076d24d825d66" region="maincpu" offset="0"/>
+        <rom name="acpv403.u2" size="1048576" crc="ba6d3127" sha1="f2511455d387ee588b106b9f2823e44b6e9328c9" region="maincpu" offset="1"/>
+        <rom name="403compak.u1" size="1048576" crc="d3a37514" sha1="fe58c3172272a119431cdebcb27b50b8c1d36877" region="altrevs" offset="0"/>
+        <rom name="403conx.u1" size="1048576" crc="6fbe1035" sha1="7b03a6b1cc4c89e7bdf583befe18d98e5f4a159b" region="altrevs" offset="0"/>
+        <device_ref name="mc68340"/>
+        <device_ref name="mc68340sermod"/>
+        <device_ref name="duart_channel"/>
+        <device_ref name="duart_channel"/>
+        <device_ref name="mc68340timmod"/>
+        <device_ref name="mc68340timmod"/>
+        <chip type="cpu" tag="maincpu" name="MC68340" clock="16000000"/>
+        <sound channels="0"/>
+        <input players="0">
+        </input>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported" requiresartwork="yes"/>
+        <feature type="sound" status="unemulated"/>
+    </machine>
+</mame> 
