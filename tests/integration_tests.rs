@@ -31,7 +31,7 @@ fn should_build_set_with_no_errors() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag);
+    let config = build_config(&tag, false);
 
     let result = roms_curator::run(&config);
 
@@ -53,7 +53,7 @@ fn should_separate_all_working_roms() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag);
+    let config = build_config(&tag, false);
 
     let results = roms_curator::run_debug(&config).unwrap();
 
@@ -98,7 +98,7 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag);
+    let config = build_config(&tag, false);
 
     let results = roms_curator::run_debug(&config).unwrap();
 
@@ -152,16 +152,60 @@ fn should_copy_files_to_destination_folder_and_create_report() {
 
     assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
 
-    // clean_up(&tag);
+    clean_up(&tag);
 }
 
-fn build_config(tag: &str) -> Config {
+#[test]
+fn simulation_should_generate_report_but_not_copy_roms() {
+    let tag = get_test_tag();
+    set_up(&tag);
+
+    let config = build_config(&tag, true);
+
+    let results = roms_curator::run_debug(&config).unwrap();
+
+    let report = results.copy_roms(&config).expect("Error copying roms");
+
+    assert_eq!(report.total_working, 2);
+    assert_eq!(report.total_other, 4);
+
+    let test_folder = Path::new(TARGET_FOLDER).join(&tag);
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_WORKING_FOLDER_NAME);
+    let working_roms = get_files_from_folder(path.to_str().unwrap());
+    assert!(working_roms.is_empty());
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_OTHER_FOLDER_NAME);
+    let other_roms = get_files_from_folder(path.to_str().unwrap());
+    assert!(other_roms.is_empty());
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
+    let chd_other_roms = get_files_from_folder(path.to_str().unwrap());
+    assert!(chd_other_roms.is_empty());
+
+    assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
+
+    clean_up(&tag);
+}
+
+fn get_files_from_folder(path: &str) -> Vec<String> {
+    let mut roms: Vec<String> = Vec::new();
+    for entry in read_dir(path).unwrap() {
+        let path = entry.unwrap().path();
+        let file_name = path.file_name().unwrap().to_str().unwrap();
+        roms.push(file_name.to_string());
+    }
+    roms
+}
+
+fn build_config(tag: &str, simulate: bool) -> Config {
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
     let mame_xml_path = test_folder.join(MAME_XML_FILE_NAME).to_str().unwrap().to_string();
     let catver_path = test_folder.join(CATEGORY_LIST_FILE_NAME).to_str().unwrap().to_string();
     let destination_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).to_str().unwrap().to_string();
     let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
     let ignore_not_working_chd = false;
+    let simulation = simulate;
 
     Config {
         mame_xml_path,
@@ -170,6 +214,7 @@ fn build_config(tag: &str) -> Config {
         destination_path,
         report_path,
         ignore_not_working_chd,
+        simulation,
     }
 }
 

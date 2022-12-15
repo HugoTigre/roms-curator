@@ -9,8 +9,7 @@ description = "..."
 
 [dependencies]
 # xml
-roxmltree = "0.15"
-#roxmltree = { git = "https://github.com/RazrFalcon/roxmltree.git" }
+roxmltree = "0.16"
 # logging
 log = "0.4"
 log4rs = "1.1"

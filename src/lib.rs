@@ -66,7 +66,7 @@ fn build_category_list(file_path: String) -> Result<RomCategories, Box<dyn Error
 }
 
 fn read_mame_xml(contents: &str) -> Result<Document, Box<dyn Error>> {
-    let opt = roxmltree::ParsingOptions { allow_dtd: true };
+    let opt = roxmltree::ParsingOptions { allow_dtd: true, nodes_limit: u32::MAX };
     let doc = Document::parse_with_options(contents, opt)?;
     Ok(doc)
 }

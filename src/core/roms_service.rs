@@ -128,6 +128,7 @@ pub trait RomsExt {
     fn check_paths(config: &Config) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, config: &Config) -> bool;
+    fn copy_rom(path: &PathBuf, destination: &PathBuf, file_name: &str, config: &Config) -> bool;
 }
 
 impl RomsExt for Roms {
@@ -153,13 +154,8 @@ impl RomsExt for Roms {
                             Self::get_destination_folder(rom, &destination_paths)
                                 .join(file_name);
 
-                        let moved = if let Some(err) = fs::copy(&path, &destination).err() {
-                            error!("Error copying file {}: {}", file_name, err);
-                            false
-                        } else {
-                            something_failed = false;
-                            true
-                        };
+                        let moved = Self::copy_rom(&path, &destination, file_name, config);
+                        if !moved { something_failed = true };
 
                         let report_detail_entry = ReportDetailEntry { rom_name: file_name.to_string(), moved, is_chd: !rom.data.chd.is_empty() };
 
@@ -188,14 +184,8 @@ impl RomsExt for Roms {
     }
 
     fn check_paths(config: &Config) -> Result<bool, &'static str> {
-        if config.source_path.is_empty() {
-            return Err("Missing roms source path.");
-        }
-
-        if config.destination_path.is_empty() {
-            return Err("Missing roms destination path.");
-        }
-
+        if config.source_path.is_empty() { return Err("Missing roms source path."); }
+        if config.destination_path.is_empty() { return Err("Missing roms destination path."); }
         Ok(true)
     }
 
@@ -232,6 +222,16 @@ impl RomsExt for Roms {
             return false;
         }
 
+        true
+    }
+
+    fn copy_rom(path: &PathBuf, destination: &PathBuf, file_name: &str, config: &Config) -> bool {
+        if !config.simulation {
+            if let Some(err) = fs::copy(&path, &destination).err() {
+                error!("Error copying file {}: {}", file_name, err);
+                return false;
+            }
+        }
         true
     }
 }

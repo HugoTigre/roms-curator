@@ -1,17 +1,24 @@
 extern crate core;
 
 use std::{env, process};
-use log::error;
+use std::path::Path;
+use log4rs::append::console::ConsoleAppender;
+use log4rs::config::{Appender, Root};
+use log4rs::encode::pattern::PatternEncoder;
+use log::{error, LevelFilter};
 use roms_curator::core::roms_service::RomsExt;
 use roms_curator::models::config::Config;
 
 fn main() {
-    log4rs::init_file("logging.yaml", Default::default()).unwrap();
+    set_up_logging();
 
     let config = Config::new().build(env::args()).unwrap_or_else(|err| {
         error!("Problem parsing arguments: {err}");
+        println!("Please run 'roms-curator.exe --help' for instructions.");
         process::exit(1);
     });
+
+    if config == Config::default() { process::exit(0) }
 
     let roms = roms_curator::run_debug(&config).unwrap_or_else(|err| {
         error!("Application error: {err}");
@@ -32,4 +39,21 @@ fn main() {
             });
         }
     };
+}
+
+fn set_up_logging() {
+    if Path::new("logging.yaml").exists() {
+        log4rs::init_file("logging.yaml", Default::default()).unwrap();
+    } else {
+        let stdout_appender = ConsoleAppender::builder()
+            .encoder(Box::new(PatternEncoder::new("{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}")))
+            .build();
+
+        let config = log4rs::Config::builder()
+            .appender(Appender::builder().build("stdout", Box::new(stdout_appender)))
+            .build(Root::builder().appender("stdout").build(LevelFilter::Warn))
+            .unwrap();
+
+        log4rs::init_config(config).unwrap();
+    }
 }
