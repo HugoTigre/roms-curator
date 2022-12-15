@@ -8,7 +8,9 @@ with only working roms from your current rom set.
 
 - [roms-curator](#roms-curator)
   - [Get needed rom metadata files](#get-needed-rom-metadata-files)
+  - [How this works](#how-this-works)
   - [Run instructions](#run-instructions)
+  - [QA](#qa)
   - [Useful links](#useful-links)
   - [Planned for the future (maybe)](#planned-for-the-future-maybe)
 
@@ -25,18 +27,18 @@ This program has 2 mandatory dependencies:
     ```
 - Rom categories file
   - MAME does not categorize roms (some exceptions),
-    to categorize roms you need the ini files which can be
-    downloaded [here](https://www.progettosnaps.net/support/).
+    to categorize roms you need the a `MAME Support File` file which can
+    be downloaded [here](https://www.progettosnaps.net/support/).
   - download the package for your roms set version and extract the
     catver.ini file.
 
 ## How this works
 
-`roms-curator` will use both `mame.xml` and `catver.ini` files to
-go through your rom collection and categorize all roms with
-`working` or `not-working` states as well as specific sub-categories, like
-type of rom/game (bios, system, mechanical, etc). From here it will copy your
-roms to a subdirectory in the specified `destination_dir`.
+`roms-curator` will use `mame.xml`, `catver.ini` and some custom logic 
+(from trial and error) to go through your rom collection and categorize all
+roms with `working` or `not-working` states as well as specific sub-categories,
+like type of rom/game (bios, system, mechanical, etc). From here it will copy
+your roms to a subdirectory in the specified `destination_dir`.
 
 It can also generate a report with all copied files and/or errors encountered.
 
@@ -57,6 +59,10 @@ like a working rom needing a bios rom or a CHD rom to work properly).
 ## Run instructions
 
 See [here](docs/run-instructions.md)
+
+## QA
+
+See [here](docs/qa.md)
 
 ## Useful links
 
