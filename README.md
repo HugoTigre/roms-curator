@@ -60,9 +60,9 @@ like a working rom needing a bios rom or a CHD rom to work properly).
 
 See [here](docs/run-instructions.md)
 
-## QA
+## FAQ
 
-See [here](docs/qa.md)
+See [here](docs/faq.md)
 
 ## Useful links
 
