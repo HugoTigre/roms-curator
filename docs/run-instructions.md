@@ -22,7 +22,7 @@ The rest of the arguments are mandatory.
 roms-curator \
 --mame_xml_path=/mame/mame.xml \
 --catver_path=/mame/catver.ini \
---source_path=/roms \
+--source_path=/roms,/chd-roms \
 --destination_path=/roms-new/ \
 --report_path=/mame/report/report.md
 ```
@@ -38,7 +38,7 @@ all operations as if you weren't doing a simulation.
 roms-curator \
 --mame_xml_path=/mame/mame.xml \
 --catver_path=/mame/catver.ini \
---source_path=/roms \
+--source_path=/roms,/chd-roms \
 --destination_path=/roms-new/ \
 --report_path=/mame/report/report.md
 --simulate=true
@@ -59,7 +59,7 @@ only want to create a working collection set.
 roms-curator \
 --mame_xml_path=/mame/mame.xml \
 --catver_path=/mame/catver.ini \
---source_path=/roms \
+--source_path=/roms,/chd-roms \
 --destination_path=/roms-new/ \
 --ignore_not_working_chd=true
 ```
@@ -70,7 +70,7 @@ roms-curator \
 roms-curator \
 --mame_xml_path=/mame/mame.xml \
 --catver_path=/mame/catver.ini \
---source_path=/roms \
+--source_path=/roms,/chd-roms \
 --destination_path=/roms-new/ \
 --report_path=/mame/report/report.md
 --ignore_not_working_chd=true
