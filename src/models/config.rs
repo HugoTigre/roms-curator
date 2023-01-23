@@ -1,5 +1,5 @@
 use std::fs;
-use std::fs::metadata;
+use std::fs::{File, metadata};
 use std::path::{Path, PathBuf};
 
 /// Stores startup program arguments
@@ -11,7 +11,7 @@ pub struct Config {
     pub destination_path: String,
     pub report_path: String,
     pub ignore_not_working_chd: bool,
-    pub simulation: bool, // if true only runs simulation, needs report_path set
+    pub simulate: bool, // if true only runs simulation, needs report_path set
 }
 
 pub struct DestinationFolders {
@@ -40,13 +40,13 @@ impl Config {
             let arg_split: Vec<&str> = arg.split('=').collect();
 
             if arg_split.len() != 2 {
-                // let msg = format!("{}{}", "Invalid argument: ", arg);
                 return Err("Invalid argument");
             }
 
             let param = arg_split[0].trim().to_lowercase();
             if !Self::check_param(&param) {
-                return Err("Argument not recognized.");
+                eprintln!("Don't recognize argument {}", param);
+                return Err("Argument not recognized");
             }
 
             let value = arg_split[1].trim();
@@ -69,6 +69,7 @@ impl Config {
                 }
                 "--source_path" => {
                     let paths: Vec<&str> = value.split(',').collect();
+
                     let _fail = paths.iter().any(|path| {
                         let metadata = metadata(path);
                         metadata.is_err() || metadata.unwrap().is_file()
@@ -79,22 +80,41 @@ impl Config {
                     self.source_path = paths.iter().map(|v| v.to_string()).collect()
                 }
                 "--destination_path" => {
-                    if metadata(value).unwrap().is_file() {
-                        return Err("Destination path needs to be a directory.");
+                    let destination_path = Path::new(value);
+
+                    if destination_path.is_file() { return Err("Destination path needs to be a directory."); }
+
+                    if !destination_path.exists() {
+                        if fs::create_dir_all(value).is_err() {
+                            return Err("Destination directory cannot be created, verify path and/or permissions.");
+                        }
                     }
+
                     self.destination_path = value.to_string()
                 }
                 "--report_path" => {
-                    if metadata(value).unwrap().is_file() {
-                        return Err("Report path needs to be a file.");
+                    if !value.ends_with(".md") {
+                        return Err("Report file should have the extension .md");
+                    }
+
+                    let report = Path::new(value);
+
+                    if report.is_file() {
+                        return Err("Report file already exists.");
+                    } else {
+                        if File::create(value).is_err() {
+                            return Err("Report file cannot be created, verify path and/or permissions.");
+                        } else {
+                            fs::remove_file(report).unwrap();
+                        }
                     }
                     self.report_path = value.to_string()
                 }
                 "--ignore_not_working_chd" => {
                     self.ignore_not_working_chd = value.eq_ignore_ascii_case("true");
                 }
-                "--simulation" => {
-                    self.simulation = value.eq_ignore_ascii_case("true");
+                "--simulate" => {
+                    self.simulate = value.eq_ignore_ascii_case("true");
                 }
                 _ =>
                     println!("{} param ignored (not recognized).", param)
@@ -110,7 +130,7 @@ impl Config {
             destination_path: self.destination_path,
             report_path: self.report_path,
             ignore_not_working_chd: self.ignore_not_working_chd,
-            simulation: self.simulation,
+            simulate: self.simulate,
         })
     }
 
@@ -119,7 +139,8 @@ impl Config {
             param,
             "--mame_xml_path" | "--catver_path"
             | "--source_path" | "--destination_path"
-            | "--create_report" | "--simulation"
+            | "--report_path" | "--simulate"
+            | "--ignore_not_working_chd"
         )
     }
 
@@ -132,7 +153,7 @@ impl Config {
         if config.source_path.iter().any(|path| path.eq_ignore_ascii_case(config.destination_path.as_str())) {
             return Err("SOURCE_PATH and DESTINATION_PATH cannot be the same.");
         }
-        if config.simulation && config.report_path.is_empty() {
+        if config.simulate && config.report_path.is_empty() {
             return Err("Simulation mode needs REPORT_PATH location.");
         }
         Ok(true)

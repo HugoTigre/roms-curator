@@ -214,7 +214,7 @@ fn build_config(tag: &str, simulate: bool) -> Config {
         destination_path,
         report_path,
         ignore_not_working_chd,
-        simulation,
+        simulate: simulation,
     }
 }
 

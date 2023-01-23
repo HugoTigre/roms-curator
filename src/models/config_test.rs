@@ -1,4 +1,6 @@
+use std::path::Path;
 use crate::models::config::Config;
+use crate::utils::{create_dir, remove_dir};
 
 #[test]
 fn should_validate_missing_mame_xml_path() {
@@ -62,7 +64,7 @@ fn should_set_defaults() {
         destination_path: "/".to_string(),
         report_path: "".to_string(),
         ignore_not_working_chd: false,
-        simulation: false,
+        simulate: false,
     };
 
     assert!(matches!(result, Ok(_config)));
@@ -84,11 +86,11 @@ fn should_parse_source_paths() {
     let _config = Config {
         mame_xml_path: "some-valid-path.xml".to_string(),
         catver_path: "some-valid-path.ini".to_string(),
-        source_path: vec!["./".to_string(),"target/".to_string(),"target".to_string()],
+        source_path: vec!["./".to_string(), "target/".to_string(), "target".to_string()],
         destination_path: "/".to_string(),
         report_path: "".to_string(),
         ignore_not_working_chd: false,
-        simulation: false,
+        simulate: false,
     };
 
     assert_eq!(result.unwrap(), _config);
@@ -118,11 +120,52 @@ fn simulation_mode_needs_report_path() {
         "--catver_path=some-valid-path.ini".to_string(),
         "--source_path=target/".to_string(),
         "--destination_path=/".to_string(),
-        "--simulation=true".to_string(),
+        "--simulate=true".to_string(),
     ];
 
     let result = Config::new()
         .build(args.into_iter());
 
     assert!(matches!(result, Err("Simulation mode needs REPORT_PATH location.")));
+}
+
+#[test]
+fn should_support_windows_paths() {
+    let roms_folder = Path::new("target/tests/roms");
+    remove_dir(roms_folder);
+    let source_folder_1 = roms_folder.join("MAME 0.244 ROMs (merged)");
+    let source_folder_2 = roms_folder.join("MAME 0.243 CHDs (merged)");
+    let destination_folder_2 = roms_folder.join("roms-curated");
+
+    create_dir(&roms_folder);
+    create_dir(&source_folder_1);
+    create_dir(&source_folder_2);
+    create_dir(&destination_folder_2);
+
+    let args = vec![
+        "roms-curator".to_string(),
+        "--mame_xml_path=C:\\Users\\Ellie\\Desktop\\roms-curator\\mame-roms.xml".to_string(),
+        "--catver_path=C:\\Users\\Ellie\\Desktop\\roms-curator\\catver.ini".to_string(),
+        "--source_path=target\\tests\\roms\\MAME 0.244 ROMs (merged),target\\tests\\roms\\MAME 0.243 CHDs (merged)".to_string(),
+        "--destination_path=target\\tests\\roms\\roms-curated".to_string(),
+        "--report_path=target\\tests\\roms\\report.md".to_string(),
+        "--simulate=true".to_string(),
+    ];
+
+    let result = Config::new()
+        .build(args.into_iter());
+
+    let _config = Config {
+        mame_xml_path: "C:\\Users\\Ellie\\Desktop\\roms-curator\\mame-roms.xml".to_string(),
+        catver_path: "C:\\Users\\Ellie\\Desktop\\roms-curator\\catver.ini".to_string(),
+        source_path: vec!["target\\tests\\roms\\MAME 0.244 ROMs (merged)".to_string(), "target\\tests\\roms\\MAME 0.243 CHDs (merged)".to_string()],
+        destination_path: "target\\tests\\roms\\roms-curated".to_string(),
+        report_path: "target\\tests\\roms\\report.md".to_string(),
+        ignore_not_working_chd: false,
+        simulate: true,
+    };
+
+    remove_dir(roms_folder);
+
+    assert_eq!(result.unwrap(), _config);
 }

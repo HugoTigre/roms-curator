@@ -30,7 +30,7 @@ pub trait LineWriterExt {
 
 impl LineWriterExt for LineWriter<File> {
     fn write_all_roms(mut self, roms: &[ReportDetailEntry], moved: bool) -> Result<Box<LineWriter<File>>, Box<dyn Error>> {
-        self.write_all(b"```\n")?;
+        self.write_all(b"<details>\n  <summary>roms</summary>\n\n```text\n")?;
 
         roms.iter()
             .filter(|entry| entry.moved == moved)
@@ -41,7 +41,7 @@ impl LineWriterExt for LineWriter<File> {
                 self.write_all(b"\n").unwrap();
             });
 
-        self.write_all(b"```\n\n")?;
+        self.write_all(b"```\n\n</details>\n\n")?;
 
         Ok(Box::new(self))
     }
@@ -59,6 +59,10 @@ impl Report {
         let title = format!("{}{}{}\n", "# Roms-Curator report [", chrono::offset::Local::now(), "]");
         writer.write_all(title.as_bytes())?;
         writer.write_all(b"\n")?;
+
+        let toc = Self::build_toc()?;
+
+        writer.write_all(toc.as_bytes())?;
 
         let summary = Self::build_summary(self)?;
 
@@ -82,6 +86,20 @@ impl Report {
         writer.flush()?;
 
         Ok(true)
+    }
+
+    fn build_toc() -> Result<String, Box<dyn Error>> {
+        let toc = format!("{}{}{}{}{}{}{}",
+                          "- [Summary](#summary)\n",
+                          "- [Detail](#detail)\n",
+                          "  - [Moved to Working folder](#moved-to-working-folder)\n",
+                          "  - [Moved to Other folder](#moved-to-other-folder)\n",
+                          "  - [Failed moving to Working folder](#failed-moving-to-working-folder)\n",
+                          "  - [Failed moving to Other folder](#failed-moving-to-other-folder)\n",
+                          "\n"
+        );
+
+        Ok(toc)
     }
 
     fn build_summary(report: &Report) -> Result<String, Box<dyn Error>> {

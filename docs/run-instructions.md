@@ -40,7 +40,7 @@ roms-curator \
 --catver_path=/mame/catver.ini \
 --source_path=/roms \
 --destination_path=/roms-new/ \
---report_path=/mame/report/report.md
+--report_path=/mame/report/report.md \
 --simulate=true
 ```
 
@@ -72,7 +72,7 @@ roms-curator \
 --catver_path=/mame/catver.ini \
 --source_path=/roms \
 --destination_path=/roms-new/ \
---report_path=/mame/report/report.md
---ignore_not_working_chd=true
+--report_path=/mame/report/report.md \
+--ignore_not_working_chd=true \
 --simulate=true
 ```

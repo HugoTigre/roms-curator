@@ -1,8 +1,8 @@
 //! # roms-curator
 //!
 //! `roms-curator`, at the moment, is a utility to help and sort mame roms.
-//! It separates bios/working/not-working roms into subfolders, so that it can
-//! more easily be added to frontends without filling the collection with
+//! It separates bios/working/not-working/other roms into subfolders, so that it can,
+//! more easily, be added to frontends without filling the collection with
 //! stuff you don't want.
 
 use std::error::Error;
@@ -16,6 +16,7 @@ use crate::models::roms::Roms;
 
 pub mod core;
 pub mod models;
+pub mod utils;
 
 type RomCategories = HashMap<String, String>;
 
@@ -30,14 +31,14 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run_debug(config: &Config) -> Result<Roms, Box<dyn Error>> {
-    debug!("Reading {} document...", &config.catver_path);
+    println!("Reading {} document...", &config.catver_path);
     let rom_categories = build_category_list(config.catver_path.clone())?;
 
-    debug!("Reading {} document...", &config.mame_xml_path);
+    println!("Reading {} document...", &config.mame_xml_path);
     let contents = fs::read_to_string(config.mame_xml_path.clone())?;
     let doc = read_mame_xml(&contents)?;
 
-    debug!("Categorizing roms...");
+    println!("Categorizing roms...");
     let unfiltered_roms = parse(doc, rom_categories)?;
     let roms = unfiltered_roms.categorize_roms()?;
 

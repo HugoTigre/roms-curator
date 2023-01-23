@@ -226,7 +226,7 @@ impl RomsExt for Roms {
     }
 
     fn copy_rom(path: &PathBuf, destination: &PathBuf, file_name: &str, config: &Config) -> bool {
-        if !config.simulation {
+        if !config.simulate {
             if let Some(err) = fs::copy(&path, &destination).err() {
                 error!("Error copying file {}: {}", file_name, err);
                 return false;
