@@ -129,13 +129,13 @@ impl Report {
 
         let summary = format!("{}{}{}{}{}{}{}{}{}{}{}{}",
                               "## Summary",
-                              "\n\n- All OK: ", report.all_ok, " *",
+                              "\n\n- All OK: ", report.all_ok, " **",
                               working_folders_entry,
                               other_folders_entry,
                               ignored_roms_entry,
                               "\n- Roms failed to moved: ", roms_failed_to_move,
                               "\n\n",
-                              "* does not consider ignored_roms",
+                              "** (does not consider ignored_roms)",
                               "\n\n",
         );
 
