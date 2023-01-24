@@ -21,6 +21,8 @@ pub mod utils;
 type RomCategories = HashMap<String, String>;
 
 pub fn run(config: &Config) -> Result<Roms, Box<dyn Error>> {
+    info!("* Reading mame database and copying files can last a few minutes, please be patient. *");
+
     info!("Reading {} document...", &config.catver_path);
     let rom_categories = build_category_list(config.catver_path.clone())?;
 
