@@ -9,10 +9,10 @@ description = "..."
 
 [dependencies]
 # xml
-roxmltree = "0.16"
+roxmltree = "0.17"
 # logging
 log = "0.4"
-log4rs = "1.1"
+log4rs = "1.2"
 # utilities
 strum = "0.24"
 strum_macros = "0.24"
@@ -24,4 +24,4 @@ zip = "0.6"
 lazy_static = "1.4"
 
 #backtrace-on-stack-overflow = "0.2.0"
-stack-sizes = "0.5.0"
+#stack-sizes = "0.5.0"

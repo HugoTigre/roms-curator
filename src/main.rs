@@ -20,7 +20,7 @@ fn main() {
 
     if config == Config::default() { process::exit(0) }
 
-    let roms = roms_curator::run_debug(&config).unwrap_or_else(|err| {
+    let roms = roms_curator::run(&config).unwrap_or_else(|err| {
         error!("Application error: {err}");
         process::exit(1);
     });
@@ -51,7 +51,7 @@ fn set_up_logging() {
 
         let config = log4rs::Config::builder()
             .appender(Appender::builder().build("stdout", Box::new(stdout_appender)))
-            .build(Root::builder().appender("stdout").build(LevelFilter::Warn))
+            .build(Root::builder().appender("stdout").build(LevelFilter::Info))
             .unwrap();
 
         log4rs::init_config(config).unwrap();

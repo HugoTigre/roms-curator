@@ -55,7 +55,7 @@ fn should_separate_all_working_roms() {
 
     let config = build_config(&tag, false);
 
-    let results = roms_curator::run_debug(&config).unwrap();
+    let results = roms_curator::run(&config).unwrap();
 
     // get working from results
     let working: Roms = Filter::collect(
@@ -100,7 +100,7 @@ fn should_copy_files_to_destination_folder_and_create_report() {
 
     let config = build_config(&tag, false);
 
-    let results = roms_curator::run_debug(&config).unwrap();
+    let results = roms_curator::run(&config).unwrap();
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 
@@ -162,7 +162,7 @@ fn simulation_should_generate_report_but_not_copy_roms() {
 
     let config = build_config(&tag, true);
 
-    let results = roms_curator::run_debug(&config).unwrap();
+    let results = roms_curator::run(&config).unwrap();
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 

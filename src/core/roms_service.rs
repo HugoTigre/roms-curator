@@ -170,6 +170,13 @@ impl RomsExt for Roms {
                             }
                         };
                     }
+                } else {
+                    let report_detail_entry = ReportDetailEntry {
+                        rom_name: file_name.to_string(),
+                        moved: false, // doesn't matter here
+                        is_chd: false, // doesn't matter here
+                    };
+                    report.add_ignored_rom(report_detail_entry);
                 }
             };
         };

@@ -8,7 +8,7 @@
 use std::error::Error;
 use std::fs;
 use std::collections::HashMap;
-use log::debug;
+use log::{info};
 use roxmltree::Document;
 use crate::core::roms_service::{UnfilteredRomsExt, parse};
 use crate::models::config::Config;
@@ -20,25 +20,15 @@ pub mod utils;
 
 type RomCategories = HashMap<String, String>;
 
-pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
-    let working_roms = run_debug(config)?;
-
-    debug!("{:?}", &working_roms);
-
-    debug!("Splitting rom files...");
-
-    Ok(())
-}
-
-pub fn run_debug(config: &Config) -> Result<Roms, Box<dyn Error>> {
-    println!("Reading {} document...", &config.catver_path);
+pub fn run(config: &Config) -> Result<Roms, Box<dyn Error>> {
+    info!("Reading {} document...", &config.catver_path);
     let rom_categories = build_category_list(config.catver_path.clone())?;
 
-    println!("Reading {} document...", &config.mame_xml_path);
+    info!("Reading {} document...", &config.mame_xml_path);
     let contents = fs::read_to_string(config.mame_xml_path.clone())?;
     let doc = read_mame_xml(&contents)?;
 
-    println!("Categorizing roms...");
+    info!("Categorizing roms...");
     let unfiltered_roms = parse(doc, rom_categories)?;
     let roms = unfiltered_roms.categorize_roms()?;
 
