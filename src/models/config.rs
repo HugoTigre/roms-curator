@@ -2,6 +2,8 @@ use std::fs;
 use std::fs::{File, metadata};
 use std::path::{Path, PathBuf};
 
+use crate::utils::sanitize_path;
+
 /// Stores startup program arguments
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -59,56 +61,59 @@ impl Config {
                     if !value.ends_with(".xml") {
                         return Err("File needs to be a XML file, for ex, mame.xml.");
                     }
-                    self.mame_xml_path = value.to_string()
+                    self.mame_xml_path = sanitize_path(value)
                 }
                 "--catver_path" => {
                     if !value.ends_with(".ini") {
                         return Err("File needs to be a ini file, for ex, catver.ini.");
                     }
-                    self.catver_path = value.to_string()
+                    self.catver_path = sanitize_path(value)
                 }
                 "--source_path" => {
                     let paths: Vec<&str> = value.split(',').collect();
 
-                    let _fail = paths.iter().any(|path| {
+                    let paths_sanitized: Vec<String> = paths.iter()
+                        .map(|p| sanitize_path(p))
+                        .collect();
+
+                    let _fail = paths_sanitized.iter().any(|path| {
                         let metadata = metadata(path);
                         metadata.is_err() || metadata.unwrap().is_file()
                     });
                     if _fail {
                         return Err("Source path needs to be an existing directory.");
                     }
-                    self.source_path = paths.iter().map(|v| v.to_string()).collect()
+                    self.source_path = paths_sanitized
                 }
                 "--destination_path" => {
-                    let destination_path = Path::new(value);
+                    let path = sanitize_path(value);
+                    let destination_path = Path::new(path.as_str());
 
                     if destination_path.is_file() { return Err("Destination path needs to be a directory."); }
 
-                    if !destination_path.exists() {
-                        if fs::create_dir_all(value).is_err() {
-                            return Err("Destination directory cannot be created, verify path and/or permissions.");
-                        }
+                    if !destination_path.exists() &&
+                        fs::create_dir_all(destination_path).is_err() {
+                        return Err("Destination directory cannot be created, verify path and/or permissions.");
                     }
 
-                    self.destination_path = value.to_string()
+                    self.destination_path = path
                 }
                 "--report_path" => {
                     if !value.ends_with(".md") {
                         return Err("Report file should have the extension .md");
                     }
 
-                    let report = Path::new(value);
+                    let path = sanitize_path(value);
+                    let report = Path::new(path.as_str());
 
                     if report.is_file() {
                         return Err("Report file already exists.");
+                    } else if File::create(report).is_err() {
+                        return Err("Report file cannot be created, verify path and/or permissions.");
                     } else {
-                        if File::create(value).is_err() {
-                            return Err("Report file cannot be created, verify path and/or permissions.");
-                        } else {
-                            fs::remove_file(report).unwrap();
-                        }
+                        fs::remove_file(report).unwrap();
                     }
-                    self.report_path = value.to_string()
+                    self.report_path = path
                 }
                 "--ignore_not_working_chd" => {
                     self.ignore_not_working_chd = value.eq_ignore_ascii_case("true");

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{env, fs};
 use std::path::Path;
 
 pub fn create_dir(path: &Path) {
@@ -22,5 +22,13 @@ pub fn remove_dir(path: &Path) {
         if exists {
             fs::remove_dir_all(path).expect("Error deleting folder.");
         }
+    }
+}
+
+pub fn sanitize_path(path: &str) -> String {
+    if env::consts::OS.eq("windows") {
+        path.replace('/', "\\")
+    } else {
+        path.replace('\\', "/")
     }
 }

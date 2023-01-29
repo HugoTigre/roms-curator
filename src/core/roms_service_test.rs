@@ -2,7 +2,7 @@ use std::fs;
 use crate::{build_category_list, read_mame_xml};
 use crate::core::roms_service::{parse, UnfilteredRomsExt};
 use crate::models::roms::{Chd, Feature, FeatureStatus, RomData, Roms, RomStatus, Status};
-use crate::models::roms::ChdStatus::BadDump;
+use crate::models::roms::ChdStatus::{BadDump, NoStatus};
 use crate::models::roms::RomCategory::{Working, NotWorking, Bios, System};
 
 #[test]
@@ -19,7 +19,7 @@ fn should_properly_classify_roms() {
         .into_iter()
         .partition(|(_, rom)| matches!(rom.category, Working));
 
-    assert_eq!(working.len(), 3);
+    assert_eq!(working.len(), 4);
     assert_eq!(not_working.len(), 7);
 
     // working roms
@@ -65,6 +65,20 @@ fn should_properly_classify_roms() {
     };
     assert_eq!(working["robocop"].data, rom_robocop);
     assert!(matches!(working["robocop"].category, Working ));
+
+    let rom_area51 = RomData {
+        status: Some(RomStatus { driver: Status::Good, emulation: Status::Good }),
+        is_bios: false,
+        is_system: false,
+        is_mechanical: false,
+        features: Vec::new(),
+        clone_of: None,
+        rom_of: None,
+        chd: vec! {Chd { name: "area51".to_string(), status: NoStatus }},
+        category: "".to_string(),
+    };
+    assert_eq!(working["area51"].data, rom_area51);
+    assert!(matches!(working["area51"].category, Working ));
 
     // not working roms
 

@@ -393,18 +393,20 @@ fn extract_chd(node: Node) -> Vec<Chd> {
 fn is_system(node: Node, name: &str, categories: &RomCategories) -> bool {
     if is_device(node) { return true; };
 
+    let mut has_device = false;
+    let mut requires_chd = false;
+
     return {
         match categories.get(name) {
             Some(v) => EXCLUDED_CATEGORIES.iter()
                 .any(|cat| v.contains(cat)),
             _ => {
-                // couldn't match category, determine by having device
+                // couldn't match category, determine by having device (void if entry is chd)
                 for machine_node in node.children() {
-                    if machine_node.tag_name().name() == "device" {
-                        return true;
-                    }
+                    if machine_node.tag_name().name() == "disk" { requires_chd = true; }
+                    if machine_node.tag_name().name() == "device" { has_device = true; }
                 }
-                false
+                has_device && !requires_chd
             }
         }
     };

@@ -26,7 +26,7 @@ impl RomDataExt for RomData {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RomData {
     pub status: Option<RomStatus>,
     pub is_bios: bool,
