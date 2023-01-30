@@ -21,10 +21,12 @@ static MAME_XML_FILE_NAME: &str = "mame-roms.xml";
 static CATEGORY_LIST_FILE_NAME: &str = "catver.ini";
 static WORKING_ARCADE_LIST_PATH: &str = "tests/resources/working_arcade_0244.ini";
 static ROMS_SOURCE_PATH: &str = "tests/resources/merged_roms/";
+static CHDS_SOURCE_PATH: &str = "tests/resources/chds/";
 static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
 static CATEGORIZED_WORKING_FOLDER_NAME: &str = "working";
 static CATEGORIZED_OTHER_FOLDER_NAME: &str = "other";
 static CATEGORIZED_CHD_OTHER_FOLDER_NAME: &str = "chd_other";
+static CATEGORIZED_CHD_WORKING_FOLDER_NAME: &str = "chd_working";
 
 #[test]
 fn should_build_set_with_no_errors() {
@@ -104,7 +106,7 @@ fn should_copy_files_to_destination_folder_and_create_report() {
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 
-    assert_eq!(report.total_working, 2);
+    assert_eq!(report.total_working, 4);
     assert_eq!(report.total_other, 4);
 
     // validate roms are in the correct place
@@ -150,6 +152,16 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     expected.sort();
     assert_eq!(chd_other_roms, expected);
 
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
+    let mut chd_working_roms = get_files_from_folder(path.to_str().unwrap());
+    let mut expected = vec!(
+        "Area51".to_string(), // chd
+        "area51.zip".to_string(), // rom that depends on chd
+    );
+    chd_working_roms.sort();
+    expected.sort();
+    assert_eq!(chd_working_roms, expected);
+
     assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
 
     clean_up(&tag);
@@ -166,7 +178,7 @@ fn simulation_should_generate_report_but_not_copy_roms() {
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 
-    assert_eq!(report.total_working, 2);
+    assert_eq!(report.total_working, 4);
     assert_eq!(report.total_other, 4);
 
     let test_folder = Path::new(TARGET_FOLDER).join(&tag);
@@ -182,6 +194,10 @@ fn simulation_should_generate_report_but_not_copy_roms() {
     let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
     let chd_other_roms = get_files_from_folder(path.to_str().unwrap());
     assert!(chd_other_roms.is_empty());
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
+    let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
+    assert!(chd_working_roms.is_empty());
 
     assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
 
@@ -210,7 +226,7 @@ fn build_config(tag: &str, simulate: bool) -> Config {
     Config {
         mame_xml_path,
         catver_path,
-        source_path: vec![ROMS_SOURCE_PATH.to_string()],
+        source_path: vec![ROMS_SOURCE_PATH.to_string(), CHDS_SOURCE_PATH.to_string()],
         destination_path,
         report_path,
         ignore_not_working_chd,

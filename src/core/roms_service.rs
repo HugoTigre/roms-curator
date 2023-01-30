@@ -3,7 +3,7 @@ use std::fs;
 use std::fs::read_dir;
 use std::path::PathBuf;
 use std::str::FromStr;
-use log::error;
+use log::{error, info};
 
 use roxmltree::{Document, Node};
 
@@ -11,6 +11,7 @@ use crate::models::config::{Config, DestinationFolders};
 use crate::models::report::{Report, ReportDetailEntry};
 use crate::models::roms::{Chd, ChdStatus, EXCLUDED_CATEGORIES, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt, Roms, RomStatus, SPECIAL_CASES_DEMOTE, SPECIAL_CASES_PROMOTE, Status, UnfilteredRoms};
 use crate::RomCategories;
+use crate::utils::{copy_dir_recursive};
 
 pub fn parse(doc: Document, categories: RomCategories) -> Result<UnfilteredRoms, Box<dyn Error>> {
     let mut roms = UnfilteredRoms::new();
@@ -128,7 +129,7 @@ pub trait RomsExt {
     fn check_paths(config: &Config) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, config: &Config) -> bool;
-    fn copy_rom(path: &PathBuf, destination: &PathBuf, file_name: &str, config: &Config) -> bool;
+    fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool;
 }
 
 impl RomsExt for Roms {
@@ -143,18 +144,22 @@ impl RomsExt for Roms {
         let mut report = Report::new();
 
         for source_path in config.source_path.clone() {
+            info!("Starting to copy from source: {}", &source_path);
+
             for entry in read_dir(source_path)? {
                 let path = entry?.path();
-                let (file_prefix, file_name) =
-                    (path.file_stem().unwrap().to_str().unwrap(), path.file_name().unwrap().to_str().unwrap());
+                let (file_prefix, file_name) = (
+                    path.file_stem().unwrap().to_str().unwrap(),
+                    path.file_name().unwrap().to_str().unwrap()
+                );
 
-                if let Some(rom) = self.get(file_prefix) {
+                if let Some(rom) = self.get(&file_prefix.to_ascii_lowercase()) {
                     if Self::should_move(rom, config) {
                         let destination =
                             Self::get_destination_folder(rom, &destination_paths)
                                 .join(file_name);
 
-                        let moved = Self::copy_rom(&path, &destination, file_name, config);
+                        let moved = Self::copy_rom(&path, &destination, config);
                         if !moved { something_failed = true };
 
                         let report_detail_entry = ReportDetailEntry { rom_name: file_name.to_string(), moved, is_chd: !rom.data.chd.is_empty() };
@@ -232,13 +237,19 @@ impl RomsExt for Roms {
         true
     }
 
-    fn copy_rom(path: &PathBuf, destination: &PathBuf, file_name: &str, config: &Config) -> bool {
-        if !config.simulate {
-            if let Some(err) = fs::copy(path, destination).err() {
-                error!("Error copying {}: {}", file_name, err);
+    fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool {
+        if config.simulate { return true };
+
+        if path.is_dir() {
+            if let Some(err) = copy_dir_recursive(path, destination).err() {
+                error!("Error copying {:?}: {}", path, err);
                 return false;
             }
+        } else if let Some(err) = fs::copy(path, destination).err() {
+            error!("Error copying {:?}: {}", path, err);
+            return false;
         }
+
         true
     }
 }

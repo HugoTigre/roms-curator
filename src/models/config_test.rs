@@ -137,10 +137,10 @@ fn should_support_windows_paths() {
     let source_folder_2 = roms_folder.join("MAME 0.243 CHDs (merged)");
     let destination_folder_2 = roms_folder.join("roms-curated");
 
-    create_dir(roms_folder);
-    create_dir(&source_folder_1);
-    create_dir(&source_folder_2);
-    create_dir(&destination_folder_2);
+    create_dir(roms_folder, false);
+    create_dir(&source_folder_1, false);
+    create_dir(&source_folder_2, false);
+    create_dir(&destination_folder_2, false);
 
     let args = vec![
         "roms-curator".to_string(),

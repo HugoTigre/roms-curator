@@ -1,13 +1,13 @@
-use std::{env, fs};
-use std::path::Path;
+use std::{env, fs, io};
+use std::path::{Path, PathBuf};
 
-pub fn create_dir(path: &Path) {
+pub fn create_dir(path: &Path, ignore_if_exists: bool) {
     match path.try_exists() {
         Ok(exists) => {
             if !exists {
                 fs::create_dir_all(path)
                     .expect(&("Error creating ".to_string() + path.to_str().unwrap() + " directory"));
-            } else {
+            } else if !ignore_if_exists {
                 panic!("{} directory already exists.", path.to_str().unwrap());
             }
         }
@@ -31,4 +31,18 @@ pub fn sanitize_path(path: &str) -> String {
     } else {
         path.replace('\\', "/")
     }
+}
+
+pub fn copy_dir_recursive(path: &PathBuf, destination: &PathBuf) -> io::Result<()> {
+    create_dir(destination, true);
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let filetype = entry.file_type()?;
+        if filetype.is_dir() {
+            copy_dir_recursive(&entry.path(), &destination.join( entry.file_name()))?;
+        } else {
+            fs::copy(entry.path(), destination.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }

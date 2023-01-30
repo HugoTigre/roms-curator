@@ -2,10 +2,17 @@ use std::{fs, io};
 use std::borrow::ToOwned;
 use std::fs::File;
 use std::path::Path;
+use std::sync::Once;
+use log4rs::append::console::ConsoleAppender;
+use log4rs::config::{Appender, Root};
+use log4rs::encode::pattern::PatternEncoder;
+use log::LevelFilter;
 
 static TARGET_FOLDER: &str = "target/tests/";
 static RESOURCES_PROD_PATH: &str = "tests/resources/prod_lists_0244.zip";
 static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
+
+static INIT: Once = Once::new();
 
 pub fn set_up(tag: &String) {
     println!("Setting up tests environment [{}]...", tag);
@@ -16,10 +23,10 @@ pub fn set_up(tag: &String) {
 
     let categorized_roms_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME);
     create_test_dir(&categorized_roms_path);
-    // create_test_dir(&categorized_roms_path.join("working"));
-    // create_test_dir(&categorized_roms_path.join("other"));
 
     unzip_test_resources_archive(tag);
+
+    INIT.call_once(|| { set_up_logging(); });
 }
 
 pub fn clean_up(tag: &String) {
@@ -86,5 +93,22 @@ fn create_test_dir(path: &Path) {
         Err(err) => {
             panic!("Error creating directory {}", err);
         }
+    }
+}
+
+fn set_up_logging() {
+    if Path::new("logging.yaml").exists() {
+        log4rs::init_file("logging.yaml", Default::default()).unwrap();
+    } else {
+        let stdout_appender = ConsoleAppender::builder()
+            .encoder(Box::new(PatternEncoder::new("{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}")))
+            .build();
+
+        let config = log4rs::Config::builder()
+            .appender(Appender::builder().build("stdout", Box::new(stdout_appender)))
+            .build(Root::builder().appender("stdout").build(LevelFilter::Debug))
+            .unwrap();
+
+        log4rs::init_config(config).unwrap();
     }
 }
