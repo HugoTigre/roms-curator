@@ -65,6 +65,8 @@ fn should_set_defaults() {
         report_path: "".to_string(),
         ignore_not_working_chd: false,
         simulate: false,
+        subset_start: String::new(),
+        subset_end: String::new(),
     };
 
     assert!(matches!(result, Ok(_config)));
@@ -91,6 +93,8 @@ fn should_parse_source_paths() {
         report_path: "".to_string(),
         ignore_not_working_chd: false,
         simulate: false,
+        subset_start: String::new(),
+        subset_end: String::new(),
     };
 
     assert_eq!(result.unwrap(), _config);
@@ -168,6 +172,8 @@ fn should_support_windows_paths() {
         report_path: format!("{}{}{}{}{}{}{}", "target", fs_sp, "tests", fs_sp, "roms", fs_sp, "report.md"),
         ignore_not_working_chd: false,
         simulate: true,
+        subset_start: String::new(),
+        subset_end: String::new(),
     };
 
     remove_dir(roms_folder);

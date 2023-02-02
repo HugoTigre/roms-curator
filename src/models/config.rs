@@ -13,7 +13,10 @@ pub struct Config {
     pub destination_path: String,
     pub report_path: String,
     pub ignore_not_working_chd: bool,
-    pub simulate: bool, // if true only runs simulation, needs report_path set
+    pub simulate: bool,
+    // if true only runs simulation, needs report_path set
+    pub subset_start: String,
+    pub subset_end: String,
 }
 
 pub struct DestinationFolders {
@@ -121,6 +124,12 @@ impl Config {
                 "--simulate" => {
                     self.simulate = value.eq_ignore_ascii_case("true");
                 }
+                "--subset_start" => {
+                    self.subset_start = value.to_ascii_lowercase();
+                }
+                "--subset_end" => {
+                    self.subset_end = value.to_ascii_lowercase();
+                }
                 _ =>
                     println!("{} param ignored (not recognized).", param)
             }
@@ -136,6 +145,8 @@ impl Config {
             report_path: self.report_path,
             ignore_not_working_chd: self.ignore_not_working_chd,
             simulate: self.simulate,
+            subset_start: self.subset_start,
+            subset_end: self.subset_end,
         })
     }
 
@@ -146,6 +157,7 @@ impl Config {
             | "--source_path" | "--destination_path"
             | "--report_path" | "--simulate"
             | "--ignore_not_working_chd"
+            | "--subset_start" | "--subset_end"
         )
     }
 
@@ -190,6 +202,8 @@ Options:
   --report_path            File path where the report should be saved. Contains all operations separated by successful and unsuccessful status.
   --ignore_not_working_chd If true, not working CHD files will not be copied to [destination_path]. (true|false).
   --simulation             If true, does not make any real changes. Depends on [report_path]. (true|false).
+  --subset_start           Only process roms that have a name alphabetical order equal or bigger than this value (case-insensitive).
+  --subset_end             Only process roms that have a name alphabetical order equal or smaller than this value (case-insensitive).
 
 Example:
   roms-curator --mame_xml_path=/mame/mame.xml --catver_path=/mame/catver.ini --source_path=/roms --destination_path=/roms-new/ ";

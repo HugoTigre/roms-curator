@@ -130,6 +130,7 @@ pub trait RomsExt {
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, config: &Config) -> bool;
     fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool;
+    fn is_excluded(config: &Config, file_prefix: &str) -> bool;
 }
 
 impl RomsExt for Roms {
@@ -144,7 +145,7 @@ impl RomsExt for Roms {
         let mut report = Report::new();
 
         for source_path in config.source_path.clone() {
-            info!("Starting to copy from source: {}", &source_path);
+            info!("Copying from source: {}", &source_path);
 
             for entry in read_dir(source_path)? {
                 let path = entry?.path();
@@ -152,6 +153,8 @@ impl RomsExt for Roms {
                     path.file_stem().unwrap().to_str().unwrap(),
                     path.file_name().unwrap().to_str().unwrap()
                 );
+
+                if Self::is_excluded(config, file_prefix) { continue; }
 
                 if let Some(rom) = self.get(&file_prefix.to_ascii_lowercase()) {
                     if Self::should_move(rom, config) {
@@ -238,7 +241,7 @@ impl RomsExt for Roms {
     }
 
     fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool {
-        if config.simulate { return true };
+        if config.simulate { return true; };
 
         if path.is_dir() {
             if let Some(err) = copy_dir_recursive(path, destination).err() {
@@ -251,6 +254,11 @@ impl RomsExt for Roms {
         }
 
         true
+    }
+
+    fn is_excluded(config: &Config, file_prefix: &str) -> bool {
+        (!config.subset_start.is_empty() && file_prefix < config.subset_start.as_str()) ||
+            (!config.subset_end.is_empty() && file_prefix > config.subset_end.as_str())
     }
 }
 

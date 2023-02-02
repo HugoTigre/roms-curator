@@ -85,10 +85,11 @@ impl Report {
         let mut writer = writer.write_all_roms(&self.roms_other, false)?;
 
         writer.write_all(b"### Ignored roms\n\n")?;
-        writer.write_all(b"Files included here most likely means there are roms files in your\n")?;
-        writer.write_all(b"collection that are not found in mame.xml file or you have non-rom files in your collection.\n")?;
+        writer.write_all(b"Files included here most likely means there are roms files in your collection\n")?;
+        writer.write_all(b"that are not found in mame.xml file or you have non-rom files in your collection.\n")?;
         writer.write_all(b"You might be using different rom collection and mame versions.\n")?;
-        writer.write_all(b"Since these roms are not in the database, there is no way to know if it's a normal rom or a CHD file.\n\n")?;
+        writer.write_all(b"Since these roms are not in the database, there is no way to know if it's a normal\n")?;
+        writer.write_all(b"rom or a CHD file (folders should indicate chd while zip file should be a rom).\n\n")?;
         let mut writer = writer.write_all_roms(&self.ignored_roms, false)?;
 
         writer.flush()?;

@@ -162,6 +162,49 @@
     ]>
 
 <mame build="0.244 (mame0244)" debug="no" mameconfig="10">
+    <machine name="3dobios" sourcefile="3do.cpp" isbios="yes">
+        <description>3DO Bios</description>
+        <year>1993</year>
+        <manufacturer>The 3DO Company</manufacturer>
+        <biosset name="panafz10" description="Panasonic FZ-10 R.E.A.L. 3DO Interactive Multiplayer"/>
+        <biosset name="goldstar" description="Goldstar 3DO Interactive Multiplayer v1.01m"/>
+        <biosset name="panafz1" description="Panasonic FZ-1 R.E.A.L. 3DO Interactive Multiplayer"/>
+        <biosset name="sanyotry" description="Sanyo TRY 3DO Interactive Multiplayer"/>
+        <rom name="panafz10.bin" bios="panafz10" size="1048576" crc="58242cee"
+             sha1="3c912300775d1ad730dc35757e279c274c0acaad" region="bios" offset="0"/>
+        <rom name="goldstar.bin" bios="goldstar" size="1048576" crc="b6f5028b"
+             sha1="c4a2e5336f77fb5f743de1eea2cda43675ee2de7" region="bios" offset="0"/>
+        <rom name="panafz1.bin" bios="panafz1" size="1048576" crc="c8c8ff89"
+             sha1="34bf189111295f74d7b7dfc1f304d98b8d36325a" region="bios" offset="0"/>
+        <rom name="sanyotry.bin" bios="sanyotry" size="1048576" crc="d5cbc509"
+             sha1="b01c53da256dde43ffec4ad3fc3adfa8d635e943" region="bios" offset="0"/>
+        <device_ref name="arm7_be"/>
+        <device_ref name="nvram"/>
+        <device_ref name="timer"/>
+        <device_ref name="screen"/>
+        <device_ref name="cdrom_image"/>
+        <chip type="cpu" tag="maincpu" name="ARM7 (big)" clock="12500000"/>
+        <display tag="screen" type="raster" rotate="0" width="1280" height="240" refresh="58.622485" pixclock="24545000"
+                 htotal="1592" hbend="254" hbstart="1534" vtotal="263" vbend="22" vbstart="262"/>
+        <sound channels="0"/>
+        <input players="1">
+            <control type="joy" buttons="3" ways="8"/>
+        </input>
+        <port tag=":P1">
+        </port>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <feature type="sound" status="unemulated"/>
+        <device type="cdrom" tag="cdrom">
+            <instance name="cdrom" briefname="cdrm"/>
+            <extension name="chd"/>
+            <extension name="cue"/>
+            <extension name="toc"/>
+            <extension name="nrg"/>
+            <extension name="gdi"/>
+            <extension name="iso"/>
+            <extension name="cdr"/>
+        </device>
+    </machine>
     <machine name="005" sourcefile="segag80r.cpp" sampleof="005">
         <description>005</description>
         <year>1981</year>
@@ -334,6 +377,60 @@
         </port>
         <driver status="imperfect" emulation="good" savestate="unsupported"/>
         <feature type="sound" status="imperfect"/>
+    </machine>
+    <machine name="99bottles" sourcefile="gammagic.cpp" cloneof="gammagic" romof="gammagic">
+        <description>99 Bottles of Beer</description>
+        <year>1999</year>
+        <manufacturer>Bally Gaming Co.</manufacturer>
+        <rom name="trident_tgui9680_bios.bin" merge="trident_tgui9680_bios.bin" size="32768" crc="1eebde64"
+             sha1="67896a854d43a575037613b3506aea6dae5d6a19" status="baddump" region="isa" offset="0"/>
+        <rom name="5hx29.bin" merge="5hx29.bin" size="131072" crc="07719a55"
+             sha1="b63993fd5186cdb4f28c117428a507cd069e1f68" status="baddump" region="isa" offset="20000"/>
+        <rom name="v8000.bin" size="131072" status="nodump" region="v8000" offset="0"/>
+        <disk name="99bottles" sha1="0b874178c8dd3cfc451deb53dc7936dc4ad5a04f" status="baddump" region="cdrom" index="0"
+              writable="no"/>
+        <device_ref name="pentium"/>
+        <device_ref name="pic8259"/>
+        <device_ref name="pic8259"/>
+        <device_ref name="am9517a"/>
+        <device_ref name="am9517a"/>
+        <device_ref name="pit8254"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="pit_counter"/>
+        <device_ref name="mc146818"/>
+        <device_ref name="kbdc8042"/>
+        <device_ref name="at_keyb"/>
+        <device_ref name="pci_root"/>
+        <device_ref name="screen"/>
+        <device_ref name="vga"/>
+        <chip type="cpu" tag="maincpu" name="Intel Pentium" clock="133000000"/>
+        <chip type="cpu" tag="dma8237_1" name="AM9517A" clock="4772727"/>
+        <chip type="cpu" tag="dma8237_2" name="AM9517A" clock="4772727"/>
+        <display tag="screen" type="raster" rotate="0" width="640" height="480" refresh="53.178707" pixclock="25174800"
+                 htotal="900" hbend="0" hbstart="640" vtotal="526" vbend="0" vbstart="480"/>
+        <sound channels="0"/>
+        <input players="1">
+            <control type="keyboard" buttons="103"/>
+        </input>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_0">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_1">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_2">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_3">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_4">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_5">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_6">
+        </port>
+        <port tag=":kbdc:at_keyboard:pc_keyboard_7">
+        </port>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <feature type="sound" status="unemulated"/>
     </machine>
     <machine name="100lions" sourcefile="aristmk6.cpp" romof="aristmk6">
         <description>100 Lions (10219211, NSW/ACT)</description>
@@ -578,6 +675,93 @@
         <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
         <feature type="sound" status="unemulated"/>
     </machine>
+    <machine name="a24play" sourcefile="src/devices/bus/a2bus/4play.cpp" isdevice="yes" runnable="no">
+        <description>4play Joystick Card (rev. B)</description>
+        <input players="3">
+            <control type="joy" player="1" buttons="3" ways="8"/>
+            <control type="joy" player="2" buttons="3" ways="8"/>
+            <control type="joy" player="3" buttons="3" ways="8"/>
+        </input>
+    </machine>
+    <machine name="area51" sourcefile="jaguar.cpp">
+        <description>Area 51 (R3000)</description>
+        <year>1996</year>
+        <manufacturer>Atari Games</manufacturer>
+        <rom name="2-c_area_51_hh.hh" size="524288" crc="13af6a1e" sha1="69da54ed6886e825156bbcc256e8d7abd4dc1ff8"
+             region="maincpu" offset="0"/>
+        <rom name="2-c_area_51_hl.hl" size="524288" crc="8ab6649b" sha1="9b4945bc04f8a73161638a2c5fa2fd84c6fd31b4"
+             region="maincpu" offset="1"/>
+        <rom name="2-c_area_51_lh.lh" size="524288" crc="a6524f73" sha1="ae377a6803a4f7d1bbcc111725af121a3e82317d"
+             region="maincpu" offset="2"/>
+        <rom name="2-c_area_51_ll.ll" size="524288" crc="471b15d2" sha1="4b5f45ee140b03a6be61475cae1c2dbef0f07457"
+             region="maincpu" offset="3"/>
+        <rom name="jagwave.rom" size="4096" crc="7a25ee5b" sha1="58117e11fd6478c521fbd3fdbe157f39567552f0"
+             region="waverom" offset="0"/>
+        <disk name="area51" sha1="3b303bc37e206a6d7339352c869f050d04186f11" region="ide:0:hdd:image" index="0"
+              writable="yes"/>
+        <device_ref name="r3041"/>
+        <device_ref name="jaguargpu"/>
+        <device_ref name="jaguardsp"/>
+        <device_ref name="jag_blitter"/>
+        <device_ref name="nvram"/>
+        <device_ref name="watchdog"/>
+        <device_ref name="vt83c461"/>
+        <device_ref name="ata_slot"/>
+        <device_ref name="cojag_hdd"/>
+        <device_ref name="harddisk_image"/>
+        <device_ref name="ata_slot"/>
+        <device_ref name="screen"/>
+        <device_ref name="palette"/>
+        <device_ref name="speaker"/>
+        <device_ref name="speaker"/>
+        <device_ref name="dac_16bit_r2r_tc"/>
+        <device_ref name="dac_16bit_r2r_tc"/>
+        <chip type="cpu" tag="maincpu" name="IDT R3041" clock="40000000"/>
+        <chip type="cpu" tag="gpu" name="Motorola Atari Jaguar GPU &quot;Tom&quot;" clock="26000000"/>
+        <chip type="cpu" tag="dsp" name="Motorola Atari Jaguar DSP &quot;Jerry&quot;" clock="26000000"/>
+        <chip type="audio" tag="lspeaker" name="Speaker"/>
+        <chip type="audio" tag="rspeaker" name="Speaker"/>
+        <chip type="audio" tag="ldac" name="16-Bit R-2R Twos Complement DAC"/>
+        <chip type="audio" tag="rdac" name="16-Bit R-2R Twos Complement DAC"/>
+        <display tag="screen" type="raster" rotate="0" width="360" height="240" refresh="59.922743" pixclock="7159090"
+                 htotal="456" hbend="42" hbstart="402" vtotal="262" vbend="17" vbstart="257"/>
+        <sound channels="2"/>
+        <input players="2" coins="4">
+            <control type="lightgun" player="1" buttons="1" minimum="0" maximum="255" sensitivity="70" keydelta="10"/>
+            <control type="lightgun" player="2" buttons="1" minimum="0" maximum="255" sensitivity="70" keydelta="10"/>
+        </input>
+        <dipswitch name="Service Mode" tag="SYSTEM" mask="64">
+            <dipvalue name="Off" value="64" default="yes"/>
+            <dipvalue name="On" value="0"/>
+        </dipswitch>
+        <port tag=":FAKE1_X">
+            <analog mask="255"/>
+        </port>
+        <port tag=":FAKE1_Y">
+            <analog mask="255"/>
+        </port>
+        <port tag=":FAKE2_X">
+            <analog mask="255"/>
+        </port>
+        <port tag=":FAKE2_Y">
+            <analog mask="255"/>
+        </port>
+        <port tag=":IN3">
+        </port>
+        <port tag=":P1_P2">
+        </port>
+        <port tag=":SYSTEM">
+        </port>
+        <driver status="good" emulation="good" savestate="unsupported"/>
+        <device type="harddisk" tag="ide:0:hdd:image" interface="ide_hdd">
+            <instance name="harddisk" briefname="hard"/>
+            <extension name="chd"/>
+            <extension name="hd"/>
+            <extension name="hdv"/>
+            <extension name="2mg"/>
+            <extension name="hdi"/>
+        </device>
+    </machine>
     <machine name="aristmk6" sourcefile="aristmk6.cpp" isbios="yes">
         <description>MK6 System Software/Setchips</description>
         <year>2000</year>
@@ -817,123 +1001,29 @@
         <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
         <feature type="sound" status="unemulated"/>
     </machine>
-    <machine name="a24play" sourcefile="src/devices/bus/a2bus/4play.cpp" isdevice="yes" runnable="no">
-        <description>4play Joystick Card (rev. B)</description>
-        <input players="3">
-            <control type="joy" player="1" buttons="3" ways="8"/>
-            <control type="joy" player="2" buttons="3" ways="8"/>
-            <control type="joy" player="3" buttons="3" ways="8"/>
-        </input>
-    </machine>
-    <machine name="3dobios" sourcefile="3do.cpp" isbios="yes">
-        <description>3DO Bios</description>
-        <year>1993</year>
-        <manufacturer>The 3DO Company</manufacturer>
-        <biosset name="panafz10" description="Panasonic FZ-10 R.E.A.L. 3DO Interactive Multiplayer"/>
-        <biosset name="goldstar" description="Goldstar 3DO Interactive Multiplayer v1.01m"/>
-        <biosset name="panafz1" description="Panasonic FZ-1 R.E.A.L. 3DO Interactive Multiplayer"/>
-        <biosset name="sanyotry" description="Sanyo TRY 3DO Interactive Multiplayer"/>
-        <rom name="panafz10.bin" bios="panafz10" size="1048576" crc="58242cee"
-             sha1="3c912300775d1ad730dc35757e279c274c0acaad" region="bios" offset="0"/>
-        <rom name="goldstar.bin" bios="goldstar" size="1048576" crc="b6f5028b"
-             sha1="c4a2e5336f77fb5f743de1eea2cda43675ee2de7" region="bios" offset="0"/>
-        <rom name="panafz1.bin" bios="panafz1" size="1048576" crc="c8c8ff89"
-             sha1="34bf189111295f74d7b7dfc1f304d98b8d36325a" region="bios" offset="0"/>
-        <rom name="sanyotry.bin" bios="sanyotry" size="1048576" crc="d5cbc509"
-             sha1="b01c53da256dde43ffec4ad3fc3adfa8d635e943" region="bios" offset="0"/>
-        <device_ref name="arm7_be"/>
-        <device_ref name="nvram"/>
-        <device_ref name="timer"/>
-        <device_ref name="screen"/>
-        <device_ref name="cdrom_image"/>
-        <chip type="cpu" tag="maincpu" name="ARM7 (big)" clock="12500000"/>
-        <display tag="screen" type="raster" rotate="0" width="1280" height="240" refresh="58.622485" pixclock="24545000"
-                 htotal="1592" hbend="254" hbstart="1534" vtotal="263" vbend="22" vbstart="262"/>
+    <machine name="as_acp" sourcefile="astrafr.cpp" ismechanical="yes">
+        <description>unknown Astra 'ACP' (Astra, V403)</description>
+        <year>200?</year>
+        <manufacturer>Astra</manufacturer>
+        <rom name="acpv403.u1" size="1048576" crc="b1af78be" sha1="6cacd0e815cea236130d35ac742076d24d825d66"
+             region="maincpu" offset="0"/>
+        <rom name="acpv403.u2" size="1048576" crc="ba6d3127" sha1="f2511455d387ee588b106b9f2823e44b6e9328c9"
+             region="maincpu" offset="1"/>
+        <rom name="403compak.u1" size="1048576" crc="d3a37514" sha1="fe58c3172272a119431cdebcb27b50b8c1d36877"
+             region="altrevs" offset="0"/>
+        <rom name="403conx.u1" size="1048576" crc="6fbe1035" sha1="7b03a6b1cc4c89e7bdf583befe18d98e5f4a159b"
+             region="altrevs" offset="0"/>
+        <device_ref name="mc68340"/>
+        <device_ref name="mc68340sermod"/>
+        <device_ref name="duart_channel"/>
+        <device_ref name="duart_channel"/>
+        <device_ref name="mc68340timmod"/>
+        <device_ref name="mc68340timmod"/>
+        <chip type="cpu" tag="maincpu" name="MC68340" clock="16000000"/>
         <sound channels="0"/>
-        <input players="1">
-            <control type="joy" buttons="3" ways="8"/>
+        <input players="0">
         </input>
-        <port tag=":P1">
-        </port>
-        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
-        <feature type="sound" status="unemulated"/>
-        <device type="cdrom" tag="cdrom">
-            <instance name="cdrom" briefname="cdrm"/>
-            <extension name="chd"/>
-            <extension name="cue"/>
-            <extension name="toc"/>
-            <extension name="nrg"/>
-            <extension name="gdi"/>
-            <extension name="iso"/>
-            <extension name="cdr"/>
-        </device>
-    </machine>
-    <machine name="sv801" sourcefile="src/devices/bus/svi3x8/slot/sv801.cpp" isdevice="yes" runnable="no">
-        <description>SV-801 Disk Controller</description>
-        <device_ref name="fd1793"/>
-        <device_ref name="floppy_connector"/>
-        <device_ref name="floppy_connector"/>
-        <device_ref name="software_list"/>
-        <slot name=":fdc:0">
-            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
-        </slot>
-        <slot name=":fdc:1">
-            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
-        </slot>
-        <softwarelist tag=":disk_list" name="svi318_flop" status="original"/>
-    </machine>
-    <machine name="99bottles" sourcefile="gammagic.cpp" cloneof="gammagic" romof="gammagic">
-        <description>99 Bottles of Beer</description>
-        <year>1999</year>
-        <manufacturer>Bally Gaming Co.</manufacturer>
-        <rom name="trident_tgui9680_bios.bin" merge="trident_tgui9680_bios.bin" size="32768" crc="1eebde64"
-             sha1="67896a854d43a575037613b3506aea6dae5d6a19" status="baddump" region="isa" offset="0"/>
-        <rom name="5hx29.bin" merge="5hx29.bin" size="131072" crc="07719a55"
-             sha1="b63993fd5186cdb4f28c117428a507cd069e1f68" status="baddump" region="isa" offset="20000"/>
-        <rom name="v8000.bin" size="131072" status="nodump" region="v8000" offset="0"/>
-        <disk name="99bottles" sha1="0b874178c8dd3cfc451deb53dc7936dc4ad5a04f" status="baddump" region="cdrom" index="0"
-              writable="no"/>
-        <device_ref name="pentium"/>
-        <device_ref name="pic8259"/>
-        <device_ref name="pic8259"/>
-        <device_ref name="am9517a"/>
-        <device_ref name="am9517a"/>
-        <device_ref name="pit8254"/>
-        <device_ref name="pit_counter"/>
-        <device_ref name="pit_counter"/>
-        <device_ref name="pit_counter"/>
-        <device_ref name="mc146818"/>
-        <device_ref name="kbdc8042"/>
-        <device_ref name="at_keyb"/>
-        <device_ref name="pci_root"/>
-        <device_ref name="screen"/>
-        <device_ref name="vga"/>
-        <chip type="cpu" tag="maincpu" name="Intel Pentium" clock="133000000"/>
-        <chip type="cpu" tag="dma8237_1" name="AM9517A" clock="4772727"/>
-        <chip type="cpu" tag="dma8237_2" name="AM9517A" clock="4772727"/>
-        <display tag="screen" type="raster" rotate="0" width="640" height="480" refresh="53.178707" pixclock="25174800"
-                 htotal="900" hbend="0" hbstart="640" vtotal="526" vbend="0" vbstart="480"/>
-        <sound channels="0"/>
-        <input players="1">
-            <control type="keyboard" buttons="103"/>
-        </input>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_0">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_1">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_2">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_3">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_4">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_5">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_6">
-        </port>
-        <port tag=":kbdc:at_keyboard:pc_keyboard_7">
-        </port>
-        <driver status="preliminary" emulation="preliminary" savestate="unsupported"/>
+        <driver status="preliminary" emulation="preliminary" savestate="unsupported" requiresartwork="yes"/>
         <feature type="sound" status="unemulated"/>
     </machine>
     <machine name="elevatora" sourcefile="taitosj.cpp" cloneof="elevator" romof="elevator">
@@ -1328,108 +1418,18 @@
         <driver status="imperfect" emulation="good" savestate="supported"/>
         <feature type="sound" overall="imperfect"/>
     </machine>
-    <machine name="as_acp" sourcefile="astrafr.cpp" ismechanical="yes">
-        <description>unknown Astra 'ACP' (Astra, V403)</description>
-        <year>200?</year>
-        <manufacturer>Astra</manufacturer>
-        <rom name="acpv403.u1" size="1048576" crc="b1af78be" sha1="6cacd0e815cea236130d35ac742076d24d825d66"
-             region="maincpu" offset="0"/>
-        <rom name="acpv403.u2" size="1048576" crc="ba6d3127" sha1="f2511455d387ee588b106b9f2823e44b6e9328c9"
-             region="maincpu" offset="1"/>
-        <rom name="403compak.u1" size="1048576" crc="d3a37514" sha1="fe58c3172272a119431cdebcb27b50b8c1d36877"
-             region="altrevs" offset="0"/>
-        <rom name="403conx.u1" size="1048576" crc="6fbe1035" sha1="7b03a6b1cc4c89e7bdf583befe18d98e5f4a159b"
-             region="altrevs" offset="0"/>
-        <device_ref name="mc68340"/>
-        <device_ref name="mc68340sermod"/>
-        <device_ref name="duart_channel"/>
-        <device_ref name="duart_channel"/>
-        <device_ref name="mc68340timmod"/>
-        <device_ref name="mc68340timmod"/>
-        <chip type="cpu" tag="maincpu" name="MC68340" clock="16000000"/>
-        <sound channels="0"/>
-        <input players="0">
-        </input>
-        <driver status="preliminary" emulation="preliminary" savestate="unsupported" requiresartwork="yes"/>
-        <feature type="sound" status="unemulated"/>
+    <machine name="sv801" sourcefile="src/devices/bus/svi3x8/slot/sv801.cpp" isdevice="yes" runnable="no">
+        <description>SV-801 Disk Controller</description>
+        <device_ref name="fd1793"/>
+        <device_ref name="floppy_connector"/>
+        <device_ref name="floppy_connector"/>
+        <device_ref name="software_list"/>
+        <slot name=":fdc:0">
+            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
+        </slot>
+        <slot name=":fdc:1">
+            <slotoption name="dd" devname="floppy_525_dd" default="yes"/>
+        </slot>
+        <softwarelist tag=":disk_list" name="svi318_flop" status="original"/>
     </machine>
-    <machine name="area51" sourcefile="jaguar.cpp">
-        <description>Area 51 (R3000)</description>
-        <year>1996</year>
-        <manufacturer>Atari Games</manufacturer>
-        <rom name="2-c_area_51_hh.hh" size="524288" crc="13af6a1e" sha1="69da54ed6886e825156bbcc256e8d7abd4dc1ff8"
-             region="maincpu" offset="0"/>
-        <rom name="2-c_area_51_hl.hl" size="524288" crc="8ab6649b" sha1="9b4945bc04f8a73161638a2c5fa2fd84c6fd31b4"
-             region="maincpu" offset="1"/>
-        <rom name="2-c_area_51_lh.lh" size="524288" crc="a6524f73" sha1="ae377a6803a4f7d1bbcc111725af121a3e82317d"
-             region="maincpu" offset="2"/>
-        <rom name="2-c_area_51_ll.ll" size="524288" crc="471b15d2" sha1="4b5f45ee140b03a6be61475cae1c2dbef0f07457"
-             region="maincpu" offset="3"/>
-        <rom name="jagwave.rom" size="4096" crc="7a25ee5b" sha1="58117e11fd6478c521fbd3fdbe157f39567552f0"
-             region="waverom" offset="0"/>
-        <disk name="area51" sha1="3b303bc37e206a6d7339352c869f050d04186f11" region="ide:0:hdd:image" index="0"
-              writable="yes"/>
-        <device_ref name="r3041"/>
-        <device_ref name="jaguargpu"/>
-        <device_ref name="jaguardsp"/>
-        <device_ref name="jag_blitter"/>
-        <device_ref name="nvram"/>
-        <device_ref name="watchdog"/>
-        <device_ref name="vt83c461"/>
-        <device_ref name="ata_slot"/>
-        <device_ref name="cojag_hdd"/>
-        <device_ref name="harddisk_image"/>
-        <device_ref name="ata_slot"/>
-        <device_ref name="screen"/>
-        <device_ref name="palette"/>
-        <device_ref name="speaker"/>
-        <device_ref name="speaker"/>
-        <device_ref name="dac_16bit_r2r_tc"/>
-        <device_ref name="dac_16bit_r2r_tc"/>
-        <chip type="cpu" tag="maincpu" name="IDT R3041" clock="40000000"/>
-        <chip type="cpu" tag="gpu" name="Motorola Atari Jaguar GPU &quot;Tom&quot;" clock="26000000"/>
-        <chip type="cpu" tag="dsp" name="Motorola Atari Jaguar DSP &quot;Jerry&quot;" clock="26000000"/>
-        <chip type="audio" tag="lspeaker" name="Speaker"/>
-        <chip type="audio" tag="rspeaker" name="Speaker"/>
-        <chip type="audio" tag="ldac" name="16-Bit R-2R Twos Complement DAC"/>
-        <chip type="audio" tag="rdac" name="16-Bit R-2R Twos Complement DAC"/>
-        <display tag="screen" type="raster" rotate="0" width="360" height="240" refresh="59.922743" pixclock="7159090"
-                 htotal="456" hbend="42" hbstart="402" vtotal="262" vbend="17" vbstart="257"/>
-        <sound channels="2"/>
-        <input players="2" coins="4">
-            <control type="lightgun" player="1" buttons="1" minimum="0" maximum="255" sensitivity="70" keydelta="10"/>
-            <control type="lightgun" player="2" buttons="1" minimum="0" maximum="255" sensitivity="70" keydelta="10"/>
-        </input>
-        <dipswitch name="Service Mode" tag="SYSTEM" mask="64">
-            <dipvalue name="Off" value="64" default="yes"/>
-            <dipvalue name="On" value="0"/>
-        </dipswitch>
-        <port tag=":FAKE1_X">
-            <analog mask="255"/>
-        </port>
-        <port tag=":FAKE1_Y">
-            <analog mask="255"/>
-        </port>
-        <port tag=":FAKE2_X">
-            <analog mask="255"/>
-        </port>
-        <port tag=":FAKE2_Y">
-            <analog mask="255"/>
-        </port>
-        <port tag=":IN3">
-        </port>
-        <port tag=":P1_P2">
-        </port>
-        <port tag=":SYSTEM">
-        </port>
-        <driver status="good" emulation="good" savestate="unsupported"/>
-        <device type="harddisk" tag="ide:0:hdd:image" interface="ide_hdd">
-            <instance name="harddisk" briefname="hard"/>
-            <extension name="chd"/>
-            <extension name="hd"/>
-            <extension name="hdv"/>
-            <extension name="2mg"/>
-            <extension name="hdi"/>
-        </device>
-    </machine>
-</mame> 
+</mame>

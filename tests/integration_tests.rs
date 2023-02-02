@@ -33,7 +33,9 @@ fn should_build_set_with_no_errors() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag, false);
+    let config = build_config(
+        &tag, false, String::new(), String::new(),
+    );
 
     let result = roms_curator::run(&config);
 
@@ -55,7 +57,9 @@ fn should_separate_all_working_roms() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag, false);
+    let config = build_config(
+        &tag, false, String::new(), String::new(),
+    );
 
     let results = roms_curator::run(&config).unwrap();
 
@@ -100,31 +104,23 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag, false);
+    let config = build_config(
+        &tag, false, String::new(), String::new(),
+    );
 
     let results = roms_curator::run(&config).unwrap();
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 
-    assert_eq!(report.total_working, 4);
-    assert_eq!(report.total_other, 4);
-
-    // validate roms are in the correct place
-    fn get_files_from_folder(path: &str) -> Vec<String> {
-        let mut roms: Vec<String> = Vec::new();
-        for entry in read_dir(path).unwrap() {
-            let path = entry.unwrap().path();
-            let file_name = path.file_name().unwrap().to_str().unwrap();
-            roms.push(file_name.to_string());
-        }
-        roms
-    }
+    assert_eq!(report.total_working, 5);
+    assert_eq!(report.total_other, 7);
 
     let test_folder = Path::new(TARGET_FOLDER).join(&tag);
 
     let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_WORKING_FOLDER_NAME);
     let mut working_roms = get_files_from_folder(path.to_str().unwrap());
     let mut expected = vec!(
+        "005.zip".to_string(),
         "elevatora.zip".to_string(),
         "robocop.zip".to_string(),
     );
@@ -135,8 +131,11 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_OTHER_FOLDER_NAME);
     let mut other_roms = get_files_from_folder(path.to_str().unwrap());
     let mut expected = vec!(
-        "a24play.zip".to_string(), // system
+        "100lions.zip".to_string(),
         "3dobios.zip".to_string(), // bios
+        "a24play.zip".to_string(), // system
+        "aristmk6.zip".to_string(),
+        "as_acp.zip".to_string(),
         "sv801.zip".to_string(), // device
     );
     other_roms.sort();
@@ -172,14 +171,16 @@ fn simulation_should_generate_report_but_not_copy_roms() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(&tag, true);
+    let config = build_config(
+        &tag, true, String::new(), String::new(),
+    );
 
     let results = roms_curator::run(&config).unwrap();
 
     let report = results.copy_roms(&config).expect("Error copying roms");
 
-    assert_eq!(report.total_working, 4);
-    assert_eq!(report.total_other, 4);
+    assert_eq!(report.total_working, 5);
+    assert_eq!(report.total_other, 7);
 
     let test_folder = Path::new(TARGET_FOLDER).join(&tag);
 
@@ -204,6 +205,52 @@ fn simulation_should_generate_report_but_not_copy_roms() {
     clean_up(&tag);
 }
 
+#[test]
+fn should_copy_files_to_destination_folder_excluding_subsets() {
+    let tag = get_test_tag();
+    set_up(&tag);
+
+    let config = build_config(
+        &tag, false, "r".to_string(), "sa".to_string(),
+    );
+
+    let results = roms_curator::run(&config).unwrap();
+
+    let report = results.copy_roms(&config).expect("Error copying roms");
+
+    assert_eq!(report.total_working, 1);
+    assert_eq!(report.total_other, 0);
+
+    let test_folder = Path::new(TARGET_FOLDER).join(&tag);
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_WORKING_FOLDER_NAME);
+    let mut working_roms = get_files_from_folder(path.to_str().unwrap());
+    let mut expected = vec!(
+        "robocop.zip".to_string(),
+    );
+    working_roms.sort();
+    expected.sort();
+    assert_eq!(working_roms, expected);
+
+    let expected: Vec<String> = Vec::new();
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_OTHER_FOLDER_NAME);
+    let other_roms = get_files_from_folder(path.to_str().unwrap());
+    assert_eq!(other_roms, expected);
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
+    let chd_other_roms = get_files_from_folder(path.to_str().unwrap());
+    assert_eq!(chd_other_roms, expected);
+
+    let path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
+    let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
+    assert_eq!(chd_working_roms, expected);
+
+    assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
+
+    clean_up(&tag);
+}
+
 fn get_files_from_folder(path: &str) -> Vec<String> {
     let mut roms: Vec<String> = Vec::new();
     for entry in read_dir(path).unwrap() {
@@ -214,7 +261,9 @@ fn get_files_from_folder(path: &str) -> Vec<String> {
     roms
 }
 
-fn build_config(tag: &str, simulate: bool) -> Config {
+fn build_config(
+    tag: &str, simulate: bool, subset_start: String, subset_end: String,
+) -> Config {
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
     let mame_xml_path = test_folder.join(MAME_XML_FILE_NAME).to_str().unwrap().to_string();
     let catver_path = test_folder.join(CATEGORY_LIST_FILE_NAME).to_str().unwrap().to_string();
@@ -231,6 +280,8 @@ fn build_config(tag: &str, simulate: bool) -> Config {
         report_path,
         ignore_not_working_chd,
         simulate: simulation,
+        subset_start,
+        subset_end,
     }
 }
 
