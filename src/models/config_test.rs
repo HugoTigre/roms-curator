@@ -85,11 +85,17 @@ fn should_parse_source_paths() {
     let result = Config::new()
         .build(args.into_iter());
 
+    let fs_sp = std::path::MAIN_SEPARATOR;
+
     let _config = Config {
         mame_xml_path: "some-valid-path.xml".to_string(),
         catver_path: "some-valid-path.ini".to_string(),
-        source_path: vec!["./".to_string(), "target/".to_string(), "target".to_string()],
-        destination_path: "/".to_string(),
+        source_path: vec![
+            format!("{}{}", ".".to_string(), fs_sp),
+            format!("{}{}", "target".to_string(), fs_sp),
+            "target".to_string(),
+        ],
+        destination_path: fs_sp.to_string(),
         report_path: "".to_string(),
         ignore_not_working_chd: false,
         simulate: false,

@@ -57,6 +57,7 @@ only want to create a working collection set.
 
 ```bash
 roms-curator \
+
 --mame_xml_path=/mame/mame.xml \
 --catver_path=/mame/catver.ini \
 --source_path=/roms,/chd-roms \
