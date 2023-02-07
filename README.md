@@ -1,64 +1,79 @@
 # roms-curator
 
-Helper utility to manage sets of roms.
-Currently only works for mame roms.
+Helper utility to manage Sets of ROMs.
+Currently only works for MAME ROMs.
 
-You can use this if you want to create a new rom set
-with only working roms from your current rom set.
+Possible usages might include:
 
-- [roms-curator](#roms-curator)
-  - [Get needed rom metadata files](#get-needed-rom-metadata-files)
-  - [How this works](#how-this-works)
-  - [Run instructions](#run-instructions)
-  - [QA](#qa)
-  - [Useful links](#useful-links)
-  - [Planned for the future (maybe)](#planned-for-the-future-maybe)
+1. As an Application to create a new ROM Set
+separating working and non working ROMs (inluding CHDs)
 
-## Get needed rom metadata files
+1. As a Library if you want to categorize your entire collection
+and do with it what you will.
 
-This program has 2 mandatory dependencies:
+__Index__
 
-- MAME rom database (xml file)
+- [Requirement / Dependencies](#requirement--dependencies)
+- [How this works](#how-this-works)
+- [Application run instructions](#application-run-instructions)
+- [Library usage instructions](#library-usage-instructions)
+- [FAQ](#faq)
+- [Useful links](#useful-links)
+- [Planned for the future (maybe)](#planned-for-the-future-maybe)
+
+## Requirement / Dependencies
+
+This program has 2 external dependencies that are not included here,
+but are easy to get:
+
+- MAME ROM database (xml file)
   - download MAME from [here](https://www.mamedev.org/release.html).
-    keep in mind that you need the version that corresponds to your rom set version. 
+    keep in mind that you need the version that corresponds to your ROM Set version. 
   - then extract the database:
     ```bash
     mame.exe -listxml > mame-roms.xml
     ```
-- Rom categories file
-  - MAME does not categorize roms (some exceptions),
-    to categorize roms you need the a `MAME Support File` file which can
+- ROM categories file
+  - MAME does not categorize ROMs (some exceptions),
+    to categorize ROMs we need a `MAME Support File` file which can
     be downloaded [here](https://www.progettosnaps.net/support/).
-  - download the package for your roms set version and extract the
-    catver.ini file.
+  - download the package for your ROMs Set version and extract the
+    `catver.ini` file.
 
 ## How this works
 
 `roms-curator` will use `mame.xml`, `catver.ini` and some custom logic 
-(from trial and error) to go through your rom collection and categorize all
-roms with `working` or `not-working` states as well as specific sub-categories,
-like type of rom/game (bios, system, mechanical, etc). From here it will copy
-your roms to a subdirectory in the specified `destination_dir`.
+(from trial and error) to go through your ROM collection and categorize all
+ROMs with `working` or `not-working` states as well as specific sub-categories,
+like type of ROM/game (bios, system, mechanical, etc). From here it will copy
+your ROMs to a subdirectory in the specified `destination_dir`.
 
 It can also generate a report with all copied files and/or errors encountered.
 
 Sub-directories include: 
-- working: for all roms in working/playable state.
-- other: for all roms NOT in working/playable state. 
-This also includes bios, system, casino, mechanical and some other
-non-playable roms.
-- chd_working: for all CHD roms in working/playable state.
-- chd_other: for all CHD roms NOT in working/playable state.
+- **working**: for all ROM files in working/playable state (excluding ROMs with CHD dependencies).
+- **other**: for all ROM files NOT in working/playable state (excluding ROMs with CHD dependencies). 
+This also includes bios, system, casino, mechanical and some other non-playable ROMs.
+- **chd_working**: for all CHDs and ROMs dependent on CHD files in working/playable state.
+- **chd_other**: for all CHDs and ROMs dependent on CHD files NOT in working/playable state.
 
-Having the roms categorized in these sub-folders will allow you to
-only import working roms (working folder) into your mame front-end,
-while still giving MAME executable access to all roms by adding all
-directories as roms directories (this is needed because of rom dependency,
-like a working rom needing a bios rom or a CHD rom to work properly).
+Having the ROMs categorized in these sub-folders will allow you to
+only import working ROMs (working folder) into your mame front-end,
+while still giving MAME executable access to all ROMs by adding all
+directories as ROMs directories (this is needed because of ROM dependency,
+like a working ROM needing a bios ROM or a CHD ROM to work properly).
 
-## Run instructions
+You might also want to reduce the size of your collection and one way to
+achieve that without breaking anything is to delete the non-working CHD directories.
+Complete Set of CHD files can be `500+ GB`.
 
-See [here](docs/run-instructions.md)
+## Application run instructions
+
+See [here](docs/app-run-instructions.md)
+
+## Library usage instructions
+
+See [here](docs/lib-usage-instructions.md)
 
 ## FAQ
 
@@ -67,8 +82,9 @@ See [here](docs/faq.md)
 ## Useful links
 
 - [Download MAME](https://www.mamedev.org/release.html)
-- [Online MAME rom database](http://adb.arcadeitalia.net/lista_mame.php)
+- [Online MAME ROM database](http://adb.arcadeitalia.net/lista_mame.php)
 
 ## Planned for the future (maybe)
 
 - Add option to automatically download dependencies (mame xml and catver.ini).
+- Verify ROM Set integrity.

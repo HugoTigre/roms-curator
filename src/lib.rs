@@ -1,9 +1,13 @@
 //! # roms-curator
 //!
-//! `roms-curator`, at the moment, is a utility to help and sort mame roms.
-//! It separates bios/working/not-working/other roms into subfolders, so that it can,
+//! `roms-curator`, at the moment, is a utility to help and sort MAME ROMs Sets.
+//! It separates bios/working/not-working/other roms into sub-folders, so that it can,
 //! more easily, be added to frontends without filling the collection with
 //! stuff you don't want.
+//!
+//! See [documentation](https://github.com/HugoTigre/roms-curator) for more details
+//! on how to use this as a command-line Application or as a Library.
+//!
 
 use std::error::Error;
 use std::fs;
@@ -20,6 +24,36 @@ pub mod utils;
 
 type RomCategories = HashMap<String, String>;
 
+///
+/// Reads both MAME ROM database and MAME support file
+/// from [Config](models::config::Config) `mame_xml_path`
+/// and `catver_ini_path` and creates a in memory ROM collection
+/// with all roms categorized according to the version of the
+/// files provided. This collection can then be used to copy
+/// only the intended roms creating a new curated ROM collection.
+/// See [copy_roms](core::roms_service::RomsExt::copy_roms).
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::{env, process};
+/// # use log::error;
+/// use roms_curator::models::config::Config;
+///
+/// # let config = Config::default();
+/// let config = Config::new().build(env::args()).unwrap_or_else(|err| {
+///     error!("Problem parsing arguments: {err}");
+///     process::exit(1);
+/// });
+///
+/// let roms = roms_curator::run(&config).unwrap_or_else(|err| {
+///     error!("Application error: {err}");
+///     process::exit(1);
+/// });
+/// ```
+///
+/// @return A `HashMap<String, Rom>` collection with all ROMs categorized.
+///
 pub fn run(config: &Config) -> Result<Roms, Box<dyn Error>> {
     info!("* Reading mame database and copying files can last a few minutes, please be patient. *");
 

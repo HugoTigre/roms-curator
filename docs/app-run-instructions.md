@@ -1,11 +1,12 @@
 # Run instructions
 
-- [Run instructions](#run-instructions)
-  - [Get help](#get-help)
-  - [Categorize and create a new rom collection](#categorize-and-create-a-new-rom-collection)
-  - [Simulate operation](#simulate-operation)
-  - [Include/exclude useless CHD roms](#includeexclude-useless-chd-roms)
-  - [Putting everything together](#putting-everything-together)
+__Index__
+
+- [Get help](#get-help)
+- [Categorize and create a new rom collection](#categorize-and-create-a-new-rom-collection)
+- [Simulate operation](#simulate-operation)
+- [Include/exclude useless CHD roms](#includeexclude-useless-chd-roms)
+- [Putting everything together](#putting-everything-together)
 
 ## Get help
 

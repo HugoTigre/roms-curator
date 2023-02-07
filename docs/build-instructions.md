@@ -1,13 +1,21 @@
 # Build instructions
 
-- [Build instructions](#build-instructions)
-  - [Build for current platform](#build-for-current-platform)
-  - [Build platform specific binary](#build-platform-specific-binary)
+__Index__
+
+- [Build for current platform](#build-for-current-platform)
+- [Run tests](#run-tests)
+- [Build platform specific binary](#build-platform-specific-binary)
 
 ## Build for current platform
 
 ```bash
 cargo build
+```
+
+## Run tests
+
+```bash
+cargo test
 ```
 
 ## Build platform specific binary

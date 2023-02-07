@@ -5,17 +5,27 @@ use std::path::{Path, PathBuf};
 use crate::utils::sanitize_path;
 
 /// Stores startup program arguments
+///
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// Path to MAME ROM database file. See README on how to get this.
     pub mame_xml_path: String,
+    /// Path to MAME support file. See README on how to get this.
     pub catver_path: String,
+    /// Where the original ROM collection is. Can be more than one directory.
     pub source_path: Vec<String>,
+    /// Where to copy the roms.
     pub destination_path: String,
+    /// Path to the generated report in markdown format. Ex: report.md.
     pub report_path: String,
+    /// If true, not-working CHD ROMs and Directories will not be copied.
     pub ignore_not_working_chd: bool,
+    /// If true, no ROMs will be copied, but the report will still be generated as if they were.
+    /// Needs valid `report_path`.
     pub simulate: bool,
-    // if true only runs simulation, needs report_path set
+    /// If set, only roms which ascii name alphabetical order is higher than this will be copied.
     pub subset_start: String,
+    /// If set, only roms which ascii name alphabetical order is lower than this will be copied.
     pub subset_end: String,
 }
 

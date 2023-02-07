@@ -2,14 +2,18 @@
 name = "roms-curator"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
-description = "..."
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license-file = "LICENSE"
+description = "Helper utility to manage Sets of ROMs. Currently only works for MAME ROMs."
+authors = ["Hugo Tigre"]
+readme = "README.md"
+homepage = "https://github.com/HugoTigre/roms-curator"
+repository = "https://github.com/HugoTigre/roms-curator"
+keywords = ["roms", "mame"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 # xml
-roxmltree = "0.17"
+roxmltree = "0.18"
 # logging
 log = "0.4"
 log4rs = "1.2"
@@ -22,6 +26,3 @@ chrono = "0.4"
 zip = "0.6"
 # lazy
 lazy_static = "1.4"
-
-#backtrace-on-stack-overflow = "0.2.0"
-#stack-sizes = "0.5.0"

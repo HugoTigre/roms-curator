@@ -10,7 +10,7 @@ use roxmltree::{Document, Node};
 use crate::models::config::{Config, DestinationFolders};
 use crate::models::report::{Report, ReportDetailEntry};
 use crate::models::roms::{Chd, ChdStatus, EXCLUDED_CATEGORIES, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt, Roms, RomStatus, SPECIAL_CASES_DEMOTE, SPECIAL_CASES_PROMOTE, Status, UnfilteredRoms};
-use crate::RomCategories;
+use crate::{RomCategories};
 use crate::utils::{copy_dir_recursive};
 
 pub fn parse(doc: Document, categories: RomCategories) -> Result<UnfilteredRoms, Box<dyn Error>> {
@@ -125,6 +125,32 @@ impl UnfilteredRomsExt for UnfilteredRoms {
 }
 
 pub trait RomsExt {
+    ///
+    /// Copies all roms in [Roms](Roms) to the specified destination directory in
+    /// [Config](Config).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use std::process;
+    /// # use log::error;
+    /// use roms_curator::core::roms_service::RomsExt;
+    /// use roms_curator::models::config::Config;
+    ///
+    /// # let config = Config::default();
+    /// let roms = roms_curator::run(&config).unwrap_or_else(|err| {
+    ///     error!("Needs a proper Config");
+    ///     process::exit(1);
+    /// });
+    ///
+    /// let report = roms.copy_roms(&config).unwrap_or_else(|err| {
+    ///     error!("Needs a proper Config");
+    ///     process::exit(1);
+    /// });
+    /// ```
+    ///
+    /// @return A [Report](Report) of all that was and/or was not copied.
+    ///
     fn copy_roms(self, config: &Config) -> Result<Report, Box<dyn Error>>;
     fn check_paths(config: &Config) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
