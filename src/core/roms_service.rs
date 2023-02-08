@@ -87,7 +87,7 @@ impl UnfilteredRomsExt for UnfilteredRoms {
                 } else if data.is_system {
                     (name, data.to_system_rom())
                 } else {
-                    let status = data.status.unwrap();
+                    let status = data.status.clone().unwrap();
 
                     if data.is_mechanical
                         || matches!(status.driver, Status::Preliminary)

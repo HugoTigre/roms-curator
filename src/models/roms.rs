@@ -59,7 +59,7 @@ pub enum RomCategory {
 }
 
 
-#[derive(Display, Debug, PartialEq, Eq, EnumString, Clone, Copy)]
+#[derive(Display, Debug, PartialEq, Eq, EnumString, Clone)]
 #[strum(ascii_case_insensitive)]
 pub enum Status {
     Imperfect,
@@ -67,7 +67,7 @@ pub enum Status {
     Good,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct RomStatus {
     pub driver: Status,
     pub emulation: Status,
