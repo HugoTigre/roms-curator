@@ -61,7 +61,7 @@ fn unzip_test_resources_archive(tag: &str) {
         } else {
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
-                    fs::create_dir_all(&p).unwrap();
+                    fs::create_dir_all(p).unwrap();
                 }
             }
             let mut outfile = File::create(&outpath).unwrap();

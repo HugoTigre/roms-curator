@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fs;
 use std::fs::read_dir;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use log::{error, info};
 
@@ -155,7 +155,7 @@ pub trait RomsExt {
     fn check_paths(config: &Config) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, config: &Config) -> bool;
-    fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool;
+    fn copy_rom(path: &Path, destination: &Path, config: &Config) -> bool;
     fn is_excluded(config: &Config, file_prefix: &str) -> bool;
 }
 
@@ -266,7 +266,7 @@ impl RomsExt for Roms {
         true
     }
 
-    fn copy_rom(path: &PathBuf, destination: &PathBuf, config: &Config) -> bool {
+    fn copy_rom(path: &Path, destination: &Path, config: &Config) -> bool {
         if config.simulate { return true; };
 
         if path.is_dir() {

@@ -79,12 +79,9 @@ fn should_separate_all_working_roms() {
         .collect();
 
     // roms NOT in working set but in `working_arcade` set
-    let included_in_working_arcade: Vec<_> = working_arcade.difference(&working_names).collect();
+    let not_included_in_working_arcade_len = working_names.difference(&working_arcade).count();
     // roms in good set but not in `working_arcade` set
-    let not_included_in_working_arcade: Vec<_> = working_names.difference(&working_arcade).collect();
-
-    let not_included_in_working_arcade_len = not_included_in_working_arcade.len();
-    let included_in_working_arcade_len = included_in_working_arcade.len();
+    let included_in_working_arcade_len = working_arcade.difference(&working_names).count();
 
     // debug_roms_set_diff(included_in_working_arcade, not_included_in_working_arcade);
 

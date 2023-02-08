@@ -91,8 +91,8 @@ fn should_parse_source_paths() {
         mame_xml_path: "some-valid-path.xml".to_string(),
         catver_path: "some-valid-path.ini".to_string(),
         source_path: vec![
-            format!("{}{}", ".".to_string(), fs_sp),
-            format!("{}{}", "target".to_string(), fs_sp),
+            format!("{}{}", ".", fs_sp),
+            format!("{}{}", "target", fs_sp),
             "target".to_string(),
         ],
         destination_path: fs_sp.to_string(),

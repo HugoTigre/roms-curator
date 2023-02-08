@@ -189,23 +189,23 @@ fn should_exclude_subsets() {
     let mut config = Config::new();
     config.subset_start = "r".to_string();
 
-    assert_eq!(Roms::is_excluded(&config, "area51"), true);
-    assert_eq!(Roms::is_excluded(&config, "robocop"), false);
+    assert!(Roms::is_excluded(&config, "area51"));
+    assert!(!Roms::is_excluded(&config, "robocop"));
 
     // subset_end only
     let mut config = Config::new();
     config.subset_end = "sv0".to_string();
 
-    assert_eq!(Roms::is_excluded(&config, "robocop"), false);
-    assert_eq!(Roms::is_excluded(&config, "sv801"), true);
+    assert!(!Roms::is_excluded(&config, "robocop"));
+    assert!(Roms::is_excluded(&config, "sv801"));
 
     // subset_start and subset_end
     let mut config = Config::new();
     config.subset_start = "az".to_string();
     config.subset_end = "sv0".to_string();
 
-    assert_eq!(Roms::is_excluded(&config, "as_acp"), true);
-    assert_eq!(Roms::is_excluded(&config, "elevatora"), false);
-    assert_eq!(Roms::is_excluded(&config, "robocop"), false);
-    assert_eq!(Roms::is_excluded(&config, "sv801"), true);
+    assert!(Roms::is_excluded(&config, "as_acp"));
+    assert!(!Roms::is_excluded(&config, "elevatora"));
+    assert!(!Roms::is_excluded(&config, "robocop"));
+    assert!(Roms::is_excluded(&config, "sv801"));
 }
