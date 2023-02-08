@@ -1,7 +1,7 @@
 # roms-curator
 
 [![License: MIT](https://img.shields.io/github/license/hugotigre/roms-curator?style=flat-square)](license)
-
+![CI](https://github.com/hugotigre/roms-curator/actions/workflows/build.yml/badge.svg)
 ---
 
 Helper utility to manage Sets of ROMs.
