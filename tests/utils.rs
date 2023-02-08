@@ -15,7 +15,7 @@ static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
 static INIT: Once = Once::new();
 
 pub fn set_up(tag: &String) {
-    println!("Setting up tests environment [{}]...", tag);
+    println!("Setting up tests environment [{tag}]...");
     clean_up(tag);
 
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
@@ -91,7 +91,7 @@ fn create_test_dir(path: &Path) {
             }
         }
         Err(err) => {
-            panic!("Error creating directory {}", err);
+            panic!("Error creating directory {err}");
         }
     }
 }

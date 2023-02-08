@@ -12,7 +12,7 @@ pub fn create_dir(path: &Path, ignore_if_exists: bool) {
             }
         }
         Err(err) => {
-            panic!("Error creating directory {}", err);
+            panic!("Error creating directory {err}");
         }
     }
 }

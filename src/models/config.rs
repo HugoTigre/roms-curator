@@ -60,7 +60,7 @@ impl Config {
 
             let param = arg_split[0].trim().to_lowercase();
             if !Self::check_param(&param) {
-                eprintln!("Don't recognize argument {}", param);
+                eprintln!("Don't recognize argument {param}");
                 return Err("Argument not recognized");
             }
 
@@ -141,7 +141,7 @@ impl Config {
                     self.subset_end = value.to_ascii_lowercase();
                 }
                 _ =>
-                    println!("{} param ignored (not recognized).", param)
+                    println!("{param} param ignored (not recognized).")
             }
         }
 
@@ -218,7 +218,7 @@ Options:
 Example:
   roms-curator --mame_xml_path=/mame/mame.xml --catver_path=/mame/catver.ini --source_path=/roms --destination_path=/roms-new/ ";
 
-        println!("{}", help);
+        println!("{help}");
     }
 }
 

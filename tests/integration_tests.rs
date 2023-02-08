@@ -42,7 +42,7 @@ fn should_build_set_with_no_errors() {
     let success = match result {
         Ok(..) => true,
         Err(err) => {
-            println!("{:?}", err);
+            println!("{err:?}");
             false
         }
     };
