@@ -1,12 +1,16 @@
 # roms-curator
 
+[![License: MIT](https://img.shields.io/github/license/hugotigre/roms-curator?style=flat-square)](license)
+
+---
+
 Helper utility to manage Sets of ROMs.
 Currently only works for MAME ROMs.
 
 Possible usages might include:
 
 1. As an Application to create a new ROM Set
-separating working and non working ROMs (inluding CHDs)
+separating working and non-working ROMs (inluding CHDs)
 
 1. As a Library if you want to categorize your entire collection
 and do with it what you will.

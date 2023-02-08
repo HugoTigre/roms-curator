@@ -26,7 +26,7 @@ type RomCategories = HashMap<String, String>;
 
 ///
 /// Reads both MAME ROM database and MAME support file
-/// from [Config](models::config::Config) `mame_xml_path`
+/// from [Config](Config) `mame_xml_path`
 /// and `catver_ini_path` and creates a in memory ROM collection
 /// with all roms categorized according to the version of the
 /// files provided. This collection can then be used to copy
