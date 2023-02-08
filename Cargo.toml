@@ -10,6 +10,7 @@ homepage = "https://github.com/HugoTigre/roms-curator"
 repository = "https://github.com/HugoTigre/roms-curator"
 keywords = ["roms", "mame"]
 categories = ["command-line-utilities"]
+exclude = [".github/", "tests/", "docs/"]
 
 [dependencies]
 # xml
