@@ -18,6 +18,12 @@ cargo build
 cargo test
 ```
 
+Run with expensive tests
+
+```bash
+CARGO_RC_RUN_EXPENSIVE_TESTS=true cargo test
+```
+
 ## Build platform specific binary
 
 Example for windows

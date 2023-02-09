@@ -12,13 +12,15 @@ use roms_curator::models::config::Config;
 use roms_curator::models::roms::RomCategory::Working;
 use roms_curator::models::roms::Roms;
 
-use crate::utils::{clean_up, set_up};
+use crate::utils::{clean_up, run_expensive_tests, set_up};
 
 mod utils;
 
 static TARGET_FOLDER: &str = "target/tests/";
-static MAME_XML_FILE_NAME: &str = "mame-roms.xml";
-static CATEGORY_LIST_FILE_NAME: &str = "catver.ini";
+static MAME_XML_FILE_NAME_FULL_SET: &str = "mame-roms.xml";
+static MAME_XML_FILE_NAME_SMALL_SET: &str = "tests/resources/listxml_0244.xml";
+static CATEGORY_LIST_FILE_NAME_FULL_SET: &str = "catver.ini";
+static CATEGORY_LIST_FILE_NAME_SMALL_SET: &str = "tests/resources/catver_0244.ini";
 static WORKING_ARCADE_LIST_PATH: &str = "tests/resources/working_arcade_0244.ini";
 static ROMS_SOURCE_PATH: &str = "tests/resources/merged_roms/";
 static CHDS_SOURCE_PATH: &str = "tests/resources/chds/";
@@ -86,12 +88,15 @@ fn should_separate_all_working_roms() {
     // debug_roms_set_diff(included_in_working_arcade, not_included_in_working_arcade);
 
     // difference between sets was manually validated
-    assert_eq!(not_included_in_working_arcade_len, 9);
+    let notincluded_in_working_expected = if run_expensive_tests() { 9 } else { 0 };
+    assert_eq!(not_included_in_working_arcade_len, notincluded_in_working_expected);
+
     // These include roms that:
     // - don't actually work
     // - are mechanical and/or casino games
     // - ...
-    assert_eq!(included_in_working_arcade_len, 1621);
+    let included_in_working_expected = if run_expensive_tests() { 1621 } else { 11796 };
+    assert_eq!(included_in_working_arcade_len, included_in_working_expected);
 
     clean_up(&tag);
 }
@@ -261,9 +266,21 @@ fn get_files_from_folder(path: &str) -> Vec<String> {
 fn build_config(
     tag: &str, simulate: bool, subset_start: String, subset_end: String,
 ) -> Config {
+    let run_expensive_tests = run_expensive_tests();
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
-    let mame_xml_path = test_folder.join(MAME_XML_FILE_NAME).to_str().unwrap().to_string();
-    let catver_path = test_folder.join(CATEGORY_LIST_FILE_NAME).to_str().unwrap().to_string();
+
+    let mame_xml_path = if run_expensive_tests {
+        test_folder.join(MAME_XML_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
+    } else {
+        Path::new(MAME_XML_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
+    };
+
+    let catver_path = if run_expensive_tests {
+        test_folder.join(CATEGORY_LIST_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
+    } else {
+        Path::new(CATEGORY_LIST_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
+    };
+
     let destination_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).to_str().unwrap().to_string();
     let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
     let ignore_not_working_chd = false;

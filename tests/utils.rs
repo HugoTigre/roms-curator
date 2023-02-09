@@ -1,12 +1,13 @@
-use std::{fs, io};
+use std::{env, fs, io};
 use std::borrow::ToOwned;
 use std::fs::File;
 use std::path::Path;
 use std::sync::Once;
+
+use log::{debug, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use log::LevelFilter;
 
 static TARGET_FOLDER: &str = "target/tests/";
 static RESOURCES_PROD_PATH: &str = "tests/resources/prod_lists_0244.zip";
@@ -15,7 +16,7 @@ static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
 static INIT: Once = Once::new();
 
 pub fn set_up(tag: &String) {
-    println!("Setting up tests environment [{tag}]...");
+    debug!("Setting up tests environment [{tag}]...");
     clean_up(tag);
 
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
@@ -24,13 +25,18 @@ pub fn set_up(tag: &String) {
     let categorized_roms_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME);
     create_test_dir(&categorized_roms_path);
 
-    unzip_test_resources_archive(tag);
+    if run_expensive_tests() {
+        unzip_test_resources_archive(tag);
+    }
 
-    INIT.call_once(|| { set_up_logging(); });
+    INIT.call_once(|| {
+        set_up_logging();
+        if run_expensive_tests() { debug!("Using mame full set in integration tests"); } else { debug!("Using mame small set in integration tests"); };
+    });
 }
 
 pub fn clean_up(tag: &String) {
-    println!("Cleaning up tests");
+    debug!("Cleaning up tests");
 
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
 
@@ -110,5 +116,12 @@ fn set_up_logging() {
             .unwrap();
 
         log4rs::init_config(config).unwrap();
+    }
+}
+
+pub fn run_expensive_tests() -> bool {
+    match env::var("CARGO_RC_RUN_EXPENSIVE_TESTS") {
+        Ok(s) => s == "true",
+        _ => false
     }
 }

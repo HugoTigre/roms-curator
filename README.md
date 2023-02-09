@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/github/license/hugotigre/roms-curator?style=flat-square)](license)
 ![CI](https://github.com/hugotigre/roms-curator/actions/workflows/build.yml/badge.svg)
 [![crates.io](https://img.shields.io/crates/v/roms-curator.svg?style=flat-square)](https://crates.io/crates/roms-curator)
+
 ---
 
 Helper utility to manage Sets of ROMs.
@@ -22,6 +23,7 @@ __Index__
 - [Requirement / Dependencies](#requirement--dependencies)
 - [How this works](#how-this-works)
 - [Application run instructions](#application-run-instructions)
+- [Build instructions](#build-instructions)
 - [Library usage instructions](#library-usage-instructions)
 - [FAQ](#faq)
 - [Useful links](#useful-links)
@@ -76,6 +78,10 @@ Complete Set of CHD files can be `500+ GB`.
 ## Application run instructions
 
 See [here](docs/app-run-instructions.md)
+
+## Build instructions
+
+See [here](docs/build-instructions.md)
 
 ## Library usage instructions
 

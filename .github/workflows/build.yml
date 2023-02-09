@@ -12,25 +12,60 @@ env:
 
 jobs:
 
-  lint:
+  lint-and-tag:
     runs-on: ubuntu-latest
+    outputs:
+      valid_version: ${{ steps.tag-version.outputs.valid_version }}
     steps:
       - uses: actions/checkout@v3
-      - run: rustup component add clippy
-      - uses: actions-rs/clippy-check@v1
+
+      - name: Add clippy
+        run: rustup component add clippy
+
+      - name: Run clippy
+        uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets --all-features -- -D clippy::correctness
+          args: --all-targets -- -D warnings
+
+      # Gets all tags until GitHub as a better solution for this
+      # example: https://github.com/actions/checkout/pull/579
+      - name: Get tags
+        run: git fetch --tags origin
+
+      - name: Check tag version
+        id: tag-version
+        run: |-
+          wget -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
+          chmod +x /usr/local/bin/semver
+          export sha=${{ github.sha }}
+          export tag=$(git describe --tags --contains $sha || echo "")
+          export tag=${tag%^*}
+          echo "tag: $tag"
+          echo "valid_version=$(semver validate $tag)" >> $GITHUB_OUTPUT
+          echo "is valid tag version: $valid_version"
 
   build:
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        os: [ ubuntu-latest ]
+#        os: [ ubuntu-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
-    needs: [lint]
+    needs: [ lint-and-tag ]
     steps:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose
       - name: Run tests
         run: cargo test --verbose
+
+  publish:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && needs.lint-and-tag.outputs.valid_version == 'valid'
+    needs: [ lint-and-tag, build ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Publish
+        run: cargo publish --verbose --token ${CRATES_TOKEN}
+        env:
+          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
