@@ -6,7 +6,8 @@
 ---
 
 Helper utility to manage Sets of ROMs.
-Currently only works for MAME ROMs.
+Currently only works for MAME ROMs,
+for example to create a working only ROM Set.
 
 Possible usages might include:
 

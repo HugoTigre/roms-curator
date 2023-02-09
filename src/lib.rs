@@ -1,9 +1,9 @@
 //! # roms-curator
 //!
 //! `roms-curator`, at the moment, is a utility to help and sort MAME ROMs Sets.
-//! It separates bios/working/not-working/other roms into sub-folders, so that it can,
-//! more easily, be added to frontends without filling the collection with
-//! stuff you don't want.
+//! For example to create a working only ROM Set. It separates bios/working/not-working/other
+//! roms into sub-folders, so that it can, more easily, be added to frontends without filling
+//! the collection with stuff you don't want.
 //!
 //! See [documentation](https://github.com/HugoTigre/roms-curator) for more details
 //! on how to use this as a command-line Application or as a Library.
