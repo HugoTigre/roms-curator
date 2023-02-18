@@ -12,26 +12,33 @@ env:
 
 jobs:
 
-  lint-and-tag:
-    runs-on: ubuntu-latest
+  lint-tag-build:
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    runs-on: ${{ matrix.os }}
     outputs:
+      tag: ${{ steps.tag-version.outputs.tag }}
       valid_version: ${{ steps.tag-version.outputs.valid_version }}
     steps:
       - uses: actions/checkout@v3
 
       - name: Add clippy
         run: rustup component add clippy
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Run clippy
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-targets -- -D warnings
+        if: matrix.os == 'ubuntu-latest'
 
-      # Gets all tags until GitHub as a better solution for this
+      # Gets all tags until GitHub has a better solution for this
       # example: https://github.com/actions/checkout/pull/579
       - name: Get tags
         run: git fetch --tags origin
+        if: matrix.os == 'ubuntu-latest'
 
       - name: Check tag version
         id: tag-version
@@ -42,29 +49,86 @@ jobs:
           export tag=$(git describe --tags --contains $sha || echo "")
           export tag=${tag%^*}
           echo "tag: $tag"
-          echo "valid_version=$(semver validate $tag)" >> $GITHUB_OUTPUT
+          export valid_version=$(semver validate $tag)
           echo "is valid tag version: $valid_version"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "valid_version=$valid_version" >> $GITHUB_OUTPUT
+        if: matrix.os == 'ubuntu-latest'
 
-  build:
-    strategy:
-      matrix:
-        os: [ ubuntu-latest ]
-#        os: [ ubuntu-latest, windows-latest ]
-    runs-on: ${{ matrix.os }}
-    needs: [ lint-and-tag ]
-    steps:
-      - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose
+
       - name: Run tests
         run: cargo test --verbose
 
-  publish:
+  release-and-publish:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && needs.lint-and-tag.outputs.valid_version == 'valid'
-    needs: [ lint-and-tag, build ]
+    if: github.event_name == 'push' && needs.lint-tag-build.outputs.valid_version == 'valid'
+    needs: [ lint-tag-build ]
     steps:
       - uses: actions/checkout@v3
+
+      - name: Build linux
+        run: cargo build --verbose
+
+      - name: install cross
+        run: cargo install -f cross
+
+      - name: Build windows
+        run: cross build --target x86_64-pc-windows-gnu
+
+      - name: Create release
+        uses: actions/github-script@v6
+        env:
+          tag: ${{ needs.lint-tag-build.outputs.tag }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const { tag } = process.env
+            
+            try {
+              const release_name = 'v' + tag;
+
+              console.log("release name = ", release_name);
+              console.log("tag name = ", tag);
+
+              const release_response = await github.rest.repos.createRelease({
+                draft: false,
+                generate_release_notes: true,
+                name: release_name,
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: tag,
+              });
+
+              const linux_asset_response = await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release_response.data.id,
+                name: 'roms-curator-linux',
+                data: await fs.readFileSync("target/debug/roms-curator"),
+              });
+            
+              console.log("linux asset upload state = ", linux_asset_response.data.state);
+            
+              const windows_asset_response = await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release_response.data.id,
+                name: 'roms-curator.exe',
+                data: await fs.readFileSync("target/x86_64-pc-windows-gnu/debug/roms-curator.exe"),
+              });
+            
+              console.log("windows asset upload state = ", windows_asset_response.data.state);
+
+              core.exportVariable('RELEASE_ID', release_response.data.id);
+              core.exportVariable('RELEASE_UPLOAD_URL', release_response.data.upload_url);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
       - name: Publish
         run: cargo publish --verbose --token ${CRATES_TOKEN}
         env:
