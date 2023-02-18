@@ -3,9 +3,11 @@
 __Index__
 
 - [Get help](#get-help)
+- [Mandatory arguments](#mandatory-arguments)
 - [Categorize and create a new rom collection](#categorize-and-create-a-new-rom-collection)
 - [Simulate operation](#simulate-operation)
 - [Include/exclude useless CHD roms](#includeexclude-useless-chd-roms)
+- [Include/exclude rom files](#includeexclude-rom-files)
 - [Putting everything together](#putting-everything-together)
 
 ## Get help
@@ -14,10 +16,18 @@ __Index__
 roms-curator --help
 ```
 
-## Categorize and create a new rom collection
+## Mandatory arguments
 
-Setting the `report path` file (markdown file) is optional.
-The rest of the arguments are mandatory.
+These arguments are mandatory the rest are all optional.
+
+```
+--mame_xml_path
+--catver_path
+--source_path
+--destination_path
+```
+
+## Categorize and create a new rom collection
 
 ```bash
 roms-curator \
@@ -66,6 +76,27 @@ roms-curator \
 --ignore_not_working_chd=true
 ```
 
+## Include/exclude rom files
+
+Because the entire copy of all roms including CHD can take a long time,
+it's possible to divide the executions into separate steps, but choosing
+which files to include or exclude.
+
+```bash
+roms-curator \
+
+--mame_xml_path=/mame/mame.xml \
+--catver_path=/mame/catver.ini \
+--source_path=/roms,/chd-roms \
+--destination_path=/roms-new/ \
+--subset_start="a"
+--subset_end="de"
+```
+
+In this example only roms which ascii name alphabetical order is higher than or
+equal to `a` and lower than or equal to `de` will be copied.
+It's also possible to just set `subset_start` or `subset_end`.
+
 ## Putting everything together
 
 ```bash
@@ -76,5 +107,7 @@ roms-curator \
 --destination_path=/roms-new/ \
 --report_path=/mame/report/report.md \
 --ignore_not_working_chd=true \
+--subset_start="0"
+--subset_end="zz"
 --simulate=true
 ```
