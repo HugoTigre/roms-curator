@@ -13,7 +13,7 @@ for example to create a working only ROM Set.
 Possible usages might include:
 
 1. As an Application to create a new ROM Set
-separating working and non-working ROMs (inluding CHDs)
+separating working and non-working ROMs (including CHDs)
 
 1. As a Library if you want to categorize your entire collection
 and do with it what you will.
