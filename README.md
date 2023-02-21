@@ -27,6 +27,7 @@ __Index__
 - [Library usage instructions](#library-usage-instructions)
 - [FAQ](#faq)
 - [Useful links](#useful-links)
+- [Help](#help)
 - [Planned for the future (maybe)](#planned-for-the-future-maybe)
 
 ## Requirement / Dependencies
@@ -95,6 +96,14 @@ See [here](docs/faq.md)
 
 - [Download MAME](https://www.mamedev.org/release.html)
 - [Online MAME ROM database](http://adb.arcadeitalia.net/lista_mame.php)
+
+## Help
+
+Please feel free to open an [Issue](https://github.com/HugoTigre/roms-curator/issues) if:
+
+- You encounter any problems;
+- Something is missing from the documentation material or hard to understand;
+- Have any improvement suggestions or feature request.
 
 ## Planned for the future (maybe)
 
