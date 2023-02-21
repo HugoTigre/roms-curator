@@ -24,24 +24,25 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Add clippy
-        run: rustup component add clippy
         if: matrix.os == 'ubuntu-latest'
+        run: rustup component add clippy
 
       - name: Run clippy
+        if: matrix.os == 'ubuntu-latest'
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-targets -- -D warnings
-        if: matrix.os == 'ubuntu-latest'
 
       # Gets all tags until GitHub has a better solution for this
       # example: https://github.com/actions/checkout/pull/579
       - name: Get tags
-        run: git fetch --tags origin
         if: matrix.os == 'ubuntu-latest'
+        run: git fetch --tags origin
 
       - name: Check tag version
         id: tag-version
+        if: matrix.os == 'ubuntu-latest'
         run: |-
           wget -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
           chmod +x /usr/local/bin/semver
@@ -53,7 +54,6 @@ jobs:
           echo "is valid tag version: $valid_version"
           echo "tag=$tag" >> $GITHUB_OUTPUT
           echo "valid_version=$valid_version" >> $GITHUB_OUTPUT
-        if: matrix.os == 'ubuntu-latest'
 
       - name: Build
         run: cargo build --verbose
