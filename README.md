@@ -1,7 +1,7 @@
 # roms-curator
 
 [![License: MIT](https://img.shields.io/github/license/hugotigre/roms-curator?style=flat-square)](license)
-![CI](https://github.com/hugotigre/roms-curator/actions/workflows/build.yml/badge.svg)
+![CI](https://github.com/hugotigre/roms-curator/actions/workflows/ci.yml/badge.svg)
 [![crates.io](https://img.shields.io/crates/v/roms-curator.svg?style=flat-square)](https://crates.io/crates/roms-curator)
 
 ---
