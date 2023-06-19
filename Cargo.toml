@@ -20,7 +20,7 @@ log = "0.4"
 log4rs = "1.2"
 # utilities
 strum = "0.24"
-strum_macros = "0.24"
+strum_macros = "0.25"
 rand = "0.8"
 chrono = "0.4"
 # zip
