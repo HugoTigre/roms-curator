@@ -12,11 +12,11 @@
 use std::error::Error;
 use std::fs;
 use std::collections::HashMap;
-use log::{info};
 use roxmltree::Document;
+use crate::core::args::Args;
 use crate::core::roms_service::{UnfilteredRomsExt, parse};
-use crate::models::config::Config;
 use crate::models::roms::Roms;
+use crate::utils::{build_progress_bar, ProgressBarEx};
 
 pub mod core;
 pub mod models;
@@ -38,15 +38,15 @@ type RomCategories = HashMap<String, String>;
 /// ```no_run
 /// # use std::{env, process};
 /// # use log::error;
-/// use roms_curator::models::config::Config;
+/// use roms_curator::core::args::build_args;
 ///
-/// # let config = Config::default();
-/// let config = Config::new().build(env::args()).unwrap_or_else(|err| {
-///     error!("Problem parsing arguments: {err}");
+/// // build args from command line arguments
+/// let args = build_args().unwrap_or_else(|err| {
+///     error!("Application error: {err}");
 ///     process::exit(1);
-/// });
+///  });
 ///
-/// let roms = roms_curator::run(&config).unwrap_or_else(|err| {
+/// let roms = roms_curator::run(&args).unwrap_or_else(|err| {
 ///     error!("Application error: {err}");
 ///     process::exit(1);
 /// });
@@ -54,19 +54,27 @@ type RomCategories = HashMap<String, String>;
 ///
 /// @return A `HashMap<String, Rom>` collection with all ROMs categorized.
 ///
-pub fn run(config: &Config) -> Result<Roms, Box<dyn Error>> {
-    info!("* Reading mame database and copying files can last a few minutes, please be patient. *");
+pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
+    let progress_bar = if args.progress { Some(build_progress_bar()) } else { None };
+    progress_bar.set_length(3);
 
-    info!("Reading {} document...", &config.catver_path);
-    let rom_categories = build_category_list(config.catver_path.clone())?;
+    progress_bar.println("* Reading mame database and copying files can last a few minutes, please be patient. *");
 
-    info!("Reading {} document...", &config.mame_xml_path);
-    let contents = fs::read_to_string(config.mame_xml_path.clone())?;
+    progress_bar.println(format!("Reading {} document...", &args.catver_path).as_str());
+    let rom_categories = build_category_list(args.catver_path.clone())?;
+    progress_bar.inc();
+
+    progress_bar.println(format!("Reading {} document...", &args.mame_xml_path).as_str());
+    let contents = fs::read_to_string(args.mame_xml_path.clone())?;
     let doc = read_mame_xml(&contents)?;
+    progress_bar.inc();
 
-    info!("Categorizing roms...");
+    progress_bar.println("Categorizing roms...");
     let unfiltered_roms = parse(doc, rom_categories)?;
     let roms = unfiltered_roms.categorize_roms()?;
+    progress_bar.inc();
+
+    if let Some(..) = progress_bar { progress_bar.unwrap().finish(); }
 
     Ok(roms)
 }

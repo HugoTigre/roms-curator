@@ -3,15 +3,16 @@ use std::fs;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use log::{error, info};
 
+use log::error;
 use roxmltree::{Document, Node};
 
-use crate::models::config::{Config, DestinationFolders};
+use crate::core::args::Args;
+use crate::models::destination_folders::DestinationFolders;
 use crate::models::report::{Report, ReportDetailEntry};
 use crate::models::roms::{Chd, ChdStatus, EXCLUDED_CATEGORIES, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt, Roms, RomStatus, SPECIAL_CASES_DEMOTE, SPECIAL_CASES_PROMOTE, Status, UnfilteredRoms};
-use crate::{RomCategories};
-use crate::utils::{copy_dir_recursive};
+use crate::RomCategories;
+use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
 
 pub fn parse(doc: Document, categories: RomCategories) -> Result<UnfilteredRoms, Box<dyn Error>> {
     let mut roms = UnfilteredRoms::new();
@@ -134,44 +135,54 @@ pub trait RomsExt {
     /// ```no_run
     /// # use std::process;
     /// # use log::error;
+    /// use roms_curator::core::args::build_args;
     /// use roms_curator::core::roms_service::RomsExt;
-    /// use roms_curator::models::config::Config;
+    /// use roms_curator::utils::build_progress_bar;
     ///
-    /// # let config = Config::default();
-    /// let roms = roms_curator::run(&config).unwrap_or_else(|err| {
+    /// let args = build_args().unwrap_or_else(|err| {
+    ///     error!("Application error: {err}");
+    ///     process::exit(1);
+    /// });
+    ///
+    /// let roms = roms_curator::run(&args).unwrap_or_else(|err| {
     ///     error!("Needs a proper Config");
     ///     process::exit(1);
     /// });
     ///
-    /// let report = roms.copy_roms(&config).unwrap_or_else(|err| {
-    ///     error!("Needs a proper Config");
+    /// let report = roms.copy_roms(&args).unwrap_or_else(|err| {
+    ///     error!("Application error: {err}");
     ///     process::exit(1);
     /// });
     /// ```
     ///
     /// @return A [Report](Report) of all that was and/or was not copied.
     ///
-    fn copy_roms(self, config: &Config) -> Result<Report, Box<dyn Error>>;
-    fn check_paths(config: &Config) -> Result<bool, &'static str>;
+    fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>>;
+    fn check_paths(args: &Args) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
-    fn should_move(rom: &Rom, config: &Config) -> bool;
-    fn copy_rom(path: &Path, destination: &Path, config: &Config) -> bool;
-    fn is_excluded(config: &Config, file_prefix: &str) -> bool;
+    fn should_move(rom: &Rom, args: &Args) -> bool;
+    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> bool;
+    fn is_excluded(args: &Args, file_prefix: &str) -> bool;
 }
 
 impl RomsExt for Roms {
-    fn copy_roms(self, config: &Config) -> Result<Report, Box<dyn Error>> {
-        Self::check_paths(config)?;
+    fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
+        Self::check_paths(args)?;
 
-        let destination_paths = config.build_destination_folders_path();
+        let destination_paths = args.build_destination_folders_path();
 
         let mut total_working = 0;
         let mut total_other = 0;
         let mut something_failed = false;
         let mut report = Report::new();
 
-        for source_path in config.source_path.clone() {
-            info!("Copying from source: {}", &source_path);
+        for source_path in args.source_path.clone() {
+            let progress_bar = if args.progress { Some(build_progress_bar()) } else { None };
+
+            progress_bar.println(format!("Copying from source: {}", &source_path).as_str());
+
+            let nr_of_files = read_dir(&source_path)?.count();
+            if let Some(..) = progress_bar { progress_bar.as_ref().unwrap().set_length(nr_of_files as u64); }
 
             for entry in read_dir(source_path)? {
                 let path = entry?.path();
@@ -180,15 +191,17 @@ impl RomsExt for Roms {
                     path.file_name().unwrap().to_str().unwrap()
                 );
 
-                if Self::is_excluded(config, file_prefix) { continue; }
+                progress_bar.inc();
+
+                if Self::is_excluded(args, file_prefix) { continue; }
 
                 if let Some(rom) = self.get(&file_prefix.to_ascii_lowercase()) {
-                    if Self::should_move(rom, config) {
+                    if Self::should_move(rom, args) {
                         let destination =
                             Self::get_destination_folder(rom, &destination_paths)
                                 .join(file_name);
 
-                        let moved = Self::copy_rom(&path, &destination, config);
+                        let moved = Self::copy_rom(&path, &destination, args);
                         if !moved { something_failed = true };
 
                         let report_detail_entry = ReportDetailEntry { rom_name: file_name.to_string(), moved, is_chd: !rom.data.chd.is_empty() };
@@ -213,6 +226,8 @@ impl RomsExt for Roms {
                     report.add_ignored_rom(report_detail_entry);
                 }
             };
+
+            if let Some(..) = progress_bar { progress_bar.unwrap().finish(); }
         };
 
         report
@@ -224,9 +239,9 @@ impl RomsExt for Roms {
         Ok(report)
     }
 
-    fn check_paths(config: &Config) -> Result<bool, &'static str> {
-        if config.source_path.is_empty() { return Err("Missing roms source path."); }
-        if config.destination_path.is_empty() { return Err("Missing roms destination path."); }
+    fn check_paths(args: &Args) -> Result<bool, &'static str> {
+        if args.source_path.is_empty() { return Err("Missing roms source path."); }
+        if args.destination_path.is_empty() { return Err("Missing roms destination path."); }
         Ok(true)
     }
 
@@ -254,8 +269,8 @@ impl RomsExt for Roms {
         }
     }
 
-    fn should_move(rom: &Rom, config: &Config) -> bool {
-        if !config.ignore_not_working_chd { return true; }
+    fn should_move(rom: &Rom, args: &Args) -> bool {
+        if !args.ignore_not_working_chd { return true; }
 
         let is_chd = !rom.data.chd.is_empty();
 
@@ -266,8 +281,8 @@ impl RomsExt for Roms {
         true
     }
 
-    fn copy_rom(path: &Path, destination: &Path, config: &Config) -> bool {
-        if config.simulate { return true; };
+    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> bool {
+        if args.simulation { return true; };
 
         if path.is_dir() {
             if let Some(err) = copy_dir_recursive(path, destination).err() {
@@ -282,9 +297,9 @@ impl RomsExt for Roms {
         true
     }
 
-    fn is_excluded(config: &Config, file_prefix: &str) -> bool {
-        (!config.subset_start.is_empty() && file_prefix < config.subset_start.as_str()) ||
-            (!config.subset_end.is_empty() && file_prefix > config.subset_end.as_str())
+    fn is_excluded(args: &Args, file_prefix: &str) -> bool {
+        (!args.subset_start.is_empty() && file_prefix < args.subset_start.as_str()) ||
+            (!args.subset_end.is_empty() && file_prefix > args.subset_end.as_str())
     }
 }
 
