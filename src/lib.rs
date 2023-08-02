@@ -74,7 +74,7 @@ pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
     let roms = unfiltered_roms.categorize_roms()?;
     progress_bar.inc();
 
-    if let Some(..) = progress_bar { progress_bar.unwrap().finish(); }
+    if let Some(pb) = progress_bar { pb.finish(); }
 
     Ok(roms)
 }
