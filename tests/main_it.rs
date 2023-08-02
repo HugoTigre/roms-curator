@@ -93,14 +93,14 @@ fn should_parse_source_paths() {
     let (mame_xml_file, carver_init_file) =
         create_mame_and_catver_files_to_bypass_file_not_found_error(&tag);
 
+    let fs_sp = std::path::MAIN_SEPARATOR;
+
     let assert = cmd
         .arg(format!("--mame-xml-path={}", mame_xml_file))
         .arg(format!("--catver-path={}", carver_init_file))
-        .arg("--source-path=./,target/,target")
-        .arg("--destination-path=/")
+        .arg(format!("--source-path=.{},target{},target", fs_sp, fs_sp))
+        .arg(format!("--destination-path={}", fs_sp))
         .assert();
-
-    let fs_sp = std::path::MAIN_SEPARATOR;
 
     assert.stdout(predicate::str::contains(
         format!("source_path: [\".{}\", \"target{}\", \"target\"]", fs_sp, fs_sp)
