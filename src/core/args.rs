@@ -219,7 +219,7 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
 
 fn validate_mame_xml_file(path: &str) -> Result<String, String> {
     if !path.ends_with(".xml") {
-        return Err("File needs to be a XML file, for ex, mame.xml.".into());
+        Err("File needs to be a XML file, for ex, mame.xml.".into())
     } else {
         validate_file_arg(path)
     }
