@@ -1,6 +1,4 @@
 pub mod roms;
-pub mod config;
 pub mod report;
+pub mod destination_folders;
 
-#[cfg(test)]
-mod config_test;
