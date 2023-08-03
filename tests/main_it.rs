@@ -102,9 +102,13 @@ fn should_parse_source_paths() {
         .arg(format!("--destination-path={}", fs_sp))
         .assert();
 
-    assert.stdout(predicate::str::contains(
+    let expected = if fs_sp == '/' {
         format!("source_path: [\".{}\", \"target{}\", \"target\"]", fs_sp, fs_sp)
-    ));
+    } else {
+        format!("source_path: [\".{}{}\", \"target{}{}\", \"target\"]", fs_sp, fs_sp, fs_sp, fs_sp)
+    };
+
+    assert.stdout(predicate::str::contains(expected));
 }
 
 #[test]

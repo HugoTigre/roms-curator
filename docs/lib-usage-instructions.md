@@ -35,7 +35,7 @@ so that we can exclude from our collection a certain type of category.
 
 Manually build the `Config` struct:
 
-Note that to categorize ROMs we just need `mame_xml_path` and `catver_path` properties.
+Note that to categorize ROMs we just need `mame-xml-path` and `catver-path` properties.
 
 ```rust
 let config = Config {
@@ -64,10 +64,10 @@ Build the `Config` from input arguments:
 Note that this method validates all properties, so we need to provide
 all mandatory arguments to achieve the entire process, categorize ROMs
 and copy them to a destination directory, the following are all mandatory:
-`mame_xml_path`, `catver_path`, `source_path` and `destination_path`.
+`mame-xml-path`, `catver-path`, `source-path` and `destination-path`.
 Of course we can always use dummy data.
 
-Also if we just want to simulate the process, `report_path` is also mandatory.
+Also, if we just want to simulate the process, `report-path` is also mandatory.
 
 ```rust
 let config = Config::new().build(env::args()).unwrap_or_else(|err| {
