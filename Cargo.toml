@@ -1,6 +1,6 @@
 [package]
 name = "roms-curator"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2021"
 license-file = "LICENSE"
 description = "Helper utility to manage Sets of ROMs. Currently only works for MAME ROMs."
@@ -13,17 +13,32 @@ categories = ["command-line-utilities"]
 exclude = [".github/", "tests/", "docs/", ".gitignore", ".editorconfig"]
 
 [dependencies]
-# xml
-roxmltree = "0.18"
 # logging
 log = "0.4"
 log4rs = "1.2"
+# xml
+roxmltree = "0.18"
 # utilities
 strum = "0.24"
 strum_macros = "0.24"
 rand = "0.8"
 chrono = "0.4"
-# zip
+clap = { version = "4.1", features = ["cargo"] } # arguments
+indicatif = { version = "0.17", features = ["rayon"] } # progress bar
 zip = "0.6"
-# lazy
 lazy_static = "1.4"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+criterion = { version = "0.4.0", features = ["html_reports"] } # benchmarks
+
+[profile.bench]
+debug = true
+
+[[bench]]
+name = "categorize_roms_bench"
+harness = false
+[[bench]]
+name = "copy_roms_bench"
+harness = false

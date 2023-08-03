@@ -1,45 +1,28 @@
 use std::collections::HashSet;
-use std::fs::{File, read_dir};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::iter::Filter;
 use std::path::Path;
 use std::string::ToString;
 
-use rand::{distributions::Alphanumeric, Rng};
-
 use roms_curator::core::roms_service::RomsExt;
-use roms_curator::models::config::Config;
 use roms_curator::models::roms::RomCategory::Working;
 use roms_curator::models::roms::Roms;
 
-use crate::utils::{clean_up, run_expensive_tests, set_up};
+use crate::utils::{CATEGORIZED_CHD_OTHER_FOLDER_NAME, CATEGORIZED_CHD_WORKING_FOLDER_NAME, CATEGORIZED_OTHER_FOLDER_NAME, CATEGORIZED_ROMS_FOLDER_NAME, CATEGORIZED_WORKING_FOLDER_NAME, clean_up, get_files_from_folder, get_test_tag, run_expensive_tests, set_up, TARGET_FOLDER, WORKING_ARCADE_LIST_PATH};
 
 mod utils;
-
-static TARGET_FOLDER: &str = "target/tests/";
-static MAME_XML_FILE_NAME_FULL_SET: &str = "mame-roms.xml";
-static MAME_XML_FILE_NAME_SMALL_SET: &str = "tests/resources/listxml_0244.xml";
-static CATEGORY_LIST_FILE_NAME_FULL_SET: &str = "catver.ini";
-static CATEGORY_LIST_FILE_NAME_SMALL_SET: &str = "tests/resources/catver_0244.ini";
-static WORKING_ARCADE_LIST_PATH: &str = "tests/resources/working_arcade_0244.ini";
-static ROMS_SOURCE_PATH: &str = "tests/resources/merged_roms/";
-static CHDS_SOURCE_PATH: &str = "tests/resources/chds/";
-static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
-static CATEGORIZED_WORKING_FOLDER_NAME: &str = "working";
-static CATEGORIZED_OTHER_FOLDER_NAME: &str = "other";
-static CATEGORIZED_CHD_OTHER_FOLDER_NAME: &str = "chd_other";
-static CATEGORIZED_CHD_WORKING_FOLDER_NAME: &str = "chd_working";
 
 #[test]
 fn should_build_set_with_no_errors() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(
+    let args = utils::build_args(
         &tag, false, String::new(), String::new(),
     );
 
-    let result = roms_curator::run(&config);
+    let result = roms_curator::run(&args);
 
     let success = match result {
         Ok(..) => true,
@@ -59,11 +42,11 @@ fn should_separate_all_working_roms() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(
+    let args = utils::build_args(
         &tag, false, String::new(), String::new(),
     );
 
-    let results = roms_curator::run(&config).unwrap();
+    let results = roms_curator::run(&args).unwrap();
 
     // get working from results
     let working: Roms = Filter::collect(
@@ -106,13 +89,13 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(
+    let args = utils::build_args(
         &tag, false, String::new(), String::new(),
     );
 
-    let results = roms_curator::run(&config).unwrap();
+    let results = roms_curator::run(&args).unwrap();
 
-    let report = results.copy_roms(&config).expect("Error copying roms");
+    let report = results.copy_roms(&args).expect("Error copying roms");
 
     assert_eq!(report.total_working, 5);
     assert_eq!(report.total_other, 7);
@@ -163,7 +146,7 @@ fn should_copy_files_to_destination_folder_and_create_report() {
     expected.sort();
     assert_eq!(chd_working_roms, expected);
 
-    assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
+    assert!(matches!(report.to_file(args.report_path.as_str()), Ok(true)));
 
     clean_up(&tag);
 }
@@ -173,13 +156,13 @@ fn simulation_should_generate_report_but_not_copy_roms() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(
+    let args = utils::build_args(
         &tag, true, String::new(), String::new(),
     );
 
-    let results = roms_curator::run(&config).unwrap();
+    let results = roms_curator::run(&args).unwrap();
 
-    let report = results.copy_roms(&config).expect("Error copying roms");
+    let report = results.copy_roms(&args).expect("Error copying roms");
 
     assert_eq!(report.total_working, 5);
     assert_eq!(report.total_other, 7);
@@ -202,7 +185,7 @@ fn simulation_should_generate_report_but_not_copy_roms() {
     let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
     assert!(chd_working_roms.is_empty());
 
-    assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
+    assert!(matches!(report.to_file(args.report_path.as_str()), Ok(true)));
 
     clean_up(&tag);
 }
@@ -212,13 +195,13 @@ fn should_copy_files_to_destination_folder_excluding_subsets() {
     let tag = get_test_tag();
     set_up(&tag);
 
-    let config = build_config(
+    let args = utils::build_args(
         &tag, false, "r".to_string(), "sa".to_string(),
     );
 
-    let results = roms_curator::run(&config).unwrap();
+    let results = roms_curator::run(&args).unwrap();
 
-    let report = results.copy_roms(&config).expect("Error copying roms");
+    let report = results.copy_roms(&args).expect("Error copying roms");
 
     assert_eq!(report.total_working, 1);
     assert_eq!(report.total_other, 0);
@@ -248,55 +231,9 @@ fn should_copy_files_to_destination_folder_excluding_subsets() {
     let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
     assert_eq!(chd_working_roms, expected);
 
-    assert!(matches!(report.to_file(config.report_path.as_str()), Ok(true)));
+    assert!(matches!(report.to_file(args.report_path.as_str()), Ok(true)));
 
     clean_up(&tag);
-}
-
-fn get_files_from_folder(path: &str) -> Vec<String> {
-    let mut roms: Vec<String> = Vec::new();
-    for entry in read_dir(path).unwrap() {
-        let path = entry.unwrap().path();
-        let file_name = path.file_name().unwrap().to_str().unwrap();
-        roms.push(file_name.to_string());
-    }
-    roms
-}
-
-fn build_config(
-    tag: &str, simulate: bool, subset_start: String, subset_end: String,
-) -> Config {
-    let run_expensive_tests = run_expensive_tests();
-    let test_folder = Path::new(TARGET_FOLDER).join(tag);
-
-    let mame_xml_path = if run_expensive_tests {
-        test_folder.join(MAME_XML_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
-    } else {
-        Path::new(MAME_XML_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
-    };
-
-    let catver_path = if run_expensive_tests {
-        test_folder.join(CATEGORY_LIST_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
-    } else {
-        Path::new(CATEGORY_LIST_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
-    };
-
-    let destination_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).to_str().unwrap().to_string();
-    let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
-    let ignore_not_working_chd = false;
-    let simulation = simulate;
-
-    Config {
-        mame_xml_path,
-        catver_path,
-        source_path: vec![ROMS_SOURCE_PATH.to_string(), CHDS_SOURCE_PATH.to_string()],
-        destination_path,
-        report_path,
-        ignore_not_working_chd,
-        simulate: simulation,
-        subset_start,
-        subset_end,
-    }
 }
 
 #[allow(dead_code)]
@@ -311,12 +248,4 @@ fn debug_roms_set_diff(
     println!();
     println!("Roms NOT found in one our collection but found in 'working_arcade.ini' collection");
     println!("Nr of roms: {:?}, roms: {:?}", included_in_working_arcade.len(), included_in_working_arcade);
-}
-
-fn get_test_tag() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(4)
-        .map(char::from)
-        .collect()
 }

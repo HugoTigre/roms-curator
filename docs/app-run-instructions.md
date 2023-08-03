@@ -21,21 +21,21 @@ roms-curator --help
 These arguments are mandatory the rest are all optional.
 
 ```
---mame_xml_path
---catver_path
---source_path
---destination_path
+--mame-xml-path
+--catver-path
+--source-path
+--destination-path
 ```
 
 ## Categorize and create a new rom collection
 
 ```bash
 roms-curator \
---mame_xml_path=/mame/mame.xml \
---catver_path=/mame/catver.ini \
---source_path=/roms,/chd-roms \
---destination_path=/roms-new/ \
---report_path=/mame/report/report.md
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--report-path=/mame/report/report.md
 ```
 
 ## Simulate operation
@@ -47,12 +47,12 @@ all operations as if you weren't doing a simulation.
 
 ```bash
 roms-curator \
---mame_xml_path=/mame/mame.xml \
---catver_path=/mame/catver.ini \
---source_path=/roms,/chd-roms \
---destination_path=/roms-new/ \
---report_path=/mame/report/report.md \
---simulate=true
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--report-path=/mame/report/report.md \
+--simulation=true
 ```
 
 ## Include/exclude useless CHD roms
@@ -69,11 +69,11 @@ only want to create a working collection set.
 ```bash
 roms-curator \
 
---mame_xml_path=/mame/mame.xml \
---catver_path=/mame/catver.ini \
---source_path=/roms,/chd-roms \
---destination_path=/roms-new/ \
---ignore_not_working_chd=true
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--ignore-not-working-chd=true
 ```
 
 ## Include/exclude rom files
@@ -85,29 +85,29 @@ which files to include or exclude.
 ```bash
 roms-curator \
 
---mame_xml_path=/mame/mame.xml \
---catver_path=/mame/catver.ini \
---source_path=/roms,/chd-roms \
---destination_path=/roms-new/ \
---subset_start="a"
---subset_end="de"
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--subset-start="a"
+--subset-end="de"
 ```
 
 In this example only roms which ascii name alphabetical order is higher than or
 equal to `a` and lower than or equal to `de` will be copied.
-It's also possible to just set `subset_start` or `subset_end`.
+It's also possible to just set `subset-start` or `subset-end`.
 
 ## Putting everything together
 
 ```bash
 roms-curator \
---mame_xml_path=/mame/mame.xml \
---catver_path=/mame/catver.ini \
---source_path=/roms,/chd-roms \
---destination_path=/roms-new/ \
---report_path=/mame/report/report.md \
---ignore_not_working_chd=true \
---subset_start="0"
---subset_end="zz"
---simulate=true
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--report-path=/mame/report/report.md \
+--ignore-not-working-chd=true \
+--subset-start="0"
+--subset-end="zz"
+--simulation=true
 ```

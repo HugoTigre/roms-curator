@@ -1,8 +1,8 @@
 use std::fs;
 
 use crate::{build_category_list, read_mame_xml};
+use crate::core::args::Args;
 use crate::core::roms_service::{parse, RomsExt, UnfilteredRomsExt};
-use crate::models::config::Config;
 use crate::models::roms::{Chd, Feature, FeatureStatus, RomData, Roms, RomStatus, Status};
 use crate::models::roms::ChdStatus::{BadDump, NoStatus};
 use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
@@ -186,26 +186,26 @@ fn should_properly_classify_roms() {
 #[test]
 fn should_exclude_subsets() {
     // subset_start only
-    let mut config = Config::new();
-    config.subset_start = "r".to_string();
+    let mut args = Args::new();
+    args.subset_start = "r".to_string();
 
-    assert!(Roms::is_excluded(&config, "area51"));
-    assert!(!Roms::is_excluded(&config, "robocop"));
+    assert!(Roms::is_excluded(&args, "area51"));
+    assert!(!Roms::is_excluded(&args, "robocop"));
 
     // subset_end only
-    let mut config = Config::new();
-    config.subset_end = "sv0".to_string();
+    let mut args = Args::new();
+    args.subset_end = "sv0".to_string();
 
-    assert!(!Roms::is_excluded(&config, "robocop"));
-    assert!(Roms::is_excluded(&config, "sv801"));
+    assert!(!Roms::is_excluded(&args, "robocop"));
+    assert!(Roms::is_excluded(&args, "sv801"));
 
     // subset_start and subset_end
-    let mut config = Config::new();
-    config.subset_start = "az".to_string();
-    config.subset_end = "sv0".to_string();
+    let mut args = Args::new();
+    args.subset_start = "az".to_string();
+    args.subset_end = "sv0".to_string();
 
-    assert!(Roms::is_excluded(&config, "as_acp"));
-    assert!(!Roms::is_excluded(&config, "elevatora"));
-    assert!(!Roms::is_excluded(&config, "robocop"));
-    assert!(Roms::is_excluded(&config, "sv801"));
+    assert!(Roms::is_excluded(&args, "as_acp"));
+    assert!(!Roms::is_excluded(&args, "elevatora"));
+    assert!(!Roms::is_excluded(&args, "robocop"));
+    assert!(Roms::is_excluded(&args, "sv801"));
 }
