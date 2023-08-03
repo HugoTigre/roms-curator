@@ -19,7 +19,7 @@ log4rs = "1.2"
 # xml
 roxmltree = "0.18"
 # utilities
-strum = "0.24"
+strum = "0.25"
 strum_macros = "0.25"
 rand = "0.8"
 chrono = "0.4"
