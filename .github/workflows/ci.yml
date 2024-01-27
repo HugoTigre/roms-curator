@@ -27,12 +27,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: rustup component add clippy
 
-      - name: Run clippy
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-targets -- -D warnings
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+#      - name: Run clippy
+#        if: matrix.os == 'ubuntu-latest'
+#        uses: actions-rs/clippy-check@v1
+#        with:
+#          token: ${{ secrets.GITHUB_TOKEN }}
+#          args: --all-targets -- -D warnings
 
       # Gets all tags until GitHub has a better solution for this
       # example: https://github.com/actions/checkout/pull/579
