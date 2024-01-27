@@ -182,7 +182,9 @@ impl RomsExt for Roms {
             progress_bar.println(format!("Copying from source: {}", &source_path).as_str());
 
             let nr_of_files = read_dir(&source_path)?.count();
-            if progress_bar.is_some() { progress_bar.as_ref().unwrap().set_length(nr_of_files as u64); }
+            if let Some(pb) = progress_bar.as_ref() {
+                pb.set_length(nr_of_files as u64);
+            }
 
             for entry in read_dir(source_path)? {
                 let path = entry?.path();
