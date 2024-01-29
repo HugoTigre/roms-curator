@@ -20,7 +20,7 @@ log4rs = "1.2"
 roxmltree = "0.19"
 # utilities
 strum = "0.25"
-strum_macros = "0.25"
+strum_macros = "0.26"
 rand = "0.8"
 chrono = "0.4"
 clap = { version = "4.1", features = ["cargo"] } # arguments
