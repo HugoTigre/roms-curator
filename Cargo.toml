@@ -17,7 +17,7 @@ exclude = [".github/", "tests/", "docs/", ".gitignore", ".editorconfig"]
 log = "0.4"
 log4rs = "1.2"
 # xml
-roxmltree = "0.19"
+roxmltree = "0.20"
 # utilities
 strum = "0.26"
 strum_macros = "0.26"
