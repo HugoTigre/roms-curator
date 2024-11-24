@@ -15,22 +15,22 @@ exclude = [".github/", "tests/", "docs/", ".gitignore", ".editorconfig"]
 [dependencies]
 # logging
 log = "0.4"
-log4rs = "1.2"
+log4rs = "1.3"
 # xml
-roxmltree = "0.19"
+roxmltree = "0.20"
 # utilities
 strum = "0.26"
 strum_macros = "0.26"
 rand = "0.8"
 chrono = "0.4"
-clap = { version = "4.1", features = ["cargo"] } # arguments
+clap = { version = "4.5", features = ["cargo"] } # arguments
 indicatif = { version = "0.17", features = ["rayon"] } # progress bar
-zip = "0.6"
-lazy_static = "1.4"
+zip = "2.2"
+lazy_static = "1.5"
 
 [dev-dependencies]
 assert_cmd = "2.0"
-predicates = "3.0"
+predicates = "3.1"
 criterion = { version = "0.5.1", features = ["html_reports"] } # benchmarks
 
 [profile.bench]
