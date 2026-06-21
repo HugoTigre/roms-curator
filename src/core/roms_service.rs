@@ -305,10 +305,15 @@ impl RomsExt for Roms {
     }
 }
 
+/// Checks the dependencies of ROMs to determine which working ROMs should be demoted.
 ///
-/// A good rom might dependent on a bad rom or chd file, in this case
-/// we need to re-classify the good rom as a bad rom
+/// This function iterates through all working ROMs and checks their dependencies.
+/// A working ROM may be demoted if:
+/// - It depends on a non-working parent ROM
+/// - It has a CHD with a bad dump or no dump status
 ///
+/// # Returns
+/// A vector of ROM names that should be demoted from the working category.
 fn check_roms_dependency(roms: &Roms) -> Vec<String> {
     let mut demote_working: Vec<String> = Vec::new();
 
