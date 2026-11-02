@@ -10,7 +10,7 @@ use log::{debug, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use rand::distributions::Alphanumeric;
+use rand::distr::Alphanumeric;
 use rand::Rng;
 use roms_curator::core::args::Args;
 
@@ -33,7 +33,7 @@ pub static CATEGORIZED_CHD_WORKING_FOLDER_NAME: &str = "chd_working";
 static INIT: Once = Once::new();
 
 pub fn get_test_tag() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(4)
         .map(char::from)
@@ -94,7 +94,7 @@ fn unzip_test_resources_archive(tag: &str) {
             continue;
         }
 
-        if (*file.name()).ends_with('/') {
+        if file.is_dir() {
             fs::create_dir_all(&outpath).unwrap();
         } else {
             if let Some(p) = outpath.parent() {
