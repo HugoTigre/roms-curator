@@ -27,6 +27,7 @@ clap = { version = "4.5", features = ["cargo"] } # arguments
 indicatif = { version = "0.17", features = ["rayon"] } # progress bar
 zip = "9.1"
 lazy_static = "1.5"
+same-file = "1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"

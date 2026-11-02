@@ -1,4 +1,5 @@
 pub mod args;
+pub(crate) mod paths;
 pub mod roms_service;
 
 #[cfg(test)]

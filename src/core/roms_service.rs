@@ -177,6 +177,7 @@ pub trait RomsExt {
 impl RomsExt for Roms {
     fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
         Self::check_paths(args)?;
+        crate::core::paths::validate(args)?;
 
         let destination_paths = args.build_destination_folders_path();
 

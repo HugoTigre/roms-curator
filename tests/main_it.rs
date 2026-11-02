@@ -109,22 +109,31 @@ fn should_parse_source_paths() {
         create_mame_and_catver_files_to_bypass_file_not_found_error(&tag);
 
     let fs_sp = std::path::MAIN_SEPARATOR;
+    let test_folder = Path::new(TARGET_FOLDER).join(&tag).canonicalize().unwrap();
+    std::fs::create_dir(test_folder.join("first")).unwrap();
+    std::fs::create_dir(test_folder.join("second")).unwrap();
+    cmd.current_dir(&test_folder);
+    let mame_xml_file = Path::new(&mame_xml_file).canonicalize().unwrap();
+    let carver_init_file = Path::new(&carver_init_file).canonicalize().unwrap();
 
     let assert = cmd
-        .arg(format!("--mame-xml-path={}", mame_xml_file))
-        .arg(format!("--catver-path={}", carver_init_file))
-        .arg(format!("--source-path=.{},target{},target", fs_sp, fs_sp))
-        .arg(format!("--destination-path={}", fs_sp))
+        .arg(format!("--mame-xml-path={}", mame_xml_file.display()))
+        .arg(format!("--catver-path={}", carver_init_file.display()))
+        .arg(format!(
+            "--source-path=first{},second{},second",
+            fs_sp, fs_sp
+        ))
+        .arg("--destination-path=output")
         .assert();
 
     let expected = if fs_sp == '/' {
         format!(
-            "source_path: [\".{}\", \"target{}\", \"target\"]",
+            "source_path: [\"first{}\", \"second{}\", \"second\"]",
             fs_sp, fs_sp
         )
     } else {
         format!(
-            "source_path: [\".{}{}\", \"target{}{}\", \"target\"]",
+            "source_path: [\"first{}{}\", \"second{}{}\", \"second\"]",
             fs_sp, fs_sp, fs_sp, fs_sp
         )
     };

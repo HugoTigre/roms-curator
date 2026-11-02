@@ -174,36 +174,9 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     let destination: &String = matches
         .get_one("destination_path")
         .expect("validated in args parser");
-    let destination_path = Path::new(destination.as_str());
-    if destination_path.is_file() {
-        return Err("Destination path needs to be a directory.".into());
-    } else if !destination_path.exists() && fs::create_dir_all(destination_path).is_err() {
-        return Err(
-            "Destination directory cannot be created, verify path and/or permissions.".into(),
-        );
-    }
-    // source path and destination path cannot be equal
-    if source_path
-        .iter()
-        .any(|path| path.eq_ignore_ascii_case(destination.as_str()))
-    {
-        return Err("[source-path] and [destination-path] cannot be the same.".into());
-    }
-
     let report: &String = matches
         .get_one("report_path")
         .expect("validated in args parser");
-    if !report.is_empty() {
-        let report_path = Path::new(report.as_str());
-        if report_path.is_file() {
-            return Err("Report file already exists.".into());
-        } else if File::create(report_path).is_err() {
-            return Err("Report file cannot be created, verify path and/or permissions.".into());
-        } else {
-            fs::remove_file(report_path).unwrap();
-        }
-    }
-
     let ignore_not_working_chd: &bool = matches
         .get_one("ignore_not_working_chd")
         .expect("validated in args parser");
@@ -227,7 +200,7 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
         .get_one("progress")
         .expect("validated in args parser");
 
-    Ok(Args {
+    let args = Args {
         mame_xml_path: mame_xml_path.clone(),
         catver_path: catver_path.clone(),
         source_path: source_path.to_vec(),
@@ -238,7 +211,19 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
         subset_start: subset_start.clone(),
         subset_end: subset_end.clone(),
         progress: *progress,
-    })
+    };
+
+    crate::core::paths::validate(&args)?;
+    fs::create_dir_all(&args.destination_path)?;
+    if !args.report_path.is_empty() {
+        let report_path = Path::new(&args.report_path);
+        if report_path.exists() {
+            return Err("Report file already exists.".into());
+        }
+        File::create(report_path)?;
+        fs::remove_file(report_path)?;
+    }
+    Ok(args)
 }
 
 fn validate_mame_xml_file(path: &str) -> Result<String, String> {

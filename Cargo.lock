@@ -1168,6 +1168,7 @@ dependencies = [
  "predicates",
  "rand",
  "roxmltree",
+ "same-file",
  "strum",
  "strum_macros",
  "zip",

@@ -18,19 +18,39 @@ cargo build --locked
 
 ## Run tests
 
+Run all normal tests, including documentation tests:
+
+```bash
+cargo test --locked --all-features
+```
+
+Run the formatting and lint checks used by CI:
+
 ```bash
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-features
 ```
 
 CI also builds all targets on Linux, Windows and macOS.
 
-Run with expensive tests
+Also run the full metadata fixture tests (macOS/Linux):
 
 ```bash
 CARGO_RC_RUN_EXPENSIVE_TESTS=true cargo test --locked --test lib_it -- --test-threads=1
 ```
+
+In Windows PowerShell:
+
+```powershell
+$env:CARGO_RC_RUN_EXPENSIVE_TESTS = "true"
+try {
+    cargo test --locked --test lib_it -- --test-threads=1
+} finally {
+    Remove-Item Env:CARGO_RC_RUN_EXPENSIVE_TESTS
+}
+```
+
+The full fixture uses MAME 0.244 metadata and runs serially to limit memory use.
 
 ## Build platform specific binary
 
