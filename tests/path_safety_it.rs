@@ -2,6 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+#[cfg(unix)]
+use predicates::prelude::PredicateBooleanExt;
 use roms_curator::core::args::Args;
 use roms_curator::core::roms_service::RomsExt;
 use roms_curator::models::roms::Roms;
@@ -585,4 +587,131 @@ fn successful_nested_chd_copy_preserves_bytes_and_leaves_no_temporary_files() {
         fs::read(collection.root.join("source/area51/nested/disk.chd")).unwrap(),
         b"disk contents"
     );
+}
+
+#[cfg(unix)]
+struct RestorePermissions {
+    path: PathBuf,
+    permissions: fs::Permissions,
+}
+
+#[cfg(unix)]
+impl Drop for RestorePermissions {
+    fn drop(&mut self) {
+        fs::set_permissions(&self.path, self.permissions.clone()).unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn block_working_directory(collection: &Collection) -> Option<RestorePermissions> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = collection.root.join("output/working");
+    fs::create_dir_all(&path).unwrap();
+    let restore = RestorePermissions {
+        permissions: fs::metadata(&path).unwrap().permissions(),
+        path,
+    };
+    fs::set_permissions(&restore.path, fs::Permissions::from_mode(0o555)).unwrap();
+    // Root or filesystems without Unix permissions cannot exercise this failure.
+    let probe = restore.path.join("permission-probe");
+    if fs::write(&probe, b"probe").is_ok() {
+        fs::remove_file(probe).unwrap();
+        eprintln!("Skipping permission failure check: filesystem permits writes to mode 0555");
+        return None;
+    }
+    Some(restore)
+}
+
+#[cfg(unix)]
+#[test]
+fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
+    let collection = Collection::new();
+    fs::write(collection.root.join("source/100lions.zip"), b"other ROM").unwrap();
+    let Some(_restore) = block_working_directory(&collection) else {
+        return;
+    };
+    let report = roms_curator::run(&collection.args)
+        .unwrap()
+        .copy_roms(&collection.args)
+        .unwrap();
+    assert!(!report.all_ok);
+    assert!(!report.roms_working[0].moved);
+    let error = report.roms_working[0].error.as_ref().unwrap();
+    assert!(
+        error.contains(collection.root.join("source/005.zip").to_str().unwrap()),
+        "{error}"
+    );
+    assert!(
+        error.contains(
+            collection
+                .root
+                .join("output/working/005.zip")
+                .to_str()
+                .unwrap()
+        ),
+        "{error}"
+    );
+    assert!(
+        error.contains("denied") || error.contains("permitted"),
+        "{error}"
+    );
+    assert!(report.roms_other[0].moved);
+    assert!(report.roms_other[0].error.is_none());
+    report.to_file(&collection.args.report_path).unwrap();
+    assert!(fs::read_to_string(&collection.args.report_path)
+        .unwrap()
+        .contains(error));
+    assert_eq!(
+        fs::read(collection.root.join("output/other/100lions.zip")).unwrap(),
+        b"other ROM"
+    );
+    assert_eq!(
+        fs::read(collection.root.join("source/005.zip")).unwrap(),
+        CONTENTS
+    );
+    assert_eq!(
+        fs::read_dir(collection.root.join("output/working"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_copy_failures_return_nonzero_with_and_without_a_report() {
+    for requested_report in [false, true] {
+        let mut collection = Collection::new();
+        fs::write(collection.root.join("source/100lions.zip"), b"other ROM").unwrap();
+        if !requested_report {
+            collection.args.report_path.clear();
+        }
+        let Some(_restore) = block_working_directory(&collection) else {
+            return;
+        };
+        let assertion = collection
+            .cli()
+            .assert()
+            .failure()
+            .stdout(predicates::str::contains("Failed to copy"))
+            .stdout(predicates::str::contains("005.zip"))
+            .stderr(predicates::str::contains("panicked").not());
+        assert!(!String::from_utf8_lossy(&assertion.get_output().stdout).contains("panicked"));
+        assert_eq!(
+            fs::read(collection.root.join("output/other/100lions.zip")).unwrap(),
+            b"other ROM"
+        );
+        assert_eq!(
+            fs::read(collection.root.join("source/005.zip")).unwrap(),
+            CONTENTS
+        );
+        if requested_report {
+            let contents = fs::read_to_string(&collection.args.report_path).unwrap();
+            assert!(contents.contains("All OK: false"));
+            assert!(contents.contains("Failed to copy"));
+            assert!(contents.contains("005.zip"));
+        } else {
+            assert!(!collection.root.join("report.md").exists());
+        }
+    }
 }

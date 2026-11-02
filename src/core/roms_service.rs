@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fs::read_dir;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -143,6 +144,9 @@ pub trait RomsExt {
     /// are copied. Files are never overwritten and CHD directories are not merged.
     /// Later copy failures retain files already completed; there is no rollback
     /// of the whole collection or guarantee of durability after power loss.
+    /// Individual copy failures are recorded in the returned report: check
+    /// [`Report::all_ok`] and each failed entry's error. Preflight/setup failures
+    /// return `Err` before the copy loop starts.
     ///
     /// # Examples
     ///
@@ -167,6 +171,17 @@ pub trait RomsExt {
     ///     error!("Application error: {err}");
     ///     process::exit(1);
     /// });
+    ///
+    /// if !args.report_path.is_empty() {
+    ///     report.to_file(&args.report_path).unwrap_or_else(|err| {
+    ///         error!("Error creating report: {err}");
+    ///         process::exit(1);
+    ///     });
+    /// }
+    /// if !report.all_ok {
+    ///     error!("One or more ROMs failed to copy.");
+    ///     process::exit(1);
+    /// }
     /// ```
     ///
     /// @return A [Report](Report) of all that was and/or was not copied.
@@ -175,7 +190,9 @@ pub trait RomsExt {
     fn check_paths(args: &Args) -> Result<bool, &'static str>;
     fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, args: &Args) -> bool;
-    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> bool;
+    /// Copy an archive or directory, returning source/destination paths and the
+    /// cause on failure. Simulation performs no copy and returns `Ok(())`.
+    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> io::Result<()>;
     fn is_excluded(args: &Args, file_prefix: &str) -> bool;
 }
 
@@ -194,9 +211,13 @@ impl RomsExt for Roms {
         let mut sources = Vec::new();
         let mut copies = Vec::new();
         for source in &args.source_path {
-            let mut entries = read_dir(source)?
+            let mut entries = read_dir(source)
+                .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
                 .map(|entry| entry.map(|entry| entry.path()))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| {
+                    format!("Cannot read entry in source directory {source}: {error}")
+                })?;
             entries.sort();
             for path in &entries {
                 let prefix = path
@@ -218,7 +239,12 @@ impl RomsExt for Roms {
         }
         crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
         for directory in directories {
-            std::fs::create_dir_all(directory)?;
+            std::fs::create_dir_all(directory).map_err(|error| {
+                format!(
+                    "Cannot create output directory {}: {error}",
+                    directory.display()
+                )
+            })?;
         }
 
         let mut total_working = 0;
@@ -257,15 +283,20 @@ impl RomsExt for Roms {
                         let destination =
                             Self::get_destination_folder(rom, &destination_paths).join(file_name);
 
-                        let moved = Self::copy_rom(&path, &destination, args);
-                        if !moved {
-                            something_failed = true
-                        };
+                        let copy_error = Self::copy_rom(&path, &destination, args)
+                            .err()
+                            .map(|error| error.to_string());
+                        let moved = copy_error.is_none();
+                        if let Some(error) = &copy_error {
+                            error!("{error}");
+                            something_failed = true;
+                        }
 
                         let report_detail_entry = ReportDetailEntry {
                             rom_name: file_name.to_string_lossy().into_owned(),
                             moved,
                             is_chd: !rom.data.chd.is_empty(),
+                            error: copy_error,
                         };
 
                         match &rom.category {
@@ -284,6 +315,7 @@ impl RomsExt for Roms {
                         rom_name: file_name.to_string_lossy().into_owned(),
                         moved: false,  // doesn't matter here
                         is_chd: false, // doesn't matter here
+                        error: None,
                     };
                     report.add_ignored_rom(report_detail_entry);
                 }
@@ -297,8 +329,7 @@ impl RomsExt for Roms {
         report
             .total_working(total_working)
             .total_other(total_other)
-            .all_ok(!something_failed)
-            .build();
+            .all_ok(!something_failed);
 
         Ok(report)
     }
@@ -348,27 +379,26 @@ impl RomsExt for Roms {
         true
     }
 
-    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> bool {
+    fn copy_rom(path: &Path, destination: &Path, args: &Args) -> io::Result<()> {
         if args.simulation {
-            return true;
+            return Ok(());
         };
 
-        if path.is_dir() {
-            if let Some(err) = copy_dir_recursive(path, destination).err() {
-                error!("Error copying {:?}: {}", path, err);
-                return false;
-            }
-        } else if let Some(err) = crate::core::copying::copy_file(path, destination).err() {
-            error!(
-                "Error copying {} -> {}: {}",
-                path.display(),
-                destination.display(),
-                err
-            );
-            return false;
-        }
-
-        true
+        let result = if path.is_dir() {
+            copy_dir_recursive(path, destination)
+        } else {
+            crate::core::copying::copy_file(path, destination)
+        };
+        result.map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "Failed to copy {} -> {}: {error}",
+                    path.display(),
+                    destination.display()
+                ),
+            )
+        })
     }
 
     fn is_excluded(args: &Args, file_prefix: &str) -> bool {

@@ -14,7 +14,7 @@ Actions use readable major-version references, such as `actions/checkout@v7`. De
 
 Before publication:
 
-- The tag must be a stable `vMAJOR.MINOR.PATCH` version matching Cargo.toml, such as `v0.1.6`.
+- The tag must be a stable `vMAJOR.MINOR.PATCH` version matching Cargo.toml, such as `v0.2.0`.
 - The tagged commit must already be on origin/master history.
 - CI and both native release builds must pass.
 - Both binaries must be present and Cargo's publication dry-run must pass.
@@ -29,16 +29,18 @@ The release workflow uses Cargo and a small inline Bash check for the version. I
 1. Change Cargo.toml to a new unpublished version and update Cargo.lock with Cargo.
 2. Merge that change to master after CI passes.
 3. Update your local master to the intended commit.
-4. Create and push the matching tag. For a future version 0.1.6:
+4. Create and push the matching tag. For version 0.2.0:
 
 ```sh
-git tag -a v0.1.6 -m "Release 0.1.6"
-git push origin v0.1.6
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push origin v0.2.0
 ```
 
-Follow the CD run and verify its release assets. Ordinary merges continue to run CI only. Bare tags such as `0.1.6` do not trigger CD; prerelease tags fail validation under this initial stable-release policy.
+Follow the CD run and verify its release assets. Ordinary merges continue to run CI only. Bare tags such as `0.2.0` do not trigger CD; prerelease tags fail validation under this initial stable-release policy.
 
-These are instructions, not actions performed by this change. The package is still version 0.1.5, which already exists on crates.io. A new release needs a new version; published versions cannot be replaced.
+The next release targets **0.2.0** because `RomsExt::copy_rom` now returns `io::Result<()>` and `ReportDetailEntry` adds a public `error` field. These break source compatibility with 0.1.5. Cargo treats 0.1.x updates as compatible, so these changes must not ship as 0.1.6. See [Cargo's compatibility rules](https://doc.rust-lang.org/cargo/reference/semver.html#change-categories).
+
+These are instructions, not publication actions. Bumping the package version does not publish it. Version 0.1.5 already exists on crates.io; published versions cannot be replaced.
 
 ## Failure recovery
 

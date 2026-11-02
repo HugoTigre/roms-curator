@@ -80,9 +80,20 @@ output folder: files are not overwritten and CHD folders are not merged.
 Files completed before a later copy failure remain; the export has no whole-run
 rollback or power-loss durability guarantee.
 
+Preflight/setup errors return `Err`. Individual copy failures are recorded in the
+returned report: check `report.all_ok` and the failed entries' `error` fields for
+source/destination paths and causes. The CLI writes the requested report before
+returning a nonzero status for copy failures. A requested report failure also
+returns a nonzero status; completed ROM files remain available.
+If saving fails, the CLI prints the full report to stderr and explains that
+completed ROMs were kept and will not be replaced on a rerun. Report files are
+published only after a successful flushed write, so failed writes leave no
+partial report at the requested path. Existing reports are never replaced.
+
 The lower-level `utils::copy_dir_recursive` requires a destination path that does
 not exist yet, with an existing parent directory. It does not merge into an
-existing directory.
+existing directory. `RomsExt::copy_rom` returns `io::Result<()>` with copy error
+context rather than a success boolean.
 
 ```rust
 let report = roms.copy_roms(&args).unwrap_or_else(|err| {
@@ -94,12 +105,16 @@ let report = roms.copy_roms(&args).unwrap_or_else(|err| {
 ## Generating a report
 
 ```rust
-let report_path = "report.md" // where you want to save the report
+let report_path = "report.md"; // where you want to save the report
 
 report.to_file(&report_path).unwrap_or_else(|err| {
     error!("Error creating report: {err}");
-    process::exit(0);
+    process::exit(1);
 });
+
+if !report.all_ok {
+    process::exit(1);
+}
 ```
 
 ## Logging

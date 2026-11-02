@@ -214,14 +214,25 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     };
 
     crate::core::paths::validate(&args)?;
-    fs::create_dir_all(&args.destination_path)?;
+    fs::create_dir_all(&args.destination_path).map_err(|error| {
+        format!(
+            "Cannot create output directory {}: {error}",
+            args.destination_path
+        )
+    })?;
     if !args.report_path.is_empty() {
         let report_path = Path::new(&args.report_path);
         if report_path.exists() {
             return Err("Report file already exists.".into());
         }
-        File::create(report_path)?;
-        fs::remove_file(report_path)?;
+        File::create(report_path)
+            .map_err(|error| format!("Cannot create report {}: {error}", report_path.display()))?;
+        fs::remove_file(report_path).map_err(|error| {
+            format!(
+                "Cannot remove report probe {}: {error}",
+                report_path.display()
+            )
+        })?;
     }
     Ok(args)
 }
