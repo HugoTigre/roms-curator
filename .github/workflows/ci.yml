@@ -1,132 +1,50 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [master]
   pull_request:
-    branches: [ "master" ]
+    branches: [master]
   workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-
-  lint-tag-build:
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
+  check:
+    name: Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    outputs:
-      tag: ${{ steps.tag-version.outputs.tag }}
-      valid_version: ${{ steps.tag-version.outputs.valid_version }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Add clippy
-        if: matrix.os == 'ubuntu-latest'
-        run: rustup component add clippy
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      # Gets all tags until GitHub has a better solution for this
-      # example: https://github.com/actions/checkout/pull/579
-      - name: Get tags
-        if: matrix.os == 'ubuntu-latest'
-        run: git fetch --tags origin
-
-      - name: Check tag version
-        id: tag-version
-        if: matrix.os == 'ubuntu-latest'
-        run: |-
-          wget -O /usr/local/bin/semver https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver
-          chmod +x /usr/local/bin/semver
-          export sha=${{ github.sha }}
-          export tag=$(git describe --tags --contains $sha || echo "")
-          export tag=${tag%^*}
-          echo "tag: $tag"
-          export valid_version=$(semver validate $tag)
-          echo "is valid tag version: $valid_version"
-          echo "tag=$tag" >> $GITHUB_OUTPUT
-          echo "valid_version=$valid_version" >> $GITHUB_OUTPUT
+        if: runner.os == 'Linux'
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --locked --all-targets --all-features
 
       - name: Run tests
-        run: cargo test --verbose
-
-  release-and-publish:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && needs.lint-tag-build.outputs.valid_version == 'valid'
-    needs: [ lint-tag-build ]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build linux
-        run: cargo build --verbose
-
-      - name: install cross
-        run: cargo install -f cross
-
-      - name: Build windows
-        run: cross build --target x86_64-pc-windows-gnu
-
-      - name: Create release
-        uses: actions/github-script@v6
-        env:
-          tag: ${{ needs.lint-tag-build.outputs.tag }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const { tag } = process.env
-            
-            try {
-              const release_name = 'v' + tag;
-
-              console.log("release name = ", release_name);
-              console.log("tag name = ", tag);
-
-              const release_response = await github.rest.repos.createRelease({
-                draft: false,
-                generate_release_notes: true,
-                name: release_name,
-                owner: context.repo.owner,
-                prerelease: false,
-                repo: context.repo.repo,
-                tag_name: tag,
-              });
-
-              const linux_asset_response = await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release_response.data.id,
-                name: 'roms-curator-linux',
-                data: await fs.readFileSync("target/debug/roms-curator"),
-              });
-            
-              console.log("linux asset upload state = ", linux_asset_response.data.state);
-            
-              const windows_asset_response = await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release_response.data.id,
-                name: 'roms-curator.exe',
-                data: await fs.readFileSync("target/x86_64-pc-windows-gnu/debug/roms-curator.exe"),
-              });
-            
-              console.log("windows asset upload state = ", windows_asset_response.data.state);
-
-              core.exportVariable('RELEASE_ID', release_response.data.id);
-              core.exportVariable('RELEASE_UPLOAD_URL', release_response.data.upload_url);
-            } catch (error) {
-              core.setFailed(error.message);
-            }
-
-      - name: Publish
-        run: cargo publish --verbose --token ${CRATES_TOKEN}
-        env:
-          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: cargo test --locked --all-features

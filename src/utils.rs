@@ -1,19 +1,20 @@
-use std::{env, fs, io};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::path::Path;
 use std::time::Duration;
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use std::{env, fs, io};
 
+use log::{info, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
-use log::{info, LevelFilter};
 
 pub fn create_dir(path: &Path, ignore_if_exists: bool) {
     match path.try_exists() {
         Ok(exists) => {
             if !exists {
-                fs::create_dir_all(path)
-                    .expect(&("Error creating ".to_string() + path.to_str().unwrap() + " directory"));
+                fs::create_dir_all(path).unwrap_or_else(|error| {
+                    panic!("Error creating {} directory: {error}", path.display())
+                });
             } else if !ignore_if_exists {
                 panic!("{} directory already exists.", path.to_str().unwrap());
             }
@@ -62,7 +63,9 @@ pub fn set_up_logging() {
         log4rs::init_file("logging.yaml", Default::default()).unwrap();
     } else {
         let stdout_appender = ConsoleAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}")))
+            .encoder(Box::new(PatternEncoder::new(
+                "{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}",
+            )))
             .build();
 
         let config = log4rs::Config::builder()

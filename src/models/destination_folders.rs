@@ -1,6 +1,6 @@
+use crate::core::args::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::core::args::Args;
 
 pub struct DestinationFolders {
     pub working: PathBuf,
@@ -17,11 +17,16 @@ impl Args {
         let chd_working = destination_dir.join("chd_working");
         let chd_other = destination_dir.join("chd_other");
 
-        fs::create_dir_all(&working).expect(&("Error creating ".to_string() + "working directory"));
-        fs::create_dir_all(&other).expect(&("Error creating ".to_string() + "other directory"));
-        fs::create_dir_all(&chd_working).expect(&("Error creating ".to_string() + "chd_working directory"));
-        fs::create_dir_all(&chd_other).expect(&("Error creating ".to_string() + "chd_other directory"));
+        fs::create_dir_all(&working).expect("Error creating working directory");
+        fs::create_dir_all(&other).expect("Error creating other directory");
+        fs::create_dir_all(&chd_working).expect("Error creating chd_working directory");
+        fs::create_dir_all(&chd_other).expect("Error creating chd_other directory");
 
-        DestinationFolders { working, other, chd_working, chd_other }
+        DestinationFolders {
+            working,
+            other,
+            chd_working,
+            chd_other,
+        }
     }
 }

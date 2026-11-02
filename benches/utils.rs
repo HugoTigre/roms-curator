@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use std::{env, fs, io};
 use std::borrow::ToOwned;
-use std::fs::{File, read_dir};
+use std::fs::{read_dir, File};
 use std::path::Path;
 use std::sync::Once;
+use std::{env, fs, io};
 
 use log::{debug, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
@@ -56,7 +56,11 @@ pub fn set_up(tag: &str) {
 
     INIT.call_once(|| {
         set_up_logging();
-        let small_or_full = if run_expensive_tests() { "full" } else { "small" };
+        let small_or_full = if run_expensive_tests() {
+            "full"
+        } else {
+            "small"
+        };
         debug!("Using mame {small_or_full} set in integration tests");
     });
 }
@@ -86,7 +90,9 @@ fn unzip_test_resources_archive(tag: &str) {
             None => continue,
         };
 
-        if outpath.to_str().unwrap().contains("__MACOS") { continue; }
+        if outpath.to_str().unwrap().contains("__MACOS") {
+            continue;
+        }
 
         if (*file.name()).ends_with('/') {
             fs::create_dir_all(&outpath).unwrap();
@@ -116,10 +122,14 @@ fn create_test_dir(path: &Path) {
     match path.try_exists() {
         Ok(exists) => {
             if !exists {
-                fs::create_dir_all(path)
-                    .expect(&("Error creating ".to_string() + path.to_str().unwrap() + " directory"));
+                fs::create_dir_all(path).unwrap_or_else(|error| {
+                    panic!("Error creating {} directory: {error}", path.display())
+                });
             } else {
-                panic!("{} directory already exists. Try deleting the directory before running tests.", path.to_str().unwrap());
+                panic!(
+                    "{} directory already exists. Try deleting the directory before running tests.",
+                    path.to_str().unwrap()
+                );
             }
         }
         Err(err) => {
@@ -138,25 +148,41 @@ pub fn get_files_from_folder(path: &str) -> Vec<String> {
     roms
 }
 
-pub fn build_args(
-    tag: &str, simulate: bool, subset_start: String, subset_end: String,
-) -> Args {
+pub fn build_args(tag: &str, simulate: bool, subset_start: String, subset_end: String) -> Args {
     let run_expensive_tests = run_expensive_tests();
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
 
     let mame_xml_path = if run_expensive_tests {
-        test_folder.join(MAME_XML_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
+        test_folder
+            .join(MAME_XML_FILE_NAME_FULL_SET)
+            .to_str()
+            .unwrap()
+            .to_string()
     } else {
-        Path::new(MAME_XML_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
+        Path::new(MAME_XML_FILE_NAME_SMALL_SET)
+            .to_str()
+            .unwrap()
+            .to_string()
     };
 
     let catver_path = if run_expensive_tests {
-        test_folder.join(CATEGORY_LIST_FILE_NAME_FULL_SET).to_str().unwrap().to_string()
+        test_folder
+            .join(CATEGORY_LIST_FILE_NAME_FULL_SET)
+            .to_str()
+            .unwrap()
+            .to_string()
     } else {
-        Path::new(CATEGORY_LIST_FILE_NAME_SMALL_SET).to_str().unwrap().to_string()
+        Path::new(CATEGORY_LIST_FILE_NAME_SMALL_SET)
+            .to_str()
+            .unwrap()
+            .to_string()
     };
 
-    let destination_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME).to_str().unwrap().to_string();
+    let destination_path = test_folder
+        .join(CATEGORIZED_ROMS_FOLDER_NAME)
+        .to_str()
+        .unwrap()
+        .to_string();
     let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
     let ignore_not_working_chd = false;
     let simulation = simulate;
@@ -181,7 +207,9 @@ fn set_up_logging() {
         log4rs::init_file("logging.yaml", Default::default()).unwrap();
     } else {
         let stdout_appender = ConsoleAppender::builder()
-            .encoder(Box::new(PatternEncoder::new("{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}")))
+            .encoder(Box::new(PatternEncoder::new(
+                "{h({d(%Y-%m-%d %H:%M:%S)(utc)} - {l}: {m}{n})}",
+            )))
             .build();
 
         let config = log4rs::Config::builder()
@@ -196,6 +224,6 @@ fn set_up_logging() {
 pub fn run_expensive_tests() -> bool {
     match env::var("CARGO_RC_RUN_EXPENSIVE_TESTS") {
         Ok(s) => s == "true",
-        _ => false
+        _ => false,
     }
 }

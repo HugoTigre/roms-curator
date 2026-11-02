@@ -1,6 +1,6 @@
+use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 use std::string::ToString;
-use lazy_static::lazy_static;
 use strum_macros::{Display, EnumString};
 
 pub type Roms = HashMap<String, Rom>;
@@ -15,14 +15,28 @@ pub trait RomDataExt {
 
 impl RomDataExt for RomData {
     fn to_working_rom(self) -> Rom {
-        Rom { data: self, category: RomCategory::Working }
+        Rom {
+            data: self,
+            category: RomCategory::Working,
+        }
     }
     fn to_not_working_rom(self) -> Rom {
-        Rom { data: self, category: RomCategory::NotWorking }
+        Rom {
+            data: self,
+            category: RomCategory::NotWorking,
+        }
     }
-    fn to_bios_rom(self) -> Rom { Rom { data: self, category: RomCategory::Bios } }
+    fn to_bios_rom(self) -> Rom {
+        Rom {
+            data: self,
+            category: RomCategory::Bios,
+        }
+    }
     fn to_system_rom(self) -> Rom {
-        Rom { data: self, category: RomCategory::System }
+        Rom {
+            data: self,
+            category: RomCategory::System,
+        }
     }
 }
 
@@ -57,7 +71,6 @@ pub enum RomCategory {
     /// If there are it probably means different version of mame files (`listxml.xml` and `catver.ini`)
     UnCategorized,
 }
-
 
 #[derive(Display, Debug, PartialEq, Eq, EnumString, Clone)]
 #[strum(ascii_case_insensitive)]
@@ -155,4 +168,3 @@ lazy_static! {
         m
     };
 }
-
