@@ -23,9 +23,7 @@ The [software review](../software-review.md) contains the original findings.
 ## Phase 1 Safe file operations
 
 - [x] **SAFE-01** Reject overlapping/aliased source, output and report paths before writing. Resolve root aliases; reject nested links/reparse points and output hard links to source entries. Assumes stable trees during execution.
-- [ ] **SAFE-02** Detect conflicting destination names and existing files before copying. Refuse replacement by default; copy through temporary files and publish completed files safely.
-  - Done when conflicts are explicit, failed copies preserve existing files, temporary files are cleaned up and source files remain unchanged.
-  - File-level atomicity first; whole-export transactions are a later choice.
+- [x] **SAFE-02** Preflight destination conflicts, including case-only names. Refuse replacement and CHD folder merges; publish complete files through sibling temporaries and clean up on normal failures. Completed files remain after later failures; whole-export transactions are deferred.
 - [ ] **SAFE-03** Propagate useful operation errors and return nonzero exit codes for required copy or requested-report failures.
   - Done when controlled write/copy failures identify their paths and causes, appear in reports and fail the CLI without operational panics.
 - [ ] **SAFE-04** Make simulation read-only and label operations Planned.

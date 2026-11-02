@@ -73,6 +73,17 @@ see [here](#config--arguments).
 Invoking `copy_roms` will return a `Report` struct, this can be
 used to create a report file in Markdown format.
 
+Before creating category directories or copying ROMs, `copy_roms` rejects
+duplicate destination names (including case-only differences), existing selected
+files or CHD directories, and reports inside category directories. Use a fresh
+output folder: files are not overwritten and CHD folders are not merged.
+Files completed before a later copy failure remain; the export has no whole-run
+rollback or power-loss durability guarantee.
+
+The lower-level `utils::copy_dir_recursive` requires a destination path that does
+not exist yet, with an existing parent directory. It does not merge into an
+existing directory.
+
 ```rust
 let report = roms.copy_roms(&args).unwrap_or_else(|err| {
     error!("Failed to copy roms: {err}");

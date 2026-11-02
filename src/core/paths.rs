@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 // Canonicalize the existing ancestor without creating a missing output suffix.
 // Let the filesystem resolve links and '..' together, rather than normalizing
 // lexically (which can change the meaning of a path through a link).
-fn resolve(path: &Path) -> Result<PathBuf> {
+pub(crate) fn resolve(path: &Path) -> Result<PathBuf> {
     match fs::canonicalize(path) {
         Ok(path) => Ok(path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -76,7 +76,7 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     }
 }
 
-fn visit(path: &Path, check: &mut impl FnMut(&Path) -> Result<()>) -> Result<()> {
+pub(crate) fn visit(path: &Path, check: &mut impl FnMut(&Path) -> Result<()>) -> Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if is_link(&metadata) {
         return Err(format!(

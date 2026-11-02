@@ -52,8 +52,29 @@ impl Collection {
             "--report-path",
             &self.args.report_path,
             "--progress=false",
+            "--subset-start",
+            &self.args.subset_start,
+            "--subset-end",
+            &self.args.subset_end,
         ]);
         command
+    }
+
+    fn copy_conflict(&self, message: &str) {
+        let roms = roms_curator::run(&self.args).unwrap();
+        let error = roms.copy_roms(&self.args).unwrap_err().to_string();
+        assert!(error.contains(message), "{error}");
+        // A rejected library operation must not create category folders.
+        assert!(!self.root.join("output/chd_other").exists());
+        self.cli()
+            .assert()
+            .failure()
+            .stdout(predicates::str::contains(message));
+        assert_eq!(
+            fs::read(self.root.join("source/005.zip")).unwrap(),
+            CONTENTS
+        );
+        assert!(!Path::new(&self.args.report_path).exists());
     }
 
     fn rejected(&self) {
@@ -335,4 +356,233 @@ fn rejects_case_aliases() {
     let mut collection = Collection::new();
     collection.args.destination_path = collection.args.source_path[0].to_uppercase();
     collection.rejected();
+}
+
+#[test]
+fn existing_archive_is_preserved_and_nothing_else_is_copied() {
+    let collection = Collection::new();
+    fs::write(collection.root.join("source/robocop.zip"), b"another ROM").unwrap();
+    let working = collection.root.join("output/working");
+    fs::create_dir_all(&working).unwrap();
+    fs::write(working.join("005.zip"), b"existing archive").unwrap();
+    collection.copy_conflict("Destination already exists");
+    assert_eq!(
+        fs::read(working.join("005.zip")).unwrap(),
+        b"existing archive"
+    );
+    assert!(!working.join("robocop.zip").exists());
+}
+
+#[test]
+fn duplicate_archive_names_in_different_sources_are_rejected_before_copying() {
+    let mut collection = Collection::new();
+    let second = collection.root.join("second");
+    fs::create_dir(&second).unwrap();
+    fs::write(second.join("005.zip"), b"different archive").unwrap();
+    collection
+        .args
+        .source_path
+        .push(second.to_str().unwrap().into());
+    collection.copy_conflict("Conflicting destination");
+    assert!(!collection.root.join("output/working").exists());
+    assert_eq!(
+        fs::read(second.join("005.zip")).unwrap(),
+        b"different archive"
+    );
+}
+
+#[test]
+fn case_only_duplicate_archive_names_are_rejected_on_every_platform() {
+    let mut collection = Collection::new();
+    let second = collection.root.join("second");
+    fs::create_dir(&second).unwrap();
+    fs::write(second.join("005.ZIP"), b"case variant").unwrap();
+    collection
+        .args
+        .source_path
+        .push(second.to_str().unwrap().into());
+    collection.copy_conflict("Conflicting destination");
+    assert!(!collection.root.join("output/working").exists());
+}
+
+#[test]
+fn existing_case_variant_archive_is_preserved() {
+    let collection = Collection::new();
+    let working = collection.root.join("output/working");
+    fs::create_dir_all(&working).unwrap();
+    fs::write(working.join("005.ZIP"), b"existing case variant").unwrap();
+    collection.copy_conflict("Destination already exists");
+    assert_eq!(
+        fs::read(working.join("005.ZIP")).unwrap(),
+        b"existing case variant"
+    );
+    assert_eq!(fs::read_dir(&working).unwrap().count(), 1);
+}
+
+#[test]
+fn existing_case_variant_category_directory_cannot_hide_a_conflict() {
+    let collection = Collection::new();
+    let working = collection.root.join("output/WORKING");
+    fs::create_dir_all(&working).unwrap();
+    fs::write(working.join("005.zip"), b"existing archive").unwrap();
+    collection.copy_conflict("Destination");
+    assert_eq!(
+        fs::read(working.join("005.zip")).unwrap(),
+        b"existing archive"
+    );
+    assert_eq!(
+        fs::read_dir(collection.root.join("output"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn existing_chd_directory_is_preserved_without_merging() {
+    let collection = Collection::new();
+    let source = collection.root.join("source/area51");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("disk.chd"), b"new disk").unwrap();
+    let destination = collection.root.join("output/chd_working/area51");
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(destination.join("keep.chd"), b"existing disk").unwrap();
+    collection.copy_conflict("Destination already exists");
+    assert_eq!(
+        fs::read(destination.join("keep.chd")).unwrap(),
+        b"existing disk"
+    );
+    assert!(!destination.join("disk.chd").exists());
+    assert!(!collection.root.join("output/working").exists());
+}
+
+#[test]
+fn duplicate_chd_directories_are_rejected_even_with_disjoint_files() {
+    let mut collection = Collection::new();
+    let first = collection.root.join("source/area51");
+    let second = collection.root.join("second");
+    fs::create_dir(&first).unwrap();
+    fs::create_dir_all(second.join("area51")).unwrap();
+    fs::write(first.join("first.chd"), b"first disk").unwrap();
+    fs::write(second.join("area51/second.chd"), b"second disk").unwrap();
+    collection
+        .args
+        .source_path
+        .push(second.to_str().unwrap().into());
+    collection.copy_conflict("Conflicting destination");
+    assert!(!collection.root.join("output/chd_working").exists());
+}
+
+#[test]
+fn a_file_blocking_a_category_directory_is_rejected_before_copying() {
+    let collection = Collection::new();
+    fs::create_dir(collection.root.join("output")).unwrap();
+    fs::write(collection.root.join("output/other"), b"keep file").unwrap();
+    collection.copy_conflict("Output directory is blocked");
+    assert_eq!(
+        fs::read(collection.root.join("output/other")).unwrap(),
+        b"keep file"
+    );
+    assert!(!collection.root.join("output/working").exists());
+}
+
+#[test]
+fn requested_report_cannot_occupy_an_output_directory_or_archive() {
+    for target in [
+        "output/working",
+        "output/working/notes.md",
+        "output/other/notes.md",
+        "output/chd_working/notes.md",
+        "output/chd_other/notes.md",
+        "output/chd_working/area51/disk.md",
+    ] {
+        let mut collection = Collection::new();
+        fs::create_dir(collection.root.join("source/area51")).unwrap();
+        collection.args.report_path = collection.root.join(target).to_str().unwrap().into();
+        // The CLI also requires a .md suffix, so exercise this library conflict directly.
+        let roms = roms_curator::run(&collection.args).unwrap();
+        let error = roms.copy_roms(&collection.args).unwrap_err().to_string();
+        assert!(error.contains("Report path conflicts"), "{error}");
+        assert!(!collection.root.join("output").exists());
+    }
+}
+
+#[test]
+fn subset_exclusions_do_not_cause_spurious_conflicts() {
+    let mut collection = Collection::new();
+    let second = collection.root.join("second");
+    fs::create_dir(&second).unwrap();
+    fs::write(second.join("005.zip"), b"excluded duplicate").unwrap();
+    fs::write(collection.root.join("source/robocop.zip"), CONTENTS).unwrap();
+    collection
+        .args
+        .source_path
+        .push(second.to_str().unwrap().into());
+    collection.args.subset_start = "r".into();
+    collection.cli().assert().success();
+    assert_eq!(
+        fs::read(collection.root.join("output/working/robocop.zip")).unwrap(),
+        CONTENTS
+    );
+    assert!(!collection.root.join("output/working/005.zip").exists());
+}
+
+#[test]
+fn successful_nested_chd_copy_preserves_bytes_and_leaves_no_temporary_files() {
+    let collection = Collection::new();
+    fs::create_dir_all(collection.root.join("source/area51/nested/empty")).unwrap();
+    fs::write(
+        collection.root.join("source/area51/nested/disk.chd"),
+        b"disk contents",
+    )
+    .unwrap();
+    fs::write(collection.root.join("source/area51/empty.chd"), b"").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            collection.root.join("source/area51/nested/disk.chd"),
+            fs::Permissions::from_mode(0o640),
+        )
+        .unwrap();
+        fs::set_permissions(
+            collection.root.join("source/005.zip"),
+            fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+    }
+    collection.cli().assert().success();
+    let destination = collection.root.join("output/chd_working/area51");
+    assert_eq!(
+        fs::read(destination.join("nested/disk.chd")).unwrap(),
+        b"disk contents"
+    );
+    assert_eq!(fs::read(destination.join("empty.chd")).unwrap(), b"");
+    assert!(destination.join("nested/empty").is_dir());
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 2);
+    assert_eq!(fs::read_dir(destination.join("nested")).unwrap().count(), 2);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(destination.join("nested/disk.chd"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o640
+        );
+        assert_eq!(
+            fs::metadata(collection.root.join("output/working/005.zip"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+    }
+    assert_eq!(
+        fs::read(collection.root.join("source/area51/nested/disk.chd")).unwrap(),
+        b"disk contents"
+    );
 }

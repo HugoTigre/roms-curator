@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fs;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -136,8 +135,14 @@ impl UnfilteredRomsExt for UnfilteredRoms {
 
 pub trait RomsExt {
     ///
-    /// Copies all roms in [Roms](Roms) to the specified destination directory in
-    /// [Config](Config).
+    /// Copies the selected ROMs to the destination directory in [`Args`].
+    ///
+    /// Conflicting destination names (including case-only differences), existing
+    /// selected files or CHD directories, and report paths inside category
+    /// directories abort the run before category directories are created or ROMs
+    /// are copied. Files are never overwritten and CHD directories are not merged.
+    /// Later copy failures retain files already completed; there is no rollback
+    /// of the whole collection or guarantee of durability after power loss.
     ///
     /// # Examples
     ///
@@ -180,13 +185,48 @@ impl RomsExt for Roms {
         crate::core::paths::validate(args)?;
 
         let destination_paths = args.build_destination_folders_path();
+        let directories = [
+            destination_paths.working.as_path(),
+            destination_paths.other.as_path(),
+            destination_paths.chd_working.as_path(),
+            destination_paths.chd_other.as_path(),
+        ];
+        let mut sources = Vec::new();
+        let mut copies = Vec::new();
+        for source in &args.source_path {
+            let mut entries = read_dir(source)?
+                .map(|entry| entry.map(|entry| entry.path()))
+                .collect::<Result<Vec<_>, _>>()?;
+            entries.sort();
+            for path in &entries {
+                let prefix = path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .ok_or_else(|| format!("Unsupported ROM name: {}", path.display()))?;
+                if Self::is_excluded(args, prefix) {
+                    continue;
+                }
+                if let Some(rom) = self.get(&prefix.to_ascii_lowercase()) {
+                    if Self::should_move(rom, args) {
+                        let destination = Self::get_destination_folder(rom, &destination_paths)
+                            .join(path.file_name().ok_or("Missing ROM filename")?);
+                        copies.push((path.clone(), destination));
+                    }
+                }
+            }
+            sources.push((source, entries));
+        }
+        crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
+        for directory in directories {
+            std::fs::create_dir_all(directory)?;
+        }
 
         let mut total_working = 0;
         let mut total_other = 0;
         let mut something_failed = false;
         let mut report = Report::new();
 
-        for source_path in args.source_path.clone() {
+        for (source_path, entries) in sources {
             let progress_bar = if args.progress {
                 Some(build_progress_bar())
             } else {
@@ -195,16 +235,15 @@ impl RomsExt for Roms {
 
             progress_bar.println(format!("Copying from source: {}", source_path).as_str());
 
-            let nr_of_files = read_dir(&source_path)?.count();
+            let nr_of_files = entries.len();
             if let Some(pb) = progress_bar.as_ref() {
                 pb.set_length(nr_of_files as u64);
             }
 
-            for entry in read_dir(source_path)? {
-                let path = entry?.path();
+            for path in entries {
                 let (file_prefix, file_name) = (
                     path.file_stem().unwrap().to_str().unwrap(),
-                    path.file_name().unwrap().to_str().unwrap(),
+                    path.file_name().unwrap(),
                 );
 
                 progress_bar.inc();
@@ -224,7 +263,7 @@ impl RomsExt for Roms {
                         };
 
                         let report_detail_entry = ReportDetailEntry {
-                            rom_name: file_name.to_string(),
+                            rom_name: file_name.to_string_lossy().into_owned(),
                             moved,
                             is_chd: !rom.data.chd.is_empty(),
                         };
@@ -242,7 +281,7 @@ impl RomsExt for Roms {
                     }
                 } else {
                     let report_detail_entry = ReportDetailEntry {
-                        rom_name: file_name.to_string(),
+                        rom_name: file_name.to_string_lossy().into_owned(),
                         moved: false,  // doesn't matter here
                         is_chd: false, // doesn't matter here
                     };
@@ -319,8 +358,13 @@ impl RomsExt for Roms {
                 error!("Error copying {:?}: {}", path, err);
                 return false;
             }
-        } else if let Some(err) = fs::copy(path, destination).err() {
-            error!("Error copying {:?}: {}", path, err);
+        } else if let Some(err) = crate::core::copying::copy_file(path, destination).err() {
+            error!(
+                "Error copying {} -> {}: {}",
+                path.display(),
+                destination.display(),
+                err
+            );
             return false;
         }
 

@@ -44,18 +44,11 @@ pub fn sanitize_path(path: &str) -> String {
     }
 }
 
+/// Copy a directory tree without overwriting files or merging directories.
+/// `destination` must not exist, and its parent directory must exist.
+/// On a later failure, already completed files and directories remain.
 pub fn copy_dir_recursive(path: &Path, destination: &Path) -> io::Result<()> {
-    create_dir(destination, true);
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let filetype = entry.file_type()?;
-        if filetype.is_dir() {
-            copy_dir_recursive(&entry.path(), &destination.join(entry.file_name()))?;
-        } else {
-            fs::copy(entry.path(), destination.join(entry.file_name()))?;
-        }
-    }
-    Ok(())
+    crate::core::copying::copy_directory(path, destination)
 }
 
 pub fn set_up_logging() {
