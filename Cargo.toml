@@ -21,7 +21,7 @@ roxmltree = "0.20"
 # utilities
 strum = "0.26"
 strum_macros = "0.26"
-rand = "0.8"
+rand = "0.9"
 chrono = "0.4"
 clap = { version = "4.5", features = ["cargo"] } # arguments
 indicatif = { version = "0.17", features = ["rayon"] } # progress bar
