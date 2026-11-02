@@ -1,11 +1,11 @@
 extern crate core;
 
-use std::{env, fs};
 use std::error::Error;
-use std::fs::{File, metadata};
+use std::fs::{metadata, File};
 use std::path::Path;
+use std::{env, fs};
 
-use clap::{Arg, Command, crate_authors, crate_description, crate_name, crate_version};
+use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Command};
 
 /// Stores startup program arguments
 ///
@@ -159,26 +159,40 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     let command = command();
     let matches = command.get_matches();
 
-    let mame_xml_path: &String = matches.get_one("mame_xml_path").expect("validated in args parser");
+    let mame_xml_path: &String = matches
+        .get_one("mame_xml_path")
+        .expect("validated in args parser");
 
-    let catver_path: &String = matches.get_one("catver_path").expect("validated in args parser");
+    let catver_path: &String = matches
+        .get_one("catver_path")
+        .expect("validated in args parser");
 
-    let source_path: &Vec<String> = matches.get_one("source_path").expect("validated in args parser");
+    let source_path: &Vec<String> = matches
+        .get_one("source_path")
+        .expect("validated in args parser");
 
-    let destination: &String = matches.get_one("destination_path").expect("validated in args parser");
+    let destination: &String = matches
+        .get_one("destination_path")
+        .expect("validated in args parser");
     let destination_path = Path::new(destination.as_str());
     if destination_path.is_file() {
         return Err("Destination path needs to be a directory.".into());
-    } else if !destination_path.exists() &&
-        fs::create_dir_all(destination_path).is_err() {
-        return Err("Destination directory cannot be created, verify path and/or permissions.".into());
+    } else if !destination_path.exists() && fs::create_dir_all(destination_path).is_err() {
+        return Err(
+            "Destination directory cannot be created, verify path and/or permissions.".into(),
+        );
     }
     // source path and destination path cannot be equal
-    if source_path.iter().any(|path| path.eq_ignore_ascii_case(destination.as_str())) {
+    if source_path
+        .iter()
+        .any(|path| path.eq_ignore_ascii_case(destination.as_str()))
+    {
         return Err("[source-path] and [destination-path] cannot be the same.".into());
     }
 
-    let report: &String = matches.get_one("report_path").expect("validated in args parser");
+    let report: &String = matches
+        .get_one("report_path")
+        .expect("validated in args parser");
     if !report.is_empty() {
         let report_path = Path::new(report.as_str());
         if report_path.is_file() {
@@ -190,18 +204,28 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
         }
     }
 
-    let ignore_not_working_chd: &bool = matches.get_one("ignore_not_working_chd").expect("validated in args parser");
+    let ignore_not_working_chd: &bool = matches
+        .get_one("ignore_not_working_chd")
+        .expect("validated in args parser");
 
-    let simulation: &bool = matches.get_one("simulation").expect("validated in args parser");
+    let simulation: &bool = matches
+        .get_one("simulation")
+        .expect("validated in args parser");
     // simulation implies report
     if *simulation && report.is_empty() {
         return Err("Simulation mode requires a report file.".into());
     }
 
-    let subset_start: &String = matches.get_one("subset_start").expect("validated in args parser");
-    let subset_end: &String = matches.get_one("subset_end").expect("validated in args parser");
+    let subset_start: &String = matches
+        .get_one("subset_start")
+        .expect("validated in args parser");
+    let subset_end: &String = matches
+        .get_one("subset_end")
+        .expect("validated in args parser");
 
-    let progress: &bool = matches.get_one("progress").expect("validated in args parser");
+    let progress: &bool = matches
+        .get_one("progress")
+        .expect("validated in args parser");
 
     Ok(Args {
         mame_xml_path: mame_xml_path.clone(),
@@ -236,9 +260,7 @@ fn validate_catver_ini_file(path: &str) -> Result<String, String> {
 fn validate_source_paths(values: &str) -> Result<Vec<String>, String> {
     let paths: Vec<&str> = values.split(',').collect();
 
-    let paths_sanitized: Vec<String> = paths.iter()
-        .map(|p| sanitize_path(p))
-        .collect();
+    let paths_sanitized: Vec<String> = paths.iter().map(|p| sanitize_path(p)).collect();
 
     let fail = paths_sanitized.iter().any(|path| {
         let metadata = metadata(path);

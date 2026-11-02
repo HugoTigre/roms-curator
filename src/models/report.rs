@@ -1,7 +1,7 @@
+use chrono;
 use std::error::Error;
 use std::fs::File;
 use std::io::{LineWriter, Write};
-use chrono;
 
 #[derive(Default, Debug, Clone)]
 pub struct ReportDetailEntry {
@@ -26,11 +26,19 @@ pub struct Report {
 
 // Adds extension to LineWriter<File> to reduce duplicated code
 pub trait LineWriterExt {
-    fn write_all_roms(self, roms: &[ReportDetailEntry], moved: bool) -> Result<Box<LineWriter<File>>, Box<dyn Error>>;
+    fn write_all_roms(
+        self,
+        roms: &[ReportDetailEntry],
+        moved: bool,
+    ) -> Result<Box<LineWriter<File>>, Box<dyn Error>>;
 }
 
 impl LineWriterExt for LineWriter<File> {
-    fn write_all_roms(mut self, roms: &[ReportDetailEntry], moved: bool) -> Result<Box<LineWriter<File>>, Box<dyn Error>> {
+    fn write_all_roms(
+        mut self,
+        roms: &[ReportDetailEntry],
+        moved: bool,
+    ) -> Result<Box<LineWriter<File>>, Box<dyn Error>> {
         self.write_all(b"<details>\n  <summary>roms</summary>\n\n```text\n")?;
 
         roms.iter()
@@ -57,7 +65,12 @@ impl Report {
         let file = File::create(path)?;
         let mut writer = LineWriter::new(file);
 
-        let title = format!("{}{}{}\n", "# Roms-Curator report [", chrono::offset::Local::now(), "]");
+        let title = format!(
+            "{}{}{}\n",
+            "# Roms-Curator report [",
+            chrono::offset::Local::now(),
+            "]"
+        );
         writer.write_all(title.as_bytes())?;
         writer.write_all(b"\n")?;
 
@@ -85,11 +98,19 @@ impl Report {
         let mut writer = writer.write_all_roms(&self.roms_other, false)?;
 
         writer.write_all(b"### Ignored roms\n\n")?;
-        writer.write_all(b"Files included here most likely means there are roms files in your collection\n")?;
-        writer.write_all(b"that are not found in mame.xml file or you have non-rom files in your collection.\n")?;
+        writer.write_all(
+            b"Files included here most likely means there are roms files in your collection\n",
+        )?;
+        writer.write_all(
+            b"that are not found in mame.xml file or you have non-rom files in your collection.\n",
+        )?;
         writer.write_all(b"You might be using different rom collection and mame versions.\n")?;
-        writer.write_all(b"Since these roms are not in the database, there is no way to know if it's a normal\n")?;
-        writer.write_all(b"rom or a CHD file (folders should indicate chd while zip file should be a rom).\n\n")?;
+        writer.write_all(
+            b"Since these roms are not in the database, there is no way to know if it's a normal\n",
+        )?;
+        writer.write_all(
+            b"rom or a CHD file (folders should indicate chd while zip file should be a rom).\n\n",
+        )?;
         let mut writer = writer.write_all_roms(&self.ignored_roms, false)?;
 
         writer.flush()?;
@@ -98,46 +119,78 @@ impl Report {
     }
 
     fn build_toc() -> Result<String, Box<dyn Error>> {
-        let toc = format!("{}{}{}{}{}{}{}{}",
-                          "- [Summary](#summary)\n",
-                          "- [Detail](#detail)\n",
-                          "  - [Moved to Working folder](#moved-to-working-folder)\n",
-                          "  - [Moved to Other folder](#moved-to-other-folder)\n",
-                          "  - [Failed moving to Working folder](#failed-moving-to-working-folder)\n",
-                          "  - [Failed moving to Other folder](#failed-moving-to-other-folder)\n",
-                          "  - [Ignored roms](#ignored-roms)\n",
-                          "\n"
+        let toc = format!(
+            "{}{}{}{}{}{}{}{}",
+            "- [Summary](#summary)\n",
+            "- [Detail](#detail)\n",
+            "  - [Moved to Working folder](#moved-to-working-folder)\n",
+            "  - [Moved to Other folder](#moved-to-other-folder)\n",
+            "  - [Failed moving to Working folder](#failed-moving-to-working-folder)\n",
+            "  - [Failed moving to Other folder](#failed-moving-to-other-folder)\n",
+            "  - [Ignored roms](#ignored-roms)\n",
+            "\n"
         );
 
         Ok(toc)
     }
 
     fn build_summary(report: &Report) -> Result<String, Box<dyn Error>> {
-        let moved_to_working_folder = report.roms_working.iter().filter(|entry| entry.moved).count();
-        let moved_to_working_folder_chd = report.roms_working.iter().filter(|entry| entry.moved && entry.is_chd).count();
+        let moved_to_working_folder = report
+            .roms_working
+            .iter()
+            .filter(|entry| entry.moved)
+            .count();
+        let moved_to_working_folder_chd = report
+            .roms_working
+            .iter()
+            .filter(|entry| entry.moved && entry.is_chd)
+            .count();
 
         let moved_to_other_folder = report.roms_other.iter().filter(|entry| entry.moved).count();
-        let moved_to_other_folder_chd = report.roms_other.iter().filter(|entry| entry.moved && entry.is_chd).count();
+        let moved_to_other_folder_chd = report
+            .roms_other
+            .iter()
+            .filter(|entry| entry.moved && entry.is_chd)
+            .count();
 
         let ignored_roms = report.ignored_roms.len();
 
-        let working_folders_entry = format!("{}{}{}{}{}", "\n- Roms moved to working folders: ", moved_to_working_folder, " (", moved_to_working_folder_chd, " CHDs)");
-        let other_folders_entry = format!("{}{}{}{}{}", "\n- Roms moved to other folders: ", moved_to_other_folder, " (", moved_to_other_folder_chd, " CHDs)");
+        let working_folders_entry = format!(
+            "{}{}{}{}{}",
+            "\n- Roms moved to working folders: ",
+            moved_to_working_folder,
+            " (",
+            moved_to_working_folder_chd,
+            " CHDs)"
+        );
+        let other_folders_entry = format!(
+            "{}{}{}{}{}",
+            "\n- Roms moved to other folders: ",
+            moved_to_other_folder,
+            " (",
+            moved_to_other_folder_chd,
+            " CHDs)"
+        );
         let ignored_roms_entry = format!("{}{}", "\n- Ignored roms: ", ignored_roms);
 
         let roms_failed_to_move = report.roms_working.len() + report.roms_other.len()
-            - moved_to_working_folder - moved_to_other_folder;
+            - moved_to_working_folder
+            - moved_to_other_folder;
 
-        let summary = format!("{}{}{}{}{}{}{}{}{}{}{}{}",
-                              "## Summary",
-                              "\n\n- All OK: ", report.all_ok, " **",
-                              working_folders_entry,
-                              other_folders_entry,
-                              ignored_roms_entry,
-                              "\n- Roms failed to moved: ", roms_failed_to_move,
-                              "\n\n",
-                              "** (does not consider ignored_roms)",
-                              "\n\n",
+        let summary = format!(
+            "{}{}{}{}{}{}{}{}{}{}{}{}",
+            "## Summary",
+            "\n\n- All OK: ",
+            report.all_ok,
+            " **",
+            working_folders_entry,
+            other_folders_entry,
+            ignored_roms_entry,
+            "\n- Roms failed to moved: ",
+            roms_failed_to_move,
+            "\n\n",
+            "** (does not consider ignored_roms)",
+            "\n\n",
         );
 
         Ok(summary)
@@ -196,4 +249,3 @@ impl Report {
         self
     }
 }
-

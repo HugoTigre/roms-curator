@@ -10,6 +10,9 @@ Helper utility to manage Sets of ROMs.
 Currently only works for MAME ROMs,
 for example to create a working only ROM Set.
 
+Development planning: [repair and simplification RFC](docs/rfcs/0001-repair-and-simplify.md).
+Release rules: [CI and release delivery](docs/releasing.md).
+
 Possible usages might include:
 
 1. As an Application to create a new ROM Set

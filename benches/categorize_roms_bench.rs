@@ -1,4 +1,4 @@
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 mod utils;
 
@@ -7,14 +7,10 @@ fn categorize_roms(c: &mut Criterion) {
         let tag = "categorize_roms_bench";
         utils::set_up(tag);
 
-        let args = utils::build_args(
-            tag, false, String::new(), String::new(),
-        );
+        let args = utils::build_args(tag, false, String::new(), String::new());
 
         b.iter(|| {
-            black_box(
-                roms_curator::run(&args).unwrap()
-            );
+            black_box(roms_curator::run(&args).unwrap());
         });
     });
 }

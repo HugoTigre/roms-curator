@@ -9,14 +9,14 @@
 //! on how to use this as a command-line Application or as a Library.
 //!
 
-use std::error::Error;
-use std::fs;
-use std::collections::HashMap;
-use roxmltree::Document;
 use crate::core::args::Args;
-use crate::core::roms_service::{UnfilteredRomsExt, parse};
+use crate::core::roms_service::{parse, UnfilteredRomsExt};
 use crate::models::roms::Roms;
 use crate::utils::{build_progress_bar, ProgressBarEx};
+use roxmltree::Document;
+use std::collections::HashMap;
+use std::error::Error;
+use std::fs;
 
 pub mod core;
 pub mod models;
@@ -55,16 +55,22 @@ type RomCategories = HashMap<String, String>;
 /// @return A `HashMap<String, Rom>` collection with all ROMs categorized.
 ///
 pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
-    let progress_bar = if args.progress { Some(build_progress_bar()) } else { None };
+    let progress_bar = if args.progress {
+        Some(build_progress_bar())
+    } else {
+        None
+    };
     progress_bar.set_length(3);
 
-    progress_bar.println("* Reading mame database and copying files can last a few minutes, please be patient. *");
+    progress_bar.println(
+        "* Reading mame database and copying files can last a few minutes, please be patient. *",
+    );
 
-    progress_bar.println(format!("Reading {} document...", &args.catver_path).as_str());
+    progress_bar.println(format!("Reading {} document...", args.catver_path).as_str());
     let rom_categories = build_category_list(args.catver_path.clone())?;
     progress_bar.inc();
 
-    progress_bar.println(format!("Reading {} document...", &args.mame_xml_path).as_str());
+    progress_bar.println(format!("Reading {} document...", args.mame_xml_path).as_str());
     let contents = fs::read_to_string(args.mame_xml_path.clone())?;
     let doc = read_mame_xml(&contents)?;
     progress_bar.inc();
@@ -74,7 +80,9 @@ pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
     let roms = unfiltered_roms.categorize_roms()?;
     progress_bar.inc();
 
-    if let Some(pb) = progress_bar { pb.finish(); }
+    if let Some(pb) = progress_bar {
+        pb.finish();
+    }
 
     Ok(roms)
 }
@@ -85,14 +93,20 @@ fn build_category_list(file_path: String) -> Result<RomCategories, Box<dyn Error
     let mut rom_category: HashMap<String, String> = HashMap::new();
 
     for line in category_contents.lines() {
-        if line == "[VerAdded]" { break; };
-        if line.is_empty() { continue; };
+        if line == "[VerAdded]" {
+            break;
+        };
+        if line.is_empty() {
+            continue;
+        };
 
         let mut name_and_category = line.split('=');
         let name = name_and_category.next().unwrap_or_default();
         let category = name_and_category.next().unwrap_or_default();
 
-        if name.is_empty() || category.is_empty() { continue; };
+        if name.is_empty() || category.is_empty() {
+            continue;
+        };
 
         rom_category.insert(name.to_string(), category.to_string());
     }
@@ -100,8 +114,11 @@ fn build_category_list(file_path: String) -> Result<RomCategories, Box<dyn Error
     Ok(rom_category)
 }
 
-fn read_mame_xml(contents: &str) -> Result<Document, Box<dyn Error>> {
-    let opt = roxmltree::ParsingOptions { allow_dtd: true, nodes_limit: u32::MAX };
+fn read_mame_xml(contents: &str) -> Result<Document<'_>, Box<dyn Error>> {
+    let opt = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        nodes_limit: u32::MAX,
+    };
     let doc = Document::parse_with_options(contents, opt)?;
     Ok(doc)
 }

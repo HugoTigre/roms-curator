@@ -1,4 +1,4 @@
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use roms_curator::core::roms_service::RomsExt;
 
 mod utils;
@@ -8,17 +8,11 @@ fn copy_roms(c: &mut Criterion) {
         let tag = "copy_roms_bench";
         utils::set_up(tag);
 
-        let args = utils::build_args(
-            tag, false, String::new(), String::new(),
-        );
+        let args = utils::build_args(tag, false, String::new(), String::new());
 
         b.iter(|| {
-            let results = black_box(
-                roms_curator::run(&args).unwrap()
-            );
-            black_box(
-                results.copy_roms(&args).expect("Error copying roms")
-            );
+            let results = black_box(roms_curator::run(&args).unwrap());
+            black_box(results.copy_roms(&args).expect("Error copying roms"));
         });
     });
 }
