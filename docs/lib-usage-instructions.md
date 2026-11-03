@@ -46,7 +46,8 @@ let args = build_args().unwrap_or_else(|err| {
 
 Arguments are build from command line input arguments, see [here](app-run-instructions.md)
 for more details on that including minimum required arguments. We can also manually build
-the `Args` struct, but this will bypass all validations, so it is not recommended.
+the `Args` struct. This skips CLI value parsing; `copy_roms` still validates
+collection paths and destination conflicts. Parsing arguments performs no writes.
 
 ## Categorize ROMs
 
@@ -89,6 +90,14 @@ If saving fails, the CLI prints the full report to stderr and explains that
 completed ROMs were kept and will not be replaced on a rerun. Report files are
 published only after a successful flushed write, so failed writes leave no
 partial report at the requested path. Existing reports are never replaced.
+
+With `args.simulation = true`, `copy_roms` returns a simulation report without
+creating output directories or copying files. Entries use `OperationStatus::Planned`;
+normal outcomes are `Copied`, `Failed` or `Ignored`. The old `moved` boolean has
+been replaced by `ReportDetailEntry.status`. `report.simulation` identifies the
+mode, and copied/failed counts exclude Planned entries. Simulation does not test
+write access or available space. Only write a report if requested, outside both
+source/output trees; a CLI report path is optional.
 
 The lower-level `utils::copy_dir_recursive` requires a destination path that does
 not exist yet, with an existing parent directory. It does not merge into an

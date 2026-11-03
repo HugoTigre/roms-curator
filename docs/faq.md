@@ -12,6 +12,10 @@ Existing selected files or CHD folders stop the run before copying. Use a fresh 
 
 Reading the full MAME database takes time. Copying large ROM and CHD collections takes longer and depends on your disk and network speed.
 
+### Does simulation write anything?
+
+Only a report if you request one. It leaves your source and output folders unchanged and labels operations Planned.
+
 ### Does this work with split and merged sets?
 
 Yes, it can organize either format. Keep all generated folders available to MAME, since games can depend on files in other folders. The working folder alone may be incomplete.

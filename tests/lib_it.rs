@@ -6,6 +6,7 @@ use std::path::Path;
 use std::string::ToString;
 
 use roms_curator::core::roms_service::RomsExt;
+use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::RomCategory::Working;
 use roms_curator::models::roms::Roms;
 
@@ -166,50 +167,30 @@ fn should_copy_files_to_destination_folder_and_create_report() {
 }
 
 #[test]
-fn simulation_should_generate_report_but_not_copy_roms() {
+fn simulation_should_generate_a_planned_report_without_creating_category_folders() {
     let tag = get_test_tag();
     set_up(&tag);
-
     let args = utils::build_args(&tag, true, String::new(), String::new());
-
-    let results = roms_curator::run(&args).unwrap();
-
-    let report = results.copy_roms(&args).expect("Error copying roms");
-
+    let report = roms_curator::run(&args).unwrap().copy_roms(&args).unwrap();
     assert_eq!(report.total_working, 5);
     assert_eq!(report.total_other, 7);
-
-    let test_folder = Path::new(TARGET_FOLDER).join(&tag);
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_WORKING_FOLDER_NAME);
-    let working_roms = get_files_from_folder(path.to_str().unwrap());
-    assert!(working_roms.is_empty());
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_OTHER_FOLDER_NAME);
-    let other_roms = get_files_from_folder(path.to_str().unwrap());
-    assert!(other_roms.is_empty());
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
-    let chd_other_roms = get_files_from_folder(path.to_str().unwrap());
-    assert!(chd_other_roms.is_empty());
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
-    let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
-    assert!(chd_working_roms.is_empty());
-
-    assert!(matches!(
-        report.to_file(args.report_path.as_str()),
-        Ok(true)
-    ));
-
+    assert!(report.simulation);
+    assert!(report.all_ok);
+    assert!(report
+        .roms_working
+        .iter()
+        .chain(&report.roms_other)
+        .all(|entry| entry.status == OperationStatus::Planned && entry.error.is_none()));
+    let output = Path::new(&args.destination_path);
+    for category in ["working", "other", "chd_working", "chd_other"] {
+        assert!(!output.join(category).exists());
+    }
+    assert!(report.to_file(&args.report_path).unwrap());
+    let contents = std::fs::read_to_string(&args.report_path).unwrap();
+    assert!(contents.contains("Planned for Working folder"));
+    assert!(contents.contains("- ROMs copied: 0"));
+    assert!(contents.contains("- Failed copies: 0"));
+    assert!(!contents.contains("### Copied to"));
     clean_up(&tag);
 }
 

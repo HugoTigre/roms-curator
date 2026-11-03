@@ -6,6 +6,7 @@ use assert_cmd::Command;
 use predicates::prelude::PredicateBooleanExt;
 use roms_curator::core::args::Args;
 use roms_curator::core::roms_service::RomsExt;
+use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::Roms;
 
 const CONTENTS: &[u8] = b"source ROM sentinel";
@@ -59,6 +60,7 @@ impl Collection {
             "--subset-end",
             &self.args.subset_end,
         ]);
+        command.arg(format!("--simulation={}", self.args.simulation));
         command
     }
 
@@ -635,7 +637,7 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
         .copy_roms(&collection.args)
         .unwrap();
     assert!(!report.all_ok);
-    assert!(!report.roms_working[0].moved);
+    assert_eq!(report.roms_working[0].status, OperationStatus::Failed);
     let error = report.roms_working[0].error.as_ref().unwrap();
     assert!(
         error.contains(collection.root.join("source/005.zip").to_str().unwrap()),
@@ -655,12 +657,33 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
         error.contains("denied") || error.contains("permitted"),
         "{error}"
     );
-    assert!(report.roms_other[0].moved);
+    assert_eq!(report.roms_other[0].status, OperationStatus::Copied);
     assert!(report.roms_other[0].error.is_none());
     report.to_file(&collection.args.report_path).unwrap();
-    assert!(fs::read_to_string(&collection.args.report_path)
+    let contents = fs::read_to_string(&collection.args.report_path).unwrap();
+    assert!(contents.contains(error));
+    assert!(contents.contains("### Copied to Other folder"));
+    assert!(contents.contains("### Failed copies to Working folder"));
+    assert!(contents.contains("- ROMs copied: 1"));
+    assert!(contents.contains("- Failed copies: 1"));
+    let copied_other = contents
+        .split_once("### Copied to Other folder")
         .unwrap()
-        .contains(error));
+        .1
+        .split_once("### Failed copies to Working folder")
+        .unwrap()
+        .0;
+    let failed_working = contents
+        .split_once("### Failed copies to Working folder")
+        .unwrap()
+        .1
+        .split_once("### Failed copies to Other folder")
+        .unwrap()
+        .0;
+    assert!(copied_other.contains("100lions.zip"));
+    assert!(!copied_other.contains("005.zip"));
+    assert!(failed_working.contains("005.zip"));
+    assert!(!failed_working.contains("100lions.zip"));
     assert_eq!(
         fs::read(collection.root.join("output/other/100lions.zip")).unwrap(),
         b"other ROM"
@@ -708,10 +731,278 @@ fn cli_copy_failures_return_nonzero_with_and_without_a_report() {
         if requested_report {
             let contents = fs::read_to_string(&collection.args.report_path).unwrap();
             assert!(contents.contains("All OK: false"));
+            assert!(contents.contains("### Copied to Other folder"));
+            assert!(contents.contains("### Failed copies to Working folder"));
+            assert!(contents.contains("- ROMs copied: 1"));
+            assert!(contents.contains("- Failed copies: 1"));
             assert!(contents.contains("Failed to copy"));
-            assert!(contents.contains("005.zip"));
+            let failed_working = contents
+                .split_once("### Failed copies to Working folder")
+                .unwrap()
+                .1
+                .split_once("### Failed copies to Other folder")
+                .unwrap()
+                .0;
+            assert!(failed_working.contains("005.zip"));
+            assert!(!failed_working.contains("100lions.zip"));
         } else {
             assert!(!collection.root.join("report.md").exists());
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct TreeEntry {
+    path: PathBuf,
+    contents: Option<Vec<u8>>,
+    modified: std::time::SystemTime,
+    readonly: bool,
+}
+
+fn tree_snapshot(root: &Path) -> Vec<TreeEntry> {
+    fn collect(root: &Path, path: &Path, entries: &mut Vec<TreeEntry>) {
+        let metadata = fs::metadata(path).unwrap();
+        entries.push(TreeEntry {
+            path: path.strip_prefix(root).unwrap().into(),
+            contents: if metadata.is_file() {
+                Some(fs::read(path).unwrap())
+            } else {
+                None
+            },
+            modified: metadata.modified().unwrap(),
+            readonly: metadata.permissions().readonly(),
+        });
+        if metadata.is_dir() {
+            for entry in fs::read_dir(path).unwrap() {
+                collect(root, &entry.unwrap().path(), entries);
+            }
+        }
+    }
+    let mut entries = Vec::new();
+    collect(root, root, &mut entries);
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
+    entries
+}
+
+#[test]
+fn simulation_leaves_missing_output_ancestors_absent_with_or_without_a_report() {
+    for requested_report in [false, true] {
+        let mut collection = Collection::new();
+        collection.args.simulation = true;
+        collection.args.destination_path = collection
+            .root
+            .join("new/deep/output")
+            .to_str()
+            .unwrap()
+            .into();
+        if !requested_report {
+            collection.args.report_path.clear();
+        }
+        fs::create_dir_all(collection.root.join("source/area51/nested")).unwrap();
+        fs::write(
+            collection.root.join("source/area51/nested/disk.chd"),
+            b"disk bytes",
+        )
+        .unwrap();
+        let before = tree_snapshot(&collection.root.join("source"));
+        let report = roms_curator::run(&collection.args)
+            .unwrap()
+            .copy_roms(&collection.args)
+            .unwrap();
+        assert!(report.simulation && report.all_ok);
+        assert!(report
+            .roms_working
+            .iter()
+            .all(|entry| entry.status == OperationStatus::Planned));
+        assert!(!collection.root.join("new").exists());
+        collection
+            .cli()
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("Planning from source"))
+            .stdout(predicates::str::contains("entries Planned"));
+        assert!(!collection.root.join("new").exists());
+        assert_eq!(tree_snapshot(&collection.root.join("source")), before);
+        assert_eq!(
+            fs::read_dir(&collection.root).unwrap().count(),
+            if requested_report { 2 } else { 1 }
+        );
+        if requested_report {
+            let contents = fs::read_to_string(&collection.args.report_path).unwrap();
+            assert!(contents.contains("Planned for Working folder"));
+            assert!(contents.contains("area51 (chd)"));
+            assert!(contents.contains("ROMs copied: 0"));
+            assert!(contents.contains("Failed copies: 0"));
+            assert!(!contents.contains("### Copied to"));
+        }
+    }
+}
+
+#[test]
+fn simulation_leaves_existing_source_and_output_trees_unchanged() {
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    fs::create_dir_all(collection.root.join("output/working")).unwrap();
+    fs::create_dir_all(collection.root.join("output/custom")).unwrap();
+    fs::write(
+        collection.root.join("output/working/unselected.zip"),
+        b"keep archive",
+    )
+    .unwrap();
+    fs::write(
+        collection.root.join("output/custom/notes.txt"),
+        b"keep notes",
+    )
+    .unwrap();
+    let source = tree_snapshot(&collection.root.join("source"));
+    let output = tree_snapshot(&collection.root.join("output"));
+    let report = roms_curator::run(&collection.args)
+        .unwrap()
+        .copy_roms(&collection.args)
+        .unwrap();
+    assert_eq!(report.roms_working[0].status, OperationStatus::Planned);
+    collection.cli().assert().success();
+    assert_eq!(tree_snapshot(&collection.root.join("source")), source);
+    assert_eq!(tree_snapshot(&collection.root.join("output")), output);
+    assert!(Path::new(&collection.args.report_path).is_file());
+}
+
+#[test]
+fn simulation_still_rejects_conflicts_without_writing_a_report_or_output() {
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    fs::create_dir_all(collection.root.join("output/working")).unwrap();
+    fs::write(
+        collection.root.join("output/working/005.zip"),
+        b"existing archive",
+    )
+    .unwrap();
+    let before = tree_snapshot(&collection.root);
+    collection.copy_conflict("Destination already exists");
+    assert_eq!(tree_snapshot(&collection.root), before);
+}
+
+#[test]
+fn simulation_reports_must_be_outside_existing_and_future_output_trees() {
+    for existing in [false, true] {
+        for report in ["output/notes.md", "OUTPUT/notes.md"] {
+            let mut collection = Collection::new();
+            collection.args.simulation = true;
+            collection.args.report_path = collection.root.join(report).to_str().unwrap().into();
+            if existing {
+                fs::create_dir(collection.root.join("output")).unwrap();
+                fs::write(collection.root.join("output/keep"), b"keep bytes").unwrap();
+            }
+            let before = tree_snapshot(&collection.root);
+            let error = Roms::new()
+                .copy_roms(&collection.args)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("Simulation report must be outside"),
+                "{error}"
+            );
+            collection
+                .cli()
+                .assert()
+                .failure()
+                .stdout(predicates::str::contains(
+                    "Simulation report must be outside",
+                ));
+            assert_eq!(tree_snapshot(&collection.root), before);
+        }
+    }
+}
+
+#[test]
+fn simulation_rejects_a_case_alias_of_the_future_output_root_itself() {
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    collection.args.destination_path = collection.root.join("Öutput.md").to_str().unwrap().into();
+    collection.args.report_path = collection.root.join("öutput.md").to_str().unwrap().into();
+    let before = tree_snapshot(&collection.root);
+    collection.rejected();
+    assert_eq!(tree_snapshot(&collection.root), before);
+}
+
+#[test]
+fn simulation_report_failure_keeps_trees_unchanged_and_prints_a_planned_fallback() {
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    collection.args.destination_path = collection.root.join("new/output").to_str().unwrap().into();
+    collection.args.report_path = collection
+        .root
+        .join("missing-report/report.md")
+        .to_str()
+        .unwrap()
+        .into();
+    let before = tree_snapshot(&collection.root);
+    let assertion = collection
+        .cli()
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Simulation: Planned operations only",
+        ))
+        .stderr(predicates::str::contains("ROMs copied: 0"));
+    assert!(!String::from_utf8_lossy(&assertion.get_output().stdout)
+        .contains("Any ROM files already copied"));
+    assert_eq!(tree_snapshot(&collection.root), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn simulation_does_not_require_writable_source_or_output_directories() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    collection.args.report_path.clear();
+    let Some(_output_permissions) = block_working_directory(&collection) else {
+        return;
+    };
+    let source = collection.root.join("source");
+    let _source_permissions = RestorePermissions {
+        permissions: fs::metadata(&source).unwrap().permissions(),
+        path: source.clone(),
+    };
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o555)).unwrap();
+    collection.args.destination_path = collection
+        .root
+        .join("output/working/new/deep")
+        .to_str()
+        .unwrap()
+        .into();
+    let before_source = tree_snapshot(&source);
+    let before_output = tree_snapshot(&collection.root.join("output"));
+    let report = roms_curator::run(&collection.args)
+        .unwrap()
+        .copy_roms(&collection.args)
+        .unwrap();
+    assert_eq!(report.roms_working[0].status, OperationStatus::Planned);
+    collection.cli().assert().success();
+    assert_eq!(tree_snapshot(&source), before_source);
+    assert_eq!(
+        tree_snapshot(&collection.root.join("output")),
+        before_output
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn simulation_rejects_a_report_inside_an_output_root_alias() {
+    let mut collection = Collection::new();
+    collection.args.simulation = true;
+    fs::create_dir(collection.root.join("output")).unwrap();
+    link_directory(
+        &collection.root.join("output"),
+        &collection.root.join("output-alias"),
+    );
+    collection.args.report_path = collection
+        .root
+        .join("output-alias/notes.md")
+        .to_str()
+        .unwrap()
+        .into();
+    collection.rejected();
+    assert!(!collection.root.join("output/notes.md").exists());
 }

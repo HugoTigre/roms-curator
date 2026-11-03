@@ -43,7 +43,11 @@ fn finish_with_writer(report: &Report, report_path: &str, stderr: impl Write) ->
     if !report_path.is_empty() {
         if let Err(error) = report.to_file(report_path) {
             error!("{error}");
-            error!("Any ROM files already copied were kept; reruns will not replace them. Writing the report to stderr.");
+            if report.simulation {
+                error!("Simulation did not copy any ROMs. Writing the Planned report to stderr.");
+            } else {
+                error!("Any ROM files already copied were kept; reruns will not replace them. Writing the report to stderr.");
+            }
             if let Err(error) = report.write_to(stderr) {
                 error!("Cannot write the fallback report to stderr: {error}");
             }
@@ -54,13 +58,19 @@ fn finish_with_writer(report: &Report, report_path: &str, stderr: impl Write) ->
         error!("One or more ROMs failed to copy. Files already completed have been retained.");
         return ExitCode::FAILURE;
     }
+    if report.simulation {
+        info!(
+            "Simulation complete: {} working and {} other entries Planned. No ROMs were copied.",
+            report.total_working, report.total_other
+        );
+    }
     ExitCode::SUCCESS
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use roms_curator::models::report::ReportDetailEntry;
+    use roms_curator::models::report::{OperationStatus, ReportDetailEntry};
     use std::fs;
 
     #[test]
@@ -70,6 +80,7 @@ mod tests {
         let mut report = Report::new();
         report.add_rom_working(ReportDetailEntry {
             rom_name: "005.zip".into(),
+            status: OperationStatus::Failed,
             error: Some("source/005.zip -> output/005.zip: injected copy failure".into()),
             ..ReportDetailEntry::default()
         });
@@ -95,7 +106,7 @@ mod tests {
         };
         report.add_rom_working(ReportDetailEntry {
             rom_name: "completed.zip".into(),
-            moved: true,
+            status: OperationStatus::Copied,
             ..ReportDetailEntry::default()
         });
         let path = directory.path().join("missing/report.md");
@@ -120,6 +131,7 @@ mod tests {
         let mut report = Report::new();
         report.add_rom_working(ReportDetailEntry {
             rom_name: "005.zip".into(),
+            status: OperationStatus::Failed,
             error: Some("source/005.zip -> output/005.zip: injected copy failure".into()),
             ..ReportDetailEntry::default()
         });

@@ -40,10 +40,13 @@ roms-curator \
 
 ## Simulate operation
 
-To run a simulation (does not create a new rom collection)
-you need to set the `simulate` argument and specify the
-`report path` file (markdown file). The report file will contain
-all operations as if you weren't doing a simulation.
+Use `--simulation=true` to check the selected operations without copying ROMs or
+creating output directories. The source and output trees stay unchanged.
+
+The console shows a Planned summary. Add `--report-path` for a Markdown report
+with Planned entries and zero copied ROMs. The report must be outside both trees,
+and its parent directory must already exist. Simulation still rejects path/name
+conflicts; it does not test write access or available space.
 
 ```bash
 roms-curator \

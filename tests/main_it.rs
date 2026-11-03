@@ -40,7 +40,7 @@ fn should_run_successfully() {
     assert
         .success()
         .stdout(predicate::str::contains("Categorizing roms"))
-        .stdout(predicate::str::contains("Copying from source"));
+        .stdout(predicate::str::contains("Planning from source"));
 }
 
 #[test]
@@ -163,25 +163,30 @@ fn source_path_and_destination_path_cannot_be_equal() {
 }
 
 #[test]
-fn simulation_mode_needs_report_path() {
+fn simulation_without_a_report_does_not_create_output() {
     let tag = get_test_tag();
     set_up(&tag);
     let mut cmd = Command::cargo_bin("roms-curator").unwrap();
 
-    let (mame_xml_file, carver_init_file) =
-        create_mame_and_catver_files_to_bypass_file_not_found_error(&tag);
+    let output = Path::new(TARGET_FOLDER)
+        .join(&tag)
+        .join("simulation-output");
 
     let assert = cmd
-        .arg(format!("--mame-xml-path={}", mame_xml_file))
-        .arg(format!("--catver-path={}", carver_init_file))
-        .arg("--source-path=target/")
-        .arg("--destination-path=/")
+        .arg(format!("--mame-xml-path={}", MAME_XML_FILE_NAME_SMALL_SET))
+        .arg(format!(
+            "--catver-path={}",
+            CATEGORY_LIST_FILE_NAME_SMALL_SET
+        ))
+        .arg(format!("--source-path={}", ROMS_SOURCE_PATH))
+        .arg(format!("--destination-path={}", output.display()))
         .arg("--simulation=true")
         .assert();
 
-    assert.stdout(predicate::str::contains(
-        "Simulation mode requires a report file",
-    ));
+    assert
+        .success()
+        .stdout(predicate::str::contains("entries Planned"));
+    assert!(!output.exists());
 }
 
 fn create_mame_and_catver_files_to_bypass_file_not_found_error(test_tag: &str) -> (String, String) {

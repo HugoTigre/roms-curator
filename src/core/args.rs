@@ -1,9 +1,9 @@
 extern crate core;
 
+use std::env;
 use std::error::Error;
-use std::fs::{metadata, File};
+use std::fs::metadata;
 use std::path::Path;
-use std::{env, fs};
 
 use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Command};
 
@@ -16,7 +16,7 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Com
 /// - destination_path: Where to copy the roms.
 /// - report_path: Path to the generated report in markdown format. Ex: report.md.
 /// - ignore_not_working_chd: If true, not-working CHD ROMs and Directories will not be copied.
-/// - simulation: If true, no ROMs will be copied, but the report will still be generated as if they were (Needs valid `report_path`).
+/// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
 /// - subset_start: If set, only roms which ascii name alphabetical order is higher than this will be copied.
 /// - subset_end: If set, only roms which ascii name alphabetical order is lower than this will be copied.
 ///
@@ -34,8 +34,8 @@ pub struct Args {
     pub report_path: String,
     /// If true, not-working CHD ROMs and Directories will not be copied.
     pub ignore_not_working_chd: bool,
-    /// If true, no ROMs will be copied, but the report will still be generated as if they were.
-    /// Needs valid `report_path`.
+    /// Plan operations without creating output directories or copying ROMs.
+    /// An optional report must be outside the source/output trees.
     pub simulation: bool,
     /// If set, only roms which ascii name alphabetical order is higher than this will be copied.
     pub subset_start: String,
@@ -118,7 +118,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("simulation")
-                .help("If true, not working CHD files will not be copied to [destination_path]. (true|false)")
+                .help("Plan operations without creating output directories or copying ROMs. An optional report labels operations Planned. (true|false)")
                 .long("simulation")
                 .num_args(1)
                 .required(false)
@@ -184,11 +184,6 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     let simulation: &bool = matches
         .get_one("simulation")
         .expect("validated in args parser");
-    // simulation implies report
-    if *simulation && report.is_empty() {
-        return Err("Simulation mode requires a report file.".into());
-    }
-
     let subset_start: &String = matches
         .get_one("subset_start")
         .expect("validated in args parser");
@@ -214,26 +209,6 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     };
 
     crate::core::paths::validate(&args)?;
-    fs::create_dir_all(&args.destination_path).map_err(|error| {
-        format!(
-            "Cannot create output directory {}: {error}",
-            args.destination_path
-        )
-    })?;
-    if !args.report_path.is_empty() {
-        let report_path = Path::new(&args.report_path);
-        if report_path.exists() {
-            return Err("Report file already exists.".into());
-        }
-        File::create(report_path)
-            .map_err(|error| format!("Cannot create report {}: {error}", report_path.display()))?;
-        fs::remove_file(report_path).map_err(|error| {
-            format!(
-                "Cannot remove report probe {}: {error}",
-                report_path.display()
-            )
-        })?;
-    }
     Ok(args)
 }
 

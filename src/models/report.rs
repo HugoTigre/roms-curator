@@ -6,10 +6,30 @@ use std::path::Path;
 
 use tempfile::Builder;
 
+/// Outcome recorded for one source entry.
+///
+/// [`Ignored`](Self::Ignored) is the default. A failed copy has to set
+/// [`Failed`](Self::Failed). An entry left at the default is omitted from the
+/// failure section and from the failed-copy count.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStatus {
+    /// Selected during simulation. This is neither a copy nor a failure.
+    Planned,
+    /// The archive or directory was copied.
+    Copied,
+    /// The copy was attempted and failed.
+    Failed,
+    /// The source entry was not selected.
+    #[default]
+    Ignored,
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct ReportDetailEntry {
     pub rom_name: String,
-    pub moved: bool,
+    /// Defaults to [`OperationStatus::Ignored`]. Failures must set
+    /// [`OperationStatus::Failed`].
+    pub status: OperationStatus,
     pub is_chd: bool,
     /// Operation paths and cause when a copy fails; absent for successful/ignored entries.
     pub error: Option<String>,
@@ -18,15 +38,17 @@ pub struct ReportDetailEntry {
 /// Stores report data
 #[derive(Default, Debug)]
 pub struct Report {
+    /// True for a read-only simulation; selected entries have status Planned.
+    pub simulation: bool,
     pub total_working: i32,
     pub total_other: i32,
     pub source_dir: String,
     pub destination_dir: String,
     pub roms_working: Vec<ReportDetailEntry>,
-    // name of rom and if the move was successful
     pub roms_other: Vec<ReportDetailEntry>,
     pub ignored_roms: Vec<ReportDetailEntry>,
-    /// False if at least one required copy failed.
+    /// False if at least one required copy failed. A successful simulation does
+    /// not verify write access or available space.
     pub all_ok: bool,
 }
 
@@ -35,7 +57,7 @@ pub trait LineWriterExt {
     fn write_all_roms(
         self,
         roms: &[ReportDetailEntry],
-        moved: bool,
+        status: OperationStatus,
     ) -> Result<Box<LineWriter<File>>, Box<dyn Error>>;
 }
 
@@ -43,9 +65,9 @@ impl LineWriterExt for LineWriter<File> {
     fn write_all_roms(
         mut self,
         roms: &[ReportDetailEntry],
-        moved: bool,
+        status: OperationStatus,
     ) -> Result<Box<LineWriter<File>>, Box<dyn Error>> {
-        write_all_roms(&mut self, roms, moved)?;
+        write_all_roms(&mut self, roms, status)?;
         Ok(Box::new(self))
     }
 }
@@ -53,10 +75,10 @@ impl LineWriterExt for LineWriter<File> {
 fn write_all_roms(
     writer: &mut impl Write,
     roms: &[ReportDetailEntry],
-    moved: bool,
+    status: OperationStatus,
 ) -> io::Result<()> {
     writer.write_all(b"<details>\n  <summary>roms</summary>\n\n```text\n")?;
-    for entry in roms.iter().filter(|entry| entry.moved == moved) {
+    for entry in roms.iter().filter(|entry| entry.status == status) {
         let is_chd = if entry.is_chd { "(chd)" } else { "" };
         writeln!(writer, "{} {}", entry.rom_name, is_chd)?;
         if let Some(error) = &entry.error {
@@ -114,29 +136,35 @@ impl Report {
         );
         writer.write_all(title.as_bytes())?;
         writer.write_all(b"\n")?;
+        if self.simulation {
+            writer.write_all(b"Simulation: Planned operations only. No ROMs were copied.\n\n")?;
+        }
 
-        let toc = Self::build_toc()?;
+        let toc = self.build_toc();
 
         writer.write_all(toc.as_bytes())?;
 
-        let summary = Self::build_summary(self)?;
+        let summary = self.build_summary();
 
         writer.write_all(summary.as_bytes())?;
 
         // write detail
         writer.write_all(b"## Detail\n\n")?;
 
-        writer.write_all(b"### Moved to Working folder\n\n")?;
-        write_all_roms(&mut writer, &self.roms_working, true)?;
+        let (label, status) = self.success_label();
+        writeln!(writer, "### {label} Working folder\n")?;
+        write_all_roms(&mut writer, &self.roms_working, status)?;
 
-        writer.write_all(b"### Moved to Other folder\n\n")?;
-        write_all_roms(&mut writer, &self.roms_other, true)?;
+        writeln!(writer, "### {label} Other folder\n")?;
+        write_all_roms(&mut writer, &self.roms_other, status)?;
 
-        writer.write_all(b"### Failed moving to Working folder\n\n")?;
-        write_all_roms(&mut writer, &self.roms_working, false)?;
+        if !self.simulation {
+            writer.write_all(b"### Failed copies to Working folder\n\n")?;
+            write_all_roms(&mut writer, &self.roms_working, OperationStatus::Failed)?;
 
-        writer.write_all(b"### Failed moving to Other folder\n\n")?;
-        write_all_roms(&mut writer, &self.roms_other, false)?;
+            writer.write_all(b"### Failed copies to Other folder\n\n")?;
+            write_all_roms(&mut writer, &self.roms_other, OperationStatus::Failed)?;
+        }
 
         writer.write_all(b"### Ignored roms\n\n")?;
         writer.write_all(
@@ -152,93 +180,71 @@ impl Report {
         writer.write_all(
             b"rom or a CHD file (folders should indicate chd while zip file should be a rom).\n\n",
         )?;
-        write_all_roms(&mut writer, &self.ignored_roms, false)?;
+        write_all_roms(&mut writer, &self.ignored_roms, OperationStatus::Ignored)?;
 
         writer.flush()?;
 
         Ok(())
     }
 
-    fn build_toc() -> Result<String, Box<dyn Error>> {
-        let toc = format!(
-            "{}{}{}{}{}{}{}{}",
-            "- [Summary](#summary)\n",
-            "- [Detail](#detail)\n",
-            "  - [Moved to Working folder](#moved-to-working-folder)\n",
-            "  - [Moved to Other folder](#moved-to-other-folder)\n",
-            "  - [Failed moving to Working folder](#failed-moving-to-working-folder)\n",
-            "  - [Failed moving to Other folder](#failed-moving-to-other-folder)\n",
-            "  - [Ignored roms](#ignored-roms)\n",
-            "\n"
-        );
-
-        Ok(toc)
+    fn success_label(&self) -> (&'static str, OperationStatus) {
+        if self.simulation {
+            ("Planned for", OperationStatus::Planned)
+        } else {
+            ("Copied to", OperationStatus::Copied)
+        }
     }
 
-    fn build_summary(report: &Report) -> Result<String, Box<dyn Error>> {
-        let moved_to_working_folder = report
+    fn build_toc(&self) -> String {
+        let (label, _) = self.success_label();
+        let anchor = if self.simulation {
+            "planned-for"
+        } else {
+            "copied-to"
+        };
+        let failures = if self.simulation {
+            ""
+        } else {
+            "  - [Failed copies to Working folder](#failed-copies-to-working-folder)\n  - [Failed copies to Other folder](#failed-copies-to-other-folder)\n"
+        };
+        format!(
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} Working folder](#{anchor}-working-folder)\n  - [{label} Other folder](#{anchor}-other-folder)\n{failures}  - [Ignored roms](#ignored-roms)\n\n"
+        )
+    }
+
+    fn build_summary(&self) -> String {
+        let (label, status) = self.success_label();
+        let count = |entries: &[ReportDetailEntry]| {
+            entries
+                .iter()
+                .filter(|entry| entry.status == status)
+                .fold((0, 0), |(total, chds), entry| {
+                    (total + 1, chds + usize::from(entry.is_chd))
+                })
+        };
+        let (working, working_chds) = count(&self.roms_working);
+        let (other, other_chds) = count(&self.roms_other);
+        let copied = self
             .roms_working
             .iter()
-            .filter(|entry| entry.moved)
+            .chain(&self.roms_other)
+            .filter(|entry| entry.status == OperationStatus::Copied)
             .count();
-        let moved_to_working_folder_chd = report
+        let failed = self
             .roms_working
             .iter()
-            .filter(|entry| entry.moved && entry.is_chd)
+            .chain(&self.roms_other)
+            .filter(|entry| entry.status == OperationStatus::Failed)
             .count();
-
-        let moved_to_other_folder = report.roms_other.iter().filter(|entry| entry.moved).count();
-        let moved_to_other_folder_chd = report
-            .roms_other
-            .iter()
-            .filter(|entry| entry.moved && entry.is_chd)
-            .count();
-
-        let ignored_roms = report.ignored_roms.len();
-
-        let working_folders_entry = format!(
-            "{}{}{}{}{}",
-            "\n- Roms moved to working folders: ",
-            moved_to_working_folder,
-            " (",
-            moved_to_working_folder_chd,
-            " CHDs)"
-        );
-        let other_folders_entry = format!(
-            "{}{}{}{}{}",
-            "\n- Roms moved to other folders: ",
-            moved_to_other_folder,
-            " (",
-            moved_to_other_folder_chd,
-            " CHDs)"
-        );
-        let ignored_roms_entry = format!("{}{}", "\n- Ignored roms: ", ignored_roms);
-
-        let roms_failed_to_move = report.roms_working.len() + report.roms_other.len()
-            - moved_to_working_folder
-            - moved_to_other_folder;
-
-        let summary = format!(
-            "{}{}{}{}{}{}{}{}{}{}{}{}",
-            "## Summary",
-            "\n\n- All OK: ",
-            report.all_ok,
-            " **",
-            working_folders_entry,
-            other_folders_entry,
-            ignored_roms_entry,
-            "\n- Roms failed to moved: ",
-            roms_failed_to_move,
-            "\n\n",
-            "** (does not consider ignored_roms)",
-            "\n\n",
-        );
-
-        Ok(summary)
+        format!(
+            "## Summary\n\n- All OK: {}\n- {label} working folders: {working} ({working_chds} CHDs)\n- {label} other folders: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n\n",
+            self.all_ok, self.ignored_roms.len()
+        )
     }
 
     pub fn build(&self) -> Report {
         Report {
+            simulation: self.simulation,
             total_working: self.total_working,
             total_other: self.total_other,
             source_dir: self.source_dir.to_owned(),
@@ -296,6 +302,103 @@ mod tests {
     use super::*;
 
     #[test]
+    fn simulation_reports_planned_entries_without_counting_them_as_copies_or_failures() {
+        let mut report = Report {
+            simulation: true,
+            all_ok: true,
+            ..Report::default()
+        };
+        report.add_rom_working(ReportDetailEntry {
+            rom_name: "005.zip".into(),
+            status: OperationStatus::Planned,
+            ..ReportDetailEntry::default()
+        });
+        report.add_rom_other(ReportDetailEntry {
+            rom_name: "disk".into(),
+            status: OperationStatus::Planned,
+            is_chd: true,
+            ..ReportDetailEntry::default()
+        });
+        let mut output = Vec::new();
+        report.write_to(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Simulation: Planned operations only"));
+        assert!(output.contains("Planned for working folders: 1 (0 CHDs)"));
+        assert!(output.contains("Planned for other folders: 1 (1 CHDs)"));
+        assert!(output.contains("ROMs copied: 0"));
+        assert!(output.contains("Failed copies: 0"));
+        assert!(output.contains("005.zip"));
+        assert!(output.contains("disk (chd)"));
+        assert!(!output.contains("### Copied to"));
+        assert!(!output.contains("### Failed copies"));
+        assert!(report.build().simulation);
+    }
+
+    #[test]
+    fn copy_report_separates_copied_failed_and_ignored_entries() {
+        let mut report = Report {
+            all_ok: false,
+            ..Report::default()
+        };
+        report.add_rom_working(ReportDetailEntry {
+            rom_name: "005.zip".into(),
+            status: OperationStatus::Failed,
+            error: Some("source/005.zip -> output/005.zip: denied".into()),
+            ..ReportDetailEntry::default()
+        });
+        report.add_rom_other(ReportDetailEntry {
+            rom_name: "100lions.zip".into(),
+            status: OperationStatus::Copied,
+            ..ReportDetailEntry::default()
+        });
+        report.add_ignored_rom(ReportDetailEntry {
+            rom_name: "notes.txt".into(),
+            ..ReportDetailEntry::default()
+        });
+        let mut output = Vec::new();
+        report.write_to(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("- Copied to working folders: 0 (0 CHDs)"));
+        assert!(output.contains("- Copied to other folders: 1 (0 CHDs)"));
+        assert!(output.contains("- ROMs copied: 1"));
+        assert!(output.contains("- Ignored ROMs: 1"));
+        assert!(output.contains("- Failed copies: 1"));
+        assert!(output.contains("### Copied to Working folder"));
+        assert!(output.contains("### Copied to Other folder"));
+        assert!(output.contains("### Failed copies to Working folder"));
+        assert!(output.contains("### Failed copies to Other folder"));
+        assert!(!output.contains("### Planned for"));
+
+        let copied_other = section(
+            &output,
+            "### Copied to Other folder",
+            "### Failed copies to Working folder",
+        );
+        let failed_working = section(
+            &output,
+            "### Failed copies to Working folder",
+            "### Failed copies to Other folder",
+        );
+        let ignored = section(&output, "### Ignored roms", "");
+        assert!(copied_other.contains("100lions.zip"));
+        assert!(!copied_other.contains("005.zip"));
+        assert!(failed_working.contains("005.zip"));
+        assert!(failed_working.contains("denied"));
+        assert!(!failed_working.contains("100lions.zip"));
+        assert!(ignored.contains("notes.txt"));
+        assert!(!ignored.contains("005.zip"));
+        assert!(!ignored.contains("100lions.zip"));
+    }
+
+    fn section<'a>(report: &'a str, start: &str, end: &str) -> &'a str {
+        let rest = &report[report.find(start).unwrap() + start.len()..];
+        match rest.find(end) {
+            Some(end_at) if !end.is_empty() => &rest[..end_at],
+            _ => rest,
+        }
+    }
+
+    #[test]
     fn detail_write_failure_is_returned_without_panicking() {
         struct FailingWriter;
         impl Write for FailingWriter {
@@ -315,7 +418,7 @@ mod tests {
         let mut report = Report::new();
         report.add_rom_working(ReportDetailEntry {
             rom_name: "broken.zip".into(),
-            moved: true,
+            status: OperationStatus::Copied,
             ..ReportDetailEntry::default()
         });
         let error = report.write_to(FailingWriter).unwrap_err();

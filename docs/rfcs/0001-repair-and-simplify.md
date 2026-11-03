@@ -25,8 +25,7 @@ The [software review](../software-review.md) contains the original findings.
 - [x] **SAFE-01** Reject overlapping/aliased source, output and report paths before writing. Resolve root aliases; reject nested links/reparse points and output hard links to source entries. Assumes stable trees during execution.
 - [x] **SAFE-02** Preflight destination conflicts, including case-only names. Refuse replacement and CHD folder merges; publish complete files through sibling temporaries and clean up on normal failures. Completed files remain after later failures; whole-export transactions are deferred.
 - [x] **SAFE-03** Record copy paths/causes in reports and return nonzero CLI status for copy/report failures. Retain completed files; publish flushed reports without replacement and fall back to stderr when saving fails.
-- [ ] **SAFE-04** Make simulation read-only and label operations Planned.
-  - Done when source/output trees stay unchanged and only an explicitly requested report is written.
+- [x] **SAFE-04** Read-only simulation with explicit Planned outcomes and accurate counts. Leave source/output trees unchanged; write only an optional report outside both trees. Parsing performs no write probes.
 
 ## Phase 2 Metadata and selection
 

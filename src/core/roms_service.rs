@@ -9,7 +9,7 @@ use roxmltree::{Document, Node};
 
 use crate::core::args::Args;
 use crate::models::destination_folders::DestinationFolders;
-use crate::models::report::{Report, ReportDetailEntry};
+use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt, RomStatus, Roms,
     Status, UnfilteredRoms, EXCLUDED_CATEGORIES, SPECIAL_CASES_DEMOTE, SPECIAL_CASES_PROMOTE,
@@ -147,6 +147,8 @@ pub trait RomsExt {
     /// Individual copy failures are recorded in the returned report: check
     /// [`Report::all_ok`] and each failed entry's error. Preflight/setup failures
     /// return `Err` before the copy loop starts.
+    /// Simulation returns `Planned` entries without creating output directories
+    /// or copying ROMs. Only a separately requested report may be written.
     ///
     /// # Examples
     ///
@@ -238,19 +240,24 @@ impl RomsExt for Roms {
             sources.push((source, entries));
         }
         crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
-        for directory in directories {
-            std::fs::create_dir_all(directory).map_err(|error| {
-                format!(
-                    "Cannot create output directory {}: {error}",
-                    directory.display()
-                )
-            })?;
+        if !args.simulation {
+            for directory in directories {
+                std::fs::create_dir_all(directory).map_err(|error| {
+                    format!(
+                        "Cannot create output directory {}: {error}",
+                        directory.display()
+                    )
+                })?;
+            }
         }
 
         let mut total_working = 0;
         let mut total_other = 0;
         let mut something_failed = false;
-        let mut report = Report::new();
+        let mut report = Report {
+            simulation: args.simulation,
+            ..Report::default()
+        };
 
         for (source_path, entries) in sources {
             let progress_bar = if args.progress {
@@ -259,7 +266,12 @@ impl RomsExt for Roms {
                 None
             };
 
-            progress_bar.println(format!("Copying from source: {}", source_path).as_str());
+            let operation = if args.simulation {
+                "Planning"
+            } else {
+                "Copying"
+            };
+            progress_bar.println(format!("{operation} from source: {source_path}").as_str());
 
             let nr_of_files = entries.len();
             if let Some(pb) = progress_bar.as_ref() {
@@ -286,7 +298,13 @@ impl RomsExt for Roms {
                         let copy_error = Self::copy_rom(&path, &destination, args)
                             .err()
                             .map(|error| error.to_string());
-                        let moved = copy_error.is_none();
+                        let status = if copy_error.is_some() {
+                            OperationStatus::Failed
+                        } else if args.simulation {
+                            OperationStatus::Planned
+                        } else {
+                            OperationStatus::Copied
+                        };
                         if let Some(error) = &copy_error {
                             error!("{error}");
                             something_failed = true;
@@ -294,7 +312,7 @@ impl RomsExt for Roms {
 
                         let report_detail_entry = ReportDetailEntry {
                             rom_name: file_name.to_string_lossy().into_owned(),
-                            moved,
+                            status,
                             is_chd: !rom.data.chd.is_empty(),
                             error: copy_error,
                         };
@@ -313,7 +331,7 @@ impl RomsExt for Roms {
                 } else {
                     let report_detail_entry = ReportDetailEntry {
                         rom_name: file_name.to_string_lossy().into_owned(),
-                        moved: false,  // doesn't matter here
+                        status: OperationStatus::Ignored,
                         is_chd: false, // doesn't matter here
                         error: None,
                     };

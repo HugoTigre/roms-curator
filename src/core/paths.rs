@@ -105,6 +105,18 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     if destination.exists() && !destination.is_dir() {
         return Err("Destination path needs to be a directory.".into());
     }
+    if args.simulation && !args.report_path.is_empty() {
+        let report = resolve(Path::new(&args.report_path))?;
+        // Include case-only aliases for missing path components, so planning
+        // cannot create a report inside a future output directory on Windows.
+        let report_key = PathBuf::from(report.to_string_lossy().to_uppercase());
+        let destination_key = PathBuf::from(destination.to_string_lossy().to_uppercase());
+        if report_key.starts_with(destination_key)
+            || (destination.exists() && contains(&destination, &report)?)
+        {
+            return Err("Simulation report must be outside the output directory.".into());
+        }
+    }
     let mut source_ids = HashSet::new();
     for source in &args.source_path {
         let source = fs::canonicalize(source)?;
