@@ -230,17 +230,33 @@ fn link_directory(target: &Path, link: &Path) {
 #[cfg(windows)]
 fn link_directory(target: &Path, link: &Path) {
     // Junctions do not require Windows Developer Mode or symbolic-link privileges.
+    // mklink treats `/` as a switch. Path::join("target/tests") keeps that slash,
+    // so pass native separators or the junction path is rejected as an option.
+    let link = native_path(link);
+    let target = native_path(target);
     let output = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
+        .arg(&link)
+        .arg(&target)
         .output()
         .unwrap();
     assert!(
         output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        "mklink /J \"{}\" \"{}\" failed: {}{}",
+        link.display(),
+        target.display(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
     );
+}
+
+#[cfg(windows)]
+fn native_path(path: &Path) -> PathBuf {
+    let mut native = PathBuf::new();
+    for component in path.components() {
+        native.push(component);
+    }
+    native
 }
 
 #[cfg(any(unix, windows))]
