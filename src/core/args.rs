@@ -15,10 +15,10 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Com
 /// - source_path: Where the original ROM collection is. Can be more than one directory.
 /// - destination_path: Where to copy the roms.
 /// - report_path: Path to the generated report in markdown format. Ex: report.md.
-/// - ignore_not_working_chd: If true, not-working CHD ROMs and Directories will not be copied.
+/// - ignore_not_working_chd: Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
 /// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
-/// - subset_start: If set, skip names that sort before this. Required archives of selected games inside the range are still copied.
-/// - subset_end: If set, skip names that sort after this. Required archives of selected games inside the range are still copied.
+/// - subset_start: If set, skip names that sort before this. Required archives and disk directories of selected games inside the range are still copied.
+/// - subset_end: If set, skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied.
 ///
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Args {
@@ -32,14 +32,14 @@ pub struct Args {
     pub destination_path: String,
     /// Path to the generated report in markdown format. Ex: report.md.
     pub report_path: String,
-    /// If true, not-working CHD ROMs and Directories will not be copied.
+    /// Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
     pub ignore_not_working_chd: bool,
     /// Plan operations without creating output directories or copying ROMs.
     /// An optional report must be outside the source/output trees.
     pub simulation: bool,
-    /// If set, skip names that sort before this. `Catalog::copy_roms` still copies required archives of selected games inside the range.
+    /// If set, skip names that sort before this. `Catalog::copy_roms` still copies required archives and disk directories of selected games inside the range.
     pub subset_start: String,
-    /// If set, skip names that sort after this. `Catalog::copy_roms` still copies required archives of selected games inside the range.
+    /// If set, skip names that sort after this. `Catalog::copy_roms` still copies required archives and disk directories of selected games inside the range.
     pub subset_end: String,
     /// If true, show progress bar.
     pub progress: bool,
@@ -108,7 +108,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("ignore_not_working_chd")
-                .help("If true, not working CHD files will not be copied to [destination_path]. (true|false)")
+                .help("Accepted for compatibility. Required CHD directories are kept and unused ones are omitted either way. (true|false)")
                 .long("ignore-not-working-chd")
                 .short('i')
                 .num_args(1)
@@ -127,7 +127,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("subset_start")
-                .help("If true, not working CHD files will not be copied to [destination_path]. (true|false)")
+                .help("Skip names that sort before this. Required archives and disk directories of selected games inside the range are still copied.")
                 .long("subset-start")
                 .num_args(1)
                 .required(false)
@@ -136,7 +136,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("subset_end")
-                .help("If true, not working CHD files will not be copied to [destination_path]. (true|false)")
+                .help("Skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied.")
                 .long("subset-end")
                 .num_args(1)
                 .required(false)

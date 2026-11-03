@@ -11,6 +11,7 @@ use roxmltree::{Document, Node};
 use crate::core::args::Args;
 use crate::models::dependencies::DependencySet;
 use crate::models::destination_folders::DestinationFolders;
+use crate::models::disks::DiskSet;
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
@@ -46,11 +47,13 @@ impl ParsedMachines {
             .collect();
         selected.sort();
         let dependencies = crate::models::dependencies::resolve(&roms, &selected);
+        let disks = crate::models::disks::resolve(&roms, &selected);
         Ok(Catalog {
             mame_build: self.mame_build,
             roms,
             selected,
             dependencies,
+            disks,
             unknown_categories: self.unknown_categories,
         })
     }
@@ -60,11 +63,12 @@ impl Catalog {
     /// Copies source files into the category folders.
     ///
     /// A name-range subset skips stems outside the range, then still copies archives
-    /// required by a selected game inside the range. [`RomsExt::copy_roms`] applies
-    /// the range only.
+    /// and disk directories required by a selected game inside the range.
+    /// [`RomsExt::copy_roms`] applies the range only.
     pub fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
         let retain = retained_archives(&self.dependencies, args);
-        copy_retaining(self.roms, args, &retain)
+        let disks = required_disk_machines(&self.disks, args);
+        copy_retaining(self.roms, args, &retain, Some(&disks))
     }
 }
 
@@ -234,6 +238,7 @@ fn copy_retaining(
     roms: Roms,
     args: &Args,
     retain: &HashSet<String>,
+    disk_machines: Option<&HashSet<String>>,
 ) -> Result<Report, Box<dyn Error>> {
     Roms::check_paths(args)?;
     crate::core::paths::validate(args)?;
@@ -259,15 +264,15 @@ fn copy_retaining(
                 .file_stem()
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| format!("Unsupported ROM name: {}", path.display()))?;
-            if subset_excludes(args, prefix, retain) {
-                continue;
-            }
-            if let Some(rom) = roms.get(&prefix.to_ascii_lowercase()) {
-                if Roms::should_move(rom, args) {
-                    let destination = Roms::get_destination_folder(rom, &destination_paths)
-                        .join(path.file_name().ok_or("Missing ROM filename")?);
-                    copies.push((path.clone(), destination));
-                }
+            if plan_source_entry(path, prefix, &roms, args, retain, disk_machines)
+                == EntryPlan::Copy
+            {
+                let rom = roms
+                    .get(&prefix.to_ascii_lowercase())
+                    .expect("copy plan only matches a known machine");
+                let destination = Roms::get_destination_folder(rom, &destination_paths)
+                    .join(path.file_name().ok_or("Missing ROM filename")?);
+                copies.push((path.clone(), destination));
             }
         }
         sources.push((source, entries));
@@ -319,12 +324,23 @@ fn copy_retaining(
 
             progress_bar.inc();
 
-            if subset_excludes(args, file_prefix, retain) {
-                continue;
-            }
-
-            if let Some(rom) = roms.get(&file_prefix.to_ascii_lowercase()) {
-                if Roms::should_move(rom, args) {
+            match plan_source_entry(&path, file_prefix, &roms, args, retain, disk_machines) {
+                EntryPlan::Skip => continue,
+                EntryPlan::Ignore => {
+                    let is_chd = roms
+                        .get(&file_prefix.to_ascii_lowercase())
+                        .is_some_and(|rom| !rom.data.chd.is_empty());
+                    report.add_ignored_rom(ReportDetailEntry {
+                        rom_name: file_name.to_string_lossy().into_owned(),
+                        status: OperationStatus::Ignored,
+                        is_chd,
+                        error: None,
+                    });
+                }
+                EntryPlan::Copy => {
+                    let rom = roms
+                        .get(&file_prefix.to_ascii_lowercase())
+                        .expect("copy plan only matches a known machine");
                     let destination =
                         Roms::get_destination_folder(rom, &destination_paths).join(file_name);
 
@@ -361,14 +377,6 @@ fn copy_retaining(
                         }
                     };
                 }
-            } else {
-                let report_detail_entry = ReportDetailEntry {
-                    rom_name: file_name.to_string_lossy().into_owned(),
-                    status: OperationStatus::Ignored,
-                    is_chd: false, // doesn't matter here
-                    error: None,
-                };
-                report.add_ignored_rom(report_detail_entry);
             }
         }
 
@@ -383,6 +391,78 @@ fn copy_retaining(
         .all_ok(!something_failed);
 
     Ok(report)
+}
+
+/// Machine names whose CHD directory a name-range subset must still copy.
+///
+/// The range limits selected games. A parent directory that stores a required
+/// shared or delta disk stays even when its name falls outside the range.
+/// With no range, this is every machine that stores a required disk.
+pub(crate) fn required_disk_machines(disks: &DiskSet, args: &Args) -> HashSet<String> {
+    // The flag remains accepted so existing commands parse. Required disks are
+    // kept, and unused disk directories are omitted, for either value.
+    let _retired = args.ignore_not_working_chd;
+    disks
+        .edges
+        .iter()
+        .filter(|edge| !Roms::is_excluded(args, &edge.game))
+        .map(|edge| edge.machine.to_ascii_lowercase())
+        .collect()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryPlan {
+    Copy,
+    Ignore,
+    Skip,
+}
+
+fn plan_source_entry(
+    path: &Path,
+    prefix: &str,
+    roms: &Roms,
+    args: &Args,
+    retain: &HashSet<String>,
+    disk_machines: Option<&HashSet<String>>,
+) -> EntryPlan {
+    let key = prefix.to_ascii_lowercase();
+    let Some(rom) = roms.get(&key) else {
+        if subset_excludes(args, prefix, retain) {
+            return EntryPlan::Skip;
+        }
+        return EntryPlan::Ignore;
+    };
+    // `None` means this caller has no disk resolution, so directories follow the
+    // archive path below. `Some` copies only required disk directories, including
+    // ones whose names fall outside the range, and omits the rest.
+    if is_disk_media(path, !rom.data.chd.is_empty()) {
+        match disk_machines {
+            Some(required) if required.contains(&key) => return EntryPlan::Copy,
+            Some(_) => {
+                if subset_excludes(args, prefix, retain) {
+                    return EntryPlan::Skip;
+                }
+                return EntryPlan::Ignore;
+            }
+            None => {}
+        }
+    }
+    if subset_excludes(args, prefix, retain) {
+        EntryPlan::Skip
+    } else {
+        EntryPlan::Copy
+    }
+}
+
+fn is_disk_media(path: &Path, machine_has_disks: bool) -> bool {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("chd"))
+    {
+        return true;
+    }
+    path.is_dir() && machine_has_disks
 }
 
 /// Archive stems a name-range subset must still copy.
@@ -408,7 +488,7 @@ pub(crate) fn subset_excludes(args: &Args, file_prefix: &str, retain: &HashSet<S
 
 impl RomsExt for Roms {
     fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
-        copy_retaining(self, args, &HashSet::new())
+        copy_retaining(self, args, &HashSet::new(), None)
     }
 
     fn check_paths(args: &Args) -> Result<bool, &'static str> {
@@ -442,17 +522,10 @@ impl RomsExt for Roms {
         }
     }
 
-    fn should_move(rom: &Rom, args: &Args) -> bool {
-        if !args.ignore_not_working_chd {
-            return true;
-        }
-
-        let is_chd = !rom.data.chd.is_empty();
-
-        if is_chd && !matches!(&rom.category, RomCategory::Working) {
-            return false;
-        }
-
+    fn should_move(_rom: &Rom, args: &Args) -> bool {
+        // Disk retention is decided from `Catalog.disks` in `copy_retaining`.
+        // This flag no longer drops a CHD directory a selected game needs.
+        let _retired = args.ignore_not_working_chd;
         true
     }
 

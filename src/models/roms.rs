@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use strum_macros::{Display, EnumString};
 
 use super::dependencies::DependencySet;
+use super::disks::DiskSet;
 
 pub type Roms = HashMap<String, Rom>;
 pub type UnfilteredRoms = HashMap<String, RomData>;
@@ -85,6 +86,14 @@ pub struct Catalog {
     /// A clone names its parent archive, not its own name. Dump quality does not
     /// change [`Rom::category`] or this list.
     pub dependencies: DependencySet,
+    /// CHD files required by [`Catalog::selected`].
+    ///
+    /// A shared disk names the ancestor that stores the one copy. A clone disk
+    /// with its own content also names the parent's same-named non-optional disk
+    /// a delta CHD needs. When that parent has disks and none matches, it is missing.
+    /// Optional disks are omitted. [`DiskSet::missing`] is unresolved media,
+    /// not a change to [`Rom::category`].
+    pub disks: DiskSet,
     /// Machine names with no `[Category]` entry, sorted by name.
     pub unknown_categories: Vec<String>,
 }
@@ -147,7 +156,7 @@ pub struct Chd {
     pub sha1: Option<String>,
 }
 
-#[derive(Display, Debug, PartialEq, Eq, EnumString, Clone)]
+#[derive(Display, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString, Clone, Copy)]
 #[strum(ascii_case_insensitive)]
 pub enum ChdStatus {
     Good,
