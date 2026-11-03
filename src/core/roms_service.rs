@@ -12,7 +12,7 @@ use crate::models::destination_folders::DestinationFolders;
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
-    RomStatus, Roms, Status, UnfilteredRoms, UNKNOWN_CATEGORY,
+    RomFile, RomStatus, Roms, Status, UnfilteredRoms, UNKNOWN_CATEGORY,
 };
 use crate::models::selection::{category_preference, machine_override, EmulationPolicy};
 use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
@@ -36,9 +36,17 @@ impl ParsedMachines {
     ///
     /// Category preferences and machine-type rules still apply. Feature flags do not.
     pub fn categorize_with(self, policy: EmulationPolicy) -> Result<Catalog, Box<dyn Error>> {
+        let roms = categorize_machines(self.machines, &self.source, policy)?;
+        let mut selected: Vec<String> = roms
+            .iter()
+            .filter(|(_, rom)| rom.selected)
+            .map(|(name, _)| name.clone())
+            .collect();
+        selected.sort();
         Ok(Catalog {
             mame_build: self.mame_build,
-            roms: categorize_machines(self.machines, &self.source, policy)?,
+            roms,
+            selected,
             unknown_categories: self.unknown_categories,
         })
     }
@@ -98,6 +106,8 @@ pub fn parse(
                 features: extract_features(node, name, source)?,
                 clone_of: node.attribute("cloneof").map(str::to_string),
                 rom_of: node.attribute("romof").map(str::to_string),
+                devices: extract_devices(node, name, source)?,
+                roms: extract_roms(node, name, source)?,
                 chd: extract_disks(node, name, source)?,
                 category,
             },
@@ -145,7 +155,8 @@ fn categorize_machines(
         roms.insert(categorized_rom.0.clone(), categorized_rom.1);
     }
 
-    // Re-assign categories based on rom dependencies
+    // Copy-folder demotion stays until DEPS-01. It does not take a machine off
+    // the visible game list: `selected` was set from that machine's own policy.
     let to_demote = check_roms_dependency(&roms);
 
     to_demote.iter().for_each(|name| {
@@ -156,6 +167,7 @@ fn categorize_machines(
                     Rom {
                         data: rom.data,
                         category: RomCategory::NotWorking,
+                        selected: rom.selected,
                     },
                 )
             } else {
@@ -626,22 +638,8 @@ fn extract_disks(node: Node, machine: &str, source: &Path) -> Result<Vec<Chd>, B
         // Each disk is parsed from its own attributes. A missing status is the
         // MAME default, Good, and must not reuse the previous disk's status.
         let name = required_attr(child, source, machine, "disk", "name")?;
-        let status = match child.attribute("status") {
-            None => ChdStatus::Good,
-            Some(value) => parse_enum(source, machine, "disk status", value)?,
-        };
-        let optional = match child.attribute("optional") {
-            None => false,
-            Some(value) if value.eq_ignore_ascii_case("yes") => true,
-            Some(value) if value.eq_ignore_ascii_case("no") => false,
-            Some(value) => {
-                return Err(machine_error(
-                    source,
-                    machine,
-                    format!("disk '{name}' has unknown optional value '{value}'"),
-                ));
-            }
-        };
+        let status = dump_status(child, source, machine, "disk status")?;
+        let optional = optional_flag(child, source, machine, "disk", name)?;
         disks.push(Chd {
             name: name.to_string(),
             status,
@@ -657,6 +655,89 @@ fn extract_disks(node: Node, machine: &str, source: &Path) -> Result<Vec<Chd>, B
         });
     }
     Ok(disks)
+}
+
+fn extract_roms(node: Node, machine: &str, source: &Path) -> Result<Vec<RomFile>, Box<dyn Error>> {
+    let mut roms = Vec::new();
+    for child in node.children() {
+        if child.tag_name().name() != "rom" {
+            continue;
+        }
+        let name = required_attr(child, source, machine, "rom", "name")?;
+        let size = match child.attribute("size") {
+            None => None,
+            Some(value) => Some(value.parse::<u64>().map_err(|_| {
+                machine_error(
+                    source,
+                    machine,
+                    format!("rom '{name}' has unknown size '{value}'"),
+                )
+            })?),
+        };
+        roms.push(RomFile {
+            name: name.to_string(),
+            size,
+            crc: owned_attr(child, "crc"),
+            sha1: owned_attr(child, "sha1"),
+            merge: owned_attr(child, "merge"),
+            bios: owned_attr(child, "bios"),
+            status: dump_status(child, source, machine, "rom status")?,
+            optional: optional_flag(child, source, machine, "rom", name)?,
+        });
+    }
+    Ok(roms)
+}
+
+fn extract_devices(
+    node: Node,
+    machine: &str,
+    source: &Path,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut devices = Vec::new();
+    for child in node.children() {
+        if child.tag_name().name() != "device_ref" {
+            continue;
+        }
+        devices.push(required_attr(child, source, machine, "device_ref", "name")?.to_string());
+    }
+    Ok(devices)
+}
+
+fn owned_attr(node: Node, attribute: &str) -> Option<String> {
+    node.attribute(attribute)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn dump_status(
+    node: Node,
+    source: &Path,
+    machine: &str,
+    attribute: &str,
+) -> Result<ChdStatus, Box<dyn Error>> {
+    match node.attribute("status") {
+        None => Ok(ChdStatus::Good),
+        Some(value) => parse_enum(source, machine, attribute, value),
+    }
+}
+
+fn optional_flag(
+    node: Node,
+    source: &Path,
+    machine: &str,
+    element: &str,
+    name: &str,
+) -> Result<bool, Box<dyn Error>> {
+    match node.attribute("optional") {
+        None => Ok(false),
+        Some(value) if value.eq_ignore_ascii_case("yes") => Ok(true),
+        Some(value) if value.eq_ignore_ascii_case("no") => Ok(false),
+        Some(value) => Err(machine_error(
+            source,
+            machine,
+            format!("{element} '{name}' has unknown optional value '{value}'"),
+        )),
+    }
 }
 
 fn required_attr<'input>(

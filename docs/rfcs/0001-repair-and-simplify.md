@@ -34,8 +34,9 @@ The [software review](../software-review.md) contains the original findings.
 - [x] **SELECT-01** Separate emulation status from category preferences and overrides. Default to good/imperfect runnable arcade machines; remove the implicit two-feature exclusion.
   - Done when minor sound/graphics issues are accepted, preliminary machines are excluded and every rule/override explains its effect. Decide genre preferences here.
   - Decision: no arcade-genre exclusions. Non-arcade CatVer groups stay out of the selected list, matched as a group rather than a substring, and each states why. The playable policy accepts good or imperfect driver and emulation, including imperfect sound and graphics. Strict (good only) is a library policy. Named system overrides keep a reason and an effect. Disk and parent demotion stay until DEPS-01.
-- [ ] **MODEL-01** Separate selected machines from required storage. Retain parent, BIOS, device, ROM and disk relationships.
+- [x] **MODEL-01** Separate selected machines from required storage. Retain parent, BIOS, device, ROM and disk relationships.
   - Done when supporting files can remain outside the visible game list and a clone remains selectable despite its parent's gameplay status.
+  - Decision: `Catalog.selected` is the visible game list, chosen from each machine's own emulation policy. BIOS, devices, and other unselected machines stay in `catalog.roms`. Parent (`cloneof`), ROM parent (`romof`), device references, ROM dumps, and disks stay on every machine. Disk and `romof` demotion still change the copy category until DEPS-01 and do not remove a name from `selected`.
 - [ ] **DEPS-01** Resolve selected machines to required merged archives and support files. Replace status-based dependency demotion.
   - Done when clone-in-parent, BIOS/device, missing-reference and cycle cases are handled deterministically. Subset filters must retain dependencies.
 - [ ] **CHD-01** Resolve shared disks and delta parents; replace blanket non-working-CHD omission.

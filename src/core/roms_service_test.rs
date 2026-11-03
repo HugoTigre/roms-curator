@@ -6,7 +6,7 @@ use crate::core::roms_service::{parse, RomsExt};
 use crate::models::roms::ChdStatus::{BadDump, Good, NoDump};
 use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
 use crate::models::roms::{
-    Chd, Feature, FeatureStatus, RomData, RomStatus, Roms, Status, UNKNOWN_CATEGORY,
+    Chd, Feature, FeatureStatus, RomData, RomFile, RomStatus, Roms, Status, UNKNOWN_CATEGORY,
 };
 use crate::models::selection::EmulationPolicy;
 use crate::{parse_categories, read_categories, read_mame_xml};
@@ -26,6 +26,52 @@ fn should_properly_classify_roms() {
 
     assert_eq!(catalog.mame_build, "0.244 (mame0244)");
     assert_eq!(catalog.unknown_categories, vec!["area51".to_string()]);
+    // These four pass the playable policy on their own. elevatora's parent is not in the file.
+    assert_eq!(
+        catalog.selected,
+        vec![
+            "005".to_string(),
+            "area51".to_string(),
+            "elevatora".to_string(),
+            "robocop".to_string()
+        ]
+    );
+    let cpu = catalog.roms["005"]
+        .data
+        .roms
+        .iter()
+        .find(|rom| rom.name == "1346b.cpu-u25")
+        .unwrap();
+    assert_eq!(cpu.size, Some(2048));
+    assert_eq!(
+        cpu.sha1.as_deref(),
+        Some("a257c556d31691068ed5c991f1fb2b51da4826db")
+    );
+    assert!(catalog.roms["005"]
+        .data
+        .devices
+        .iter()
+        .any(|device| device == "z80"));
+    for (name, rom_count, device_count) in [
+        ("005", 23, 8),
+        ("100lions", 92, 6),
+        ("3dobios", 4, 5),
+        ("99bottles", 3, 15),
+        ("a24play", 0, 0),
+        ("area51", 5, 17),
+        ("aristmk6", 90, 6),
+        ("as_acp", 4, 6),
+        ("elevatora", 21, 17),
+        ("robocop", 27, 18),
+        ("sv801", 0, 4),
+    ] {
+        assert_eq!(catalog.roms[name].data.roms.len(), rom_count, "{name}");
+        assert_eq!(
+            catalog.roms[name].data.devices.len(),
+            device_count,
+            "{name}"
+        );
+    }
     let roms = catalog.roms;
 
     let (working, not_working): (Roms, Roms) = roms
@@ -51,10 +97,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "Maze / Shooter Small".to_string(),
     };
-    assert_eq!(working["005"].data, rom_005);
+    assert_eq!(classification(&working["005"].data), rom_005);
     assert!(matches!(working["005"].category, Working));
 
     let rom_elevatora = RomData {
@@ -68,10 +116,12 @@ fn should_properly_classify_roms() {
         features: Vec::new(),
         clone_of: Some("elevator".to_string()),
         rom_of: Some("elevator".to_string()),
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "Platform / Shooter".to_string(),
     };
-    assert_eq!(working["elevatora"].data, rom_elevatora);
+    assert_eq!(classification(&working["elevatora"].data), rom_elevatora);
     assert!(matches!(working["elevatora"].category, Working));
 
     let rom_robocop = RomData {
@@ -88,10 +138,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "Platform / Shooter Scrolling".to_string(),
     };
-    assert_eq!(working["robocop"].data, rom_robocop);
+    assert_eq!(classification(&working["robocop"].data), rom_robocop);
     assert!(matches!(working["robocop"].category, Working));
 
     let rom_area51 = RomData {
@@ -105,6 +157,8 @@ fn should_properly_classify_roms() {
         features: Vec::new(),
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: vec![Chd {
             name: "area51".to_string(),
             status: Good,
@@ -114,7 +168,7 @@ fn should_properly_classify_roms() {
         }],
         category: UNKNOWN_CATEGORY.to_string(),
     };
-    assert_eq!(working["area51"].data, rom_area51);
+    assert_eq!(classification(&working["area51"].data), rom_area51);
     assert!(matches!(working["area51"].category, Working));
 
     // not working roms
@@ -133,10 +187,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: Some("aristmk6".to_string()),
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "Slot Machine / Video Slot".to_string(),
     };
-    assert_eq!(not_working["100lions"].data, rom_100lions);
+    assert_eq!(classification(&not_working["100lions"].data), rom_100lions);
     assert!(matches!(not_working["100lions"].category, NotWorking));
 
     let rom_aristmk6 = RomData {
@@ -153,10 +209,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "System / BIOS".to_string(),
     };
-    assert_eq!(not_working["aristmk6"].data, rom_aristmk6);
+    assert_eq!(classification(&not_working["aristmk6"].data), rom_aristmk6);
     assert!(matches!(not_working["aristmk6"].category, Bios));
 
     let rom_a24play = RomData {
@@ -167,10 +225,12 @@ fn should_properly_classify_roms() {
         features: Vec::new(),
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "System / Device".to_string(),
     };
-    assert_eq!(not_working["a24play"].data, rom_a24play);
+    assert_eq!(classification(&not_working["a24play"].data), rom_a24play);
     assert!(matches!(not_working["a24play"].category, System));
 
     let rom_3dobios = RomData {
@@ -187,10 +247,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "System / BIOS".to_string(),
     };
-    assert_eq!(not_working["3dobios"].data, rom_3dobios);
+    assert_eq!(classification(&not_working["3dobios"].data), rom_3dobios);
     assert!(matches!(not_working["3dobios"].category, Bios));
 
     let rom_sv801 = RomData {
@@ -201,10 +263,12 @@ fn should_properly_classify_roms() {
         features: Vec::new(),
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "System / Device".to_string(),
     };
-    assert_eq!(not_working["sv801"].data, rom_sv801);
+    assert_eq!(classification(&not_working["sv801"].data), rom_sv801);
     assert!(matches!(not_working["sv801"].category, System));
 
     let rom_99bottles = RomData {
@@ -221,6 +285,8 @@ fn should_properly_classify_roms() {
         }],
         clone_of: Some("gammagic".to_string()),
         rom_of: Some("gammagic".to_string()),
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: vec![Chd {
             name: "99bottles".to_string(),
             status: BadDump,
@@ -230,7 +296,10 @@ fn should_properly_classify_roms() {
         }],
         category: "MultiGame / Compilation".to_string(),
     };
-    assert_eq!(not_working["99bottles"].data, rom_99bottles);
+    assert_eq!(
+        classification(&not_working["99bottles"].data),
+        rom_99bottles
+    );
     assert!(matches!(not_working["99bottles"].category, NotWorking));
 
     let rom_as_acp = RomData {
@@ -247,10 +316,12 @@ fn should_properly_classify_roms() {
         }],
         clone_of: None,
         rom_of: None,
+        devices: Vec::new(),
+        roms: Vec::new(),
         chd: Vec::new(),
         category: "Slot Machine / Reels".to_string(),
     };
-    assert_eq!(not_working["as_acp"].data, rom_as_acp);
+    assert_eq!(classification(&not_working["as_acp"].data), rom_as_acp);
     assert!(matches!(not_working["as_acp"].category, NotWorking));
 }
 
@@ -453,6 +524,48 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{category_error}"
     );
 
+    let missing_rom = read_mame_xml(
+        r#"<mame build="fixture"><machine name="parent"><rom size="4"/><driver status="good" emulation="good"/></machine></mame>"#,
+    )
+    .unwrap();
+    let error = parse(&missing_rom, &categories, source)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Machine 'parent'")
+            && error.contains("fixture.xml")
+            && error.contains("rom")
+            && error.contains("'name'"),
+        "{error}"
+    );
+
+    let bad_size = read_mame_xml(
+        r#"<mame build="fixture"><machine name="parent"><rom name="game.bin" size="nope"/><driver status="good" emulation="good"/></machine></mame>"#,
+    )
+    .unwrap();
+    let error = parse(&bad_size, &categories, source)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Machine 'parent'")
+            && error.contains("rom 'game.bin' has unknown size 'nope'"),
+        "{error}"
+    );
+
+    let missing_device = read_mame_xml(
+        r#"<mame build="fixture"><machine name="parent"><device_ref/><driver status="good" emulation="good"/></machine></mame>"#,
+    )
+    .unwrap();
+    let error = parse(&missing_device, &categories, source)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Machine 'parent'")
+            && error.contains("device_ref")
+            && error.contains("'name'"),
+        "{error}"
+    );
+
     let entry_error = parse_categories("[Category]\nparent\n", Path::new("notes.ini")).unwrap_err();
     assert!(
         entry_error.to_string().contains("notes.ini:2")
@@ -525,4 +638,121 @@ fn selects_good_and_imperfect_arcade_machines() {
     assert!(matches!(strict.roms["unemulated"].category, NotWorking));
     assert!(matches!(strict.roms["labeled"].category, Working));
     assert!(matches!(strict.roms["home"].category, System));
+}
+
+fn classification(data: &RomData) -> RomData {
+    let mut data = data.clone();
+    data.devices.clear();
+    data.roms.clear();
+    data
+}
+
+#[test]
+fn keeps_selected_clones_when_support_files_are_not_games() {
+    let source = Path::new("tests/resources/listxml_metadata.xml");
+    let categories = read_categories(Path::new("tests/resources/catver_sections.ini")).unwrap();
+    let contents = fs::read_to_string(source).unwrap();
+    let doc = read_mame_xml(&contents).unwrap();
+    let catalog = parse(&doc, &categories, source)
+        .unwrap()
+        .categorize()
+        .unwrap();
+
+    // The parent fails the playable policy. The clone does not, and it stays selected.
+    assert!(!catalog.roms["parent"].selected);
+    assert!(matches!(catalog.roms["parent"].category, NotWorking));
+    assert!(catalog.roms["clone"].selected);
+    assert!(matches!(catalog.roms["clone"].category, Working));
+    assert_eq!(
+        catalog.roms["clone"].data.clone_of.as_deref(),
+        Some("parent")
+    );
+    assert_eq!(catalog.roms["clone"].data.rom_of.as_deref(), Some("parent"));
+
+    // BIOS and devices stay in the catalog and off the visible list.
+    assert!(matches!(catalog.roms["bios"].category, Bios));
+    assert!(!catalog.roms["bios"].selected);
+    assert!(matches!(catalog.roms["cpu"].category, System));
+    assert!(!catalog.roms["cpu"].selected);
+    assert!(catalog.roms["usesbios"].selected);
+    assert!(!catalog
+        .selected
+        .iter()
+        .any(|name| name == "bios" || name == "cpu" || name == "parent"));
+    assert_eq!(
+        catalog.roms["usesbios"].data.rom_of.as_deref(),
+        Some("bios")
+    );
+    assert_eq!(
+        catalog.roms["usesbios"].data.devices,
+        vec!["cpu".to_string()]
+    );
+    // The preliminary BIOS still demotes the copy folder. The game remains selected.
+    assert!(matches!(catalog.roms["usesbios"].category, NotWorking));
+
+    assert_eq!(
+        catalog.roms["parent"].data.roms,
+        vec![
+            RomFile {
+                name: "parent.bin".to_string(),
+                size: Some(16),
+                crc: Some("abcdabcd".to_string()),
+                sha1: Some("dddddddddddddddddddddddddddddddddddddddd".to_string()),
+                merge: None,
+                bios: None,
+                status: Good,
+                optional: false,
+            },
+            RomFile {
+                name: "merged.bin".to_string(),
+                size: Some(8),
+                crc: None,
+                sha1: None,
+                merge: Some("parent.bin".to_string()),
+                bios: None,
+                status: Good,
+                optional: false,
+            },
+        ]
+    );
+    assert_eq!(catalog.roms["parent"].data.devices, vec!["z80".to_string()]);
+    assert_eq!(
+        catalog.roms["nodump"].data.roms,
+        vec![RomFile {
+            name: "missing.bin".to_string(),
+            size: None,
+            crc: None,
+            sha1: None,
+            merge: None,
+            bios: None,
+            status: NoDump,
+            optional: false,
+        }]
+    );
+    // A missing disk changes the copy folder and leaves the game selected.
+    assert!(catalog.roms["nodump"].selected);
+    assert!(matches!(catalog.roms["nodump"].category, NotWorking));
+    assert_eq!(
+        catalog.roms["usesbios"].data.roms,
+        vec![RomFile {
+            name: "game.bin".to_string(),
+            size: Some(4),
+            crc: None,
+            sha1: Some("ffffffffffffffffffffffffffffffffffffffff".to_string()),
+            merge: None,
+            bios: Some("default".to_string()),
+            status: Good,
+            optional: false,
+        }]
+    );
+    assert_eq!(
+        catalog.selected,
+        vec![
+            "clone".to_string(),
+            "nocat".to_string(),
+            "nodump".to_string(),
+            "spaced".to_string(),
+            "usesbios".to_string(),
+        ]
+    );
 }
