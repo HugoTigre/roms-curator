@@ -54,18 +54,20 @@ but are easy to get:
 
 ## How this works
 
-`roms-curator` will use `mame.xml`, `catver.ini` and some custom logic 
-(from trial and error) to go through your ROM collection and categorize all
-ROMs with `working` or `not-working` states as well as specific sub-categories,
-like type of ROM/game (bios, system, mechanical, etc). From here it will copy
-your ROMs to a subdirectory in the specified `destination_dir`.
+`roms-curator` reads `mame.xml` and `catver.ini`, then categorizes each machine.
+A runnable arcade machine is working when its driver status and emulation are
+both good or imperfect. Imperfect sound or graphics does not change that.
+Preliminary, mechanical, BIOS, device, and non-arcade CatVer groups (computers,
+consoles, handhelds, and similar) are not working. Arcade genres such as
+shooter, puzzle, and slots stay eligible. From here it copies your ROMs to a
+subdirectory in the specified `destination_dir`.
 
 It can also generate a report with all copied files and/or errors encountered.
 
 Sub-directories include: 
 - **working**: for all ROM files in working/playable state (excluding ROMs with CHD dependencies).
 - **other**: for all ROM files NOT in working/playable state (excluding ROMs with CHD dependencies). 
-This also includes bios, system, casino, mechanical and some other non-playable ROMs.
+This also includes BIOS, system, mechanical, and preliminary machines.
 - **chd_working**: for all CHDs and ROMs dependent on CHD files in working/playable state.
 - **chd_other**: for all CHDs and ROMs dependent on CHD files NOT in working/playable state.
 

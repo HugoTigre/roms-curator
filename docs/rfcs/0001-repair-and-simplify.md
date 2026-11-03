@@ -1,6 +1,6 @@
 # RFC 0001 Repair and simplify roms curator
 
-Status: accepted direction. Work through one task at a time; check off completed items. Keep implementation history and test results in commits and PRs.
+Status: accepted direction. Work through one task at a time. Check off an item in the same change that implements it, so master does not contain the behavior without the checklist. Keep implementation history and test results in commits and PRs.
 
 The [software review](../software-review.md) contains the original findings.
 
@@ -29,10 +29,11 @@ The [software review](../software-review.md) contains the original findings.
 
 ## Phase 2 Metadata and selection
 
-- [ ] **META-01** Parse CatVer sections, MAME version, disk defaults/quality/optionality and required fields explicitly. Preserve native paths.
+- [x] **META-01** Parse CatVer sections, MAME version, disk defaults/quality/optionality and required fields explicitly. Preserve native paths.
   - Done when sibling disks cannot inherit status, malformed input returns contextual errors and unknown categories/coverage are visible. Any MAME build string is accepted. Keep the 0.244 files as an older regression sample and cover current listxml and CatVer shape with a small fixture.
-- [ ] **SELECT-01** Separate emulation status from category preferences and overrides. Default to good/imperfect runnable arcade machines; remove the implicit two-feature exclusion.
+- [x] **SELECT-01** Separate emulation status from category preferences and overrides. Default to good/imperfect runnable arcade machines; remove the implicit two-feature exclusion.
   - Done when minor sound/graphics issues are accepted, preliminary machines are excluded and every rule/override explains its effect. Decide genre preferences here.
+  - Decision: no arcade-genre exclusions. Non-arcade CatVer groups stay out of the selected list, matched as a group rather than a substring, and each states why. The playable policy accepts good or imperfect driver and emulation, including imperfect sound and graphics. Strict (good only) is a library policy. Named system overrides keep a reason and an effect. Disk and parent demotion stay until DEPS-01.
 - [ ] **MODEL-01** Separate selected machines from required storage. Retain parent, BIOS, device, ROM and disk relationships.
   - Done when supporting files can remain outside the visible game list and a clone remains selectable despite its parent's gameplay status.
 - [ ] **DEPS-01** Resolve selected machines to required merged archives and support files. Replace status-based dependency demotion.

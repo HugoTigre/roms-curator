@@ -12,9 +12,9 @@ use crate::models::destination_folders::DestinationFolders;
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
-    RomStatus, Roms, Status, UnfilteredRoms, EXCLUDED_CATEGORIES, SPECIAL_CASES_DEMOTE,
-    SPECIAL_CASES_PROMOTE, UNKNOWN_CATEGORY,
+    RomStatus, Roms, Status, UnfilteredRoms, UNKNOWN_CATEGORY,
 };
+use crate::models::selection::{category_preference, machine_override, EmulationPolicy};
 use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
 use crate::RomCategories;
 
@@ -27,10 +27,18 @@ pub struct ParsedMachines {
 }
 
 impl ParsedMachines {
+    /// Categorize with the playable policy: good or imperfect driver and emulation.
     pub fn categorize(self) -> Result<Catalog, Box<dyn Error>> {
+        self.categorize_with(EmulationPolicy::Playable)
+    }
+
+    /// Categorize with an explicit emulation policy.
+    ///
+    /// Category preferences and machine-type rules still apply. Feature flags do not.
+    pub fn categorize_with(self, policy: EmulationPolicy) -> Result<Catalog, Box<dyn Error>> {
         Ok(Catalog {
             mame_build: self.mame_build,
-            roms: categorize_machines(self.machines, &self.source)?,
+            roms: categorize_machines(self.machines, &self.source, policy)?,
             unknown_categories: self.unknown_categories,
         })
     }
@@ -105,7 +113,11 @@ pub fn parse(
     })
 }
 
-fn categorize_machines(machines: UnfilteredRoms, source: &Path) -> Result<Roms, Box<dyn Error>> {
+fn categorize_machines(
+    machines: UnfilteredRoms,
+    source: &Path,
+    policy: EmulationPolicy,
+) -> Result<Roms, Box<dyn Error>> {
     let mut roms = Roms::new();
 
     for (name, data) in machines {
@@ -121,17 +133,12 @@ fn categorize_machines(machines: UnfilteredRoms, source: &Path) -> Result<Roms, 
                 )
             })?;
 
-            if data.is_mechanical
-                || matches!(status.driver, Status::Preliminary)
-                || SPECIAL_CASES_DEMOTE.contains(&name)
-                || check_features_status(&name, &data.features)
-            {
+            // Mechanical machines and emulation policy are separate from CatVer
+            // preferences. Feature flags are ignored here.
+            if data.is_mechanical || !policy.accepts(&status) {
                 (name, data.to_not_working_rom())
             } else {
-                match status.emulation {
-                    Status::Imperfect | Status::Good => (name, data.to_working_rom()),
-                    _ => (name, data.to_not_working_rom()),
-                }
+                (name, data.to_working_rom())
             }
         };
 
@@ -512,24 +519,6 @@ fn should_demote_rom(rom_of: String, roms: &Roms) -> bool {
     false
 }
 
-///
-/// @return true if contains bad feature status, false otherwise.
-///
-fn check_features_status(name: &String, features: &[Feature]) -> bool {
-    if SPECIAL_CASES_PROMOTE.contains(name) {
-        return false;
-    }
-
-    let mut invalid: u32 = 0;
-    features.iter().for_each(|feature| {
-        if feature.typ == "sound" || feature.typ == "graphics" {
-            invalid += 1;
-        }
-    });
-
-    invalid > 1
-}
-
 /// Records the XML `build` attribute. The value is not checked against a supported version.
 fn mame_build<'a>(doc: &'a Document, source: &Path) -> Result<&'a str, Box<dyn Error>> {
     let root = doc.root_element();
@@ -689,15 +678,13 @@ fn required_attr<'input>(
 }
 
 fn is_system(node: Node, name: &str, categories: &RomCategories) -> bool {
-    if is_device(node) {
+    if is_device(node) || machine_override(name).is_some() {
         return true;
     }
     // A missing category stays Unknown. It is not guessed to be a system.
-    categories.get(name).is_some_and(|category| {
-        EXCLUDED_CATEGORIES
-            .iter()
-            .any(|excluded| category.contains(excluded.as_str()))
-    })
+    categories
+        .get(name)
+        .is_some_and(|category| category_preference(category).is_some())
 }
 
 fn is_bios(node: Node) -> bool {
