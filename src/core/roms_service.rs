@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::read_dir;
 use std::io;
@@ -8,11 +9,12 @@ use log::error;
 use roxmltree::{Document, Node};
 
 use crate::core::args::Args;
+use crate::models::dependencies::DependencySet;
 use crate::models::destination_folders::DestinationFolders;
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
-    RomFile, RomStatus, Roms, Status, UnfilteredRoms, UNKNOWN_CATEGORY,
+    RomFile, RomStatus, Roms, UnfilteredRoms, UNKNOWN_CATEGORY,
 };
 use crate::models::selection::{category_preference, machine_override, EmulationPolicy};
 use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
@@ -43,18 +45,26 @@ impl ParsedMachines {
             .map(|(name, _)| name.clone())
             .collect();
         selected.sort();
+        let dependencies = crate::models::dependencies::resolve(&roms, &selected);
         Ok(Catalog {
             mame_build: self.mame_build,
             roms,
             selected,
+            dependencies,
             unknown_categories: self.unknown_categories,
         })
     }
 }
 
 impl Catalog {
+    /// Copies source files into the category folders.
+    ///
+    /// A name-range subset skips stems outside the range, then still copies archives
+    /// required by a selected game inside the range. [`RomsExt::copy_roms`] applies
+    /// the range only.
     pub fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
-        self.roms.copy_roms(args)
+        let retain = retained_archives(&self.dependencies, args);
+        copy_retaining(self.roms, args, &retain)
     }
 }
 
@@ -155,27 +165,6 @@ fn categorize_machines(
         roms.insert(categorized_rom.0.clone(), categorized_rom.1);
     }
 
-    // Copy-folder demotion stays until DEPS-01. It does not take a machine off
-    // the visible game list: `selected` was set from that machine's own policy.
-    let to_demote = check_roms_dependency(&roms);
-
-    to_demote.iter().for_each(|name| {
-        roms.remove(name).and_then(|rom| {
-            if matches!(rom.category, RomCategory::Working) {
-                roms.insert(
-                    name.clone(),
-                    Rom {
-                        data: rom.data,
-                        category: RomCategory::NotWorking,
-                        selected: rom.selected,
-                    },
-                )
-            } else {
-                None
-            }
-        });
-    });
-
     Ok(roms)
 }
 
@@ -241,158 +230,185 @@ pub trait RomsExt {
     fn is_excluded(args: &Args, file_prefix: &str) -> bool;
 }
 
-impl RomsExt for Roms {
-    fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
-        Self::check_paths(args)?;
-        crate::core::paths::validate(args)?;
+fn copy_retaining(
+    roms: Roms,
+    args: &Args,
+    retain: &HashSet<String>,
+) -> Result<Report, Box<dyn Error>> {
+    Roms::check_paths(args)?;
+    crate::core::paths::validate(args)?;
 
-        let destination_paths = args.build_destination_folders_path();
-        let directories = [
-            destination_paths.working.as_path(),
-            destination_paths.other.as_path(),
-            destination_paths.chd_working.as_path(),
-            destination_paths.chd_other.as_path(),
-        ];
-        let mut sources = Vec::new();
-        let mut copies = Vec::new();
-        for source in &args.source_path {
-            let mut entries = read_dir(source)
-                .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
-                .map(|entry| entry.map(|entry| entry.path()))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| {
-                    format!("Cannot read entry in source directory {source}: {error}")
-                })?;
-            entries.sort();
-            for path in &entries {
-                let prefix = path
-                    .file_stem()
-                    .and_then(|name| name.to_str())
-                    .ok_or_else(|| format!("Unsupported ROM name: {}", path.display()))?;
-                if Self::is_excluded(args, prefix) {
-                    continue;
-                }
-                if let Some(rom) = self.get(&prefix.to_ascii_lowercase()) {
-                    if Self::should_move(rom, args) {
-                        let destination = Self::get_destination_folder(rom, &destination_paths)
-                            .join(path.file_name().ok_or("Missing ROM filename")?);
-                        copies.push((path.clone(), destination));
-                    }
+    let destination_paths = args.build_destination_folders_path();
+    let directories = [
+        destination_paths.working.as_path(),
+        destination_paths.other.as_path(),
+        destination_paths.chd_working.as_path(),
+        destination_paths.chd_other.as_path(),
+    ];
+    let mut sources = Vec::new();
+    let mut copies = Vec::new();
+    for source in &args.source_path {
+        let mut entries = read_dir(source)
+            .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Cannot read entry in source directory {source}: {error}"))?;
+        entries.sort();
+        for path in &entries {
+            let prefix = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| format!("Unsupported ROM name: {}", path.display()))?;
+            if subset_excludes(args, prefix, retain) {
+                continue;
+            }
+            if let Some(rom) = roms.get(&prefix.to_ascii_lowercase()) {
+                if Roms::should_move(rom, args) {
+                    let destination = Roms::get_destination_folder(rom, &destination_paths)
+                        .join(path.file_name().ok_or("Missing ROM filename")?);
+                    copies.push((path.clone(), destination));
                 }
             }
-            sources.push((source, entries));
         }
-        crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
-        if !args.simulation {
-            for directory in directories {
-                std::fs::create_dir_all(directory).map_err(|error| {
-                    format!(
-                        "Cannot create output directory {}: {error}",
-                        directory.display()
-                    )
-                })?;
-            }
+        sources.push((source, entries));
+    }
+    crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
+    if !args.simulation {
+        for directory in directories {
+            std::fs::create_dir_all(directory).map_err(|error| {
+                format!(
+                    "Cannot create output directory {}: {error}",
+                    directory.display()
+                )
+            })?;
         }
+    }
 
-        let mut total_working = 0;
-        let mut total_other = 0;
-        let mut something_failed = false;
-        let mut report = Report {
-            simulation: args.simulation,
-            ..Report::default()
+    let mut total_working = 0;
+    let mut total_other = 0;
+    let mut something_failed = false;
+    let mut report = Report {
+        simulation: args.simulation,
+        ..Report::default()
+    };
+
+    for (source_path, entries) in sources {
+        let progress_bar = if args.progress {
+            Some(build_progress_bar())
+        } else {
+            None
         };
 
-        for (source_path, entries) in sources {
-            let progress_bar = if args.progress {
-                Some(build_progress_bar())
-            } else {
-                None
-            };
+        let operation = if args.simulation {
+            "Planning"
+        } else {
+            "Copying"
+        };
+        progress_bar.println(format!("{operation} from source: {source_path}").as_str());
 
-            let operation = if args.simulation {
-                "Planning"
-            } else {
-                "Copying"
-            };
-            progress_bar.println(format!("{operation} from source: {source_path}").as_str());
+        let nr_of_files = entries.len();
+        if let Some(pb) = progress_bar.as_ref() {
+            pb.set_length(nr_of_files as u64);
+        }
 
-            let nr_of_files = entries.len();
-            if let Some(pb) = progress_bar.as_ref() {
-                pb.set_length(nr_of_files as u64);
+        for path in entries {
+            let (file_prefix, file_name) = (
+                path.file_stem().unwrap().to_str().unwrap(),
+                path.file_name().unwrap(),
+            );
+
+            progress_bar.inc();
+
+            if subset_excludes(args, file_prefix, retain) {
+                continue;
             }
 
-            for path in entries {
-                let (file_prefix, file_name) = (
-                    path.file_stem().unwrap().to_str().unwrap(),
-                    path.file_name().unwrap(),
-                );
+            if let Some(rom) = roms.get(&file_prefix.to_ascii_lowercase()) {
+                if Roms::should_move(rom, args) {
+                    let destination =
+                        Roms::get_destination_folder(rom, &destination_paths).join(file_name);
 
-                progress_bar.inc();
-
-                if Self::is_excluded(args, file_prefix) {
-                    continue;
-                }
-
-                if let Some(rom) = self.get(&file_prefix.to_ascii_lowercase()) {
-                    if Self::should_move(rom, args) {
-                        let destination =
-                            Self::get_destination_folder(rom, &destination_paths).join(file_name);
-
-                        let copy_error = Self::copy_rom(&path, &destination, args)
-                            .err()
-                            .map(|error| error.to_string());
-                        let status = if copy_error.is_some() {
-                            OperationStatus::Failed
-                        } else if args.simulation {
-                            OperationStatus::Planned
-                        } else {
-                            OperationStatus::Copied
-                        };
-                        if let Some(error) = &copy_error {
-                            error!("{error}");
-                            something_failed = true;
-                        }
-
-                        let report_detail_entry = ReportDetailEntry {
-                            rom_name: file_name.to_string_lossy().into_owned(),
-                            status,
-                            is_chd: !rom.data.chd.is_empty(),
-                            error: copy_error,
-                        };
-
-                        match &rom.category {
-                            RomCategory::Working => {
-                                total_working += 1;
-                                report.add_rom_working(report_detail_entry)
-                            }
-                            _ => {
-                                total_other += 1;
-                                report.add_rom_other(report_detail_entry)
-                            }
-                        };
+                    let copy_error = Roms::copy_rom(&path, &destination, args)
+                        .err()
+                        .map(|error| error.to_string());
+                    let status = if copy_error.is_some() {
+                        OperationStatus::Failed
+                    } else if args.simulation {
+                        OperationStatus::Planned
+                    } else {
+                        OperationStatus::Copied
+                    };
+                    if let Some(error) = &copy_error {
+                        error!("{error}");
+                        something_failed = true;
                     }
-                } else {
+
                     let report_detail_entry = ReportDetailEntry {
                         rom_name: file_name.to_string_lossy().into_owned(),
-                        status: OperationStatus::Ignored,
-                        is_chd: false, // doesn't matter here
-                        error: None,
+                        status,
+                        is_chd: !rom.data.chd.is_empty(),
+                        error: copy_error,
                     };
-                    report.add_ignored_rom(report_detail_entry);
-                }
-            }
 
-            if let Some(pb) = progress_bar {
-                pb.finish();
+                    match &rom.category {
+                        RomCategory::Working => {
+                            total_working += 1;
+                            report.add_rom_working(report_detail_entry)
+                        }
+                        _ => {
+                            total_other += 1;
+                            report.add_rom_other(report_detail_entry)
+                        }
+                    };
+                }
+            } else {
+                let report_detail_entry = ReportDetailEntry {
+                    rom_name: file_name.to_string_lossy().into_owned(),
+                    status: OperationStatus::Ignored,
+                    is_chd: false, // doesn't matter here
+                    error: None,
+                };
+                report.add_ignored_rom(report_detail_entry);
             }
         }
 
-        report
-            .total_working(total_working)
-            .total_other(total_other)
-            .all_ok(!something_failed);
+        if let Some(pb) = progress_bar {
+            pb.finish();
+        }
+    }
 
-        Ok(report)
+    report
+        .total_working(total_working)
+        .total_other(total_other)
+        .all_ok(!something_failed);
+
+    Ok(report)
+}
+
+/// Archive stems a name-range subset must still copy.
+///
+/// The range limits selected games. Parent, BIOS, and device archives of games
+/// inside the range stay even when their names fall outside it. With no range,
+/// nothing extra is retained because every source name is already eligible.
+pub(crate) fn retained_archives(dependencies: &DependencySet, args: &Args) -> HashSet<String> {
+    if args.subset_start.is_empty() && args.subset_end.is_empty() {
+        return HashSet::new();
+    }
+    dependencies
+        .edges
+        .iter()
+        .filter(|edge| !Roms::is_excluded(args, &edge.game))
+        .map(|edge| edge.archive.to_ascii_lowercase())
+        .collect()
+}
+
+pub(crate) fn subset_excludes(args: &Args, file_prefix: &str, retain: &HashSet<String>) -> bool {
+    Roms::is_excluded(args, file_prefix) && !retain.contains(&file_prefix.to_ascii_lowercase())
+}
+
+impl RomsExt for Roms {
+    fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
+        copy_retaining(self, args, &HashSet::new())
     }
 
     fn check_paths(args: &Args) -> Result<bool, &'static str> {
@@ -466,69 +482,6 @@ impl RomsExt for Roms {
         (!args.subset_start.is_empty() && file_prefix < args.subset_start.as_str())
             || (!args.subset_end.is_empty() && file_prefix > args.subset_end.as_str())
     }
-}
-
-/// Checks the dependencies of ROMs to determine which working ROMs should be demoted.
-///
-/// This function iterates through all working ROMs and checks their dependencies.
-/// A working ROM may be demoted if:
-/// - It depends on a non-working parent ROM
-/// - It has a CHD with a bad dump or no dump status
-///
-/// # Returns
-/// A vector of ROM names that should be demoted from the working category.
-fn check_roms_dependency(roms: &Roms) -> Vec<String> {
-    let mut demote_working: Vec<String> = Vec::new();
-
-    roms.iter()
-        .filter(|(_, rom)| matches!(rom.category, RomCategory::Working))
-        .for_each(|(name, rom)| {
-            if rom.data.rom_of.is_some()
-                && !(rom.data.clone_of.is_some() && rom.data.rom_of.eq(&rom.data.clone_of))
-            {
-                let demote = should_demote_rom(rom.data.rom_of.clone().unwrap(), roms);
-                if demote {
-                    demote_working.push(name.clone());
-                }
-            } else if !rom.data.chd.is_empty() {
-                rom.data.chd.iter().for_each(|chd| match chd.status {
-                    ChdStatus::BadDump | ChdStatus::NoDump => demote_working.push(name.clone()),
-                    ChdStatus::Good => (),
-                })
-            }
-        });
-
-    demote_working
-}
-
-fn should_demote_rom(rom_of: String, roms: &Roms) -> bool {
-    let found = roms.get(rom_of.as_str());
-    if let Some(rom) = found {
-        match rom.category {
-            RomCategory::Working => {
-                if rom.data.rom_of.is_some() {
-                    should_demote_rom(rom.data.rom_of.clone().unwrap(), roms);
-                }
-            }
-            RomCategory::System | RomCategory::NotWorking => return true,
-            RomCategory::Bios => match &rom.data.status {
-                Some(status) => {
-                    if status.driver == Status::Preliminary {
-                        return true;
-                    }
-                    if status.emulation == Status::Preliminary {
-                        return true;
-                    }
-                }
-                None => {
-                    return false;
-                }
-            },
-            _ => (),
-        };
-    };
-
-    false
 }
 
 /// Records the XML `build` attribute. The value is not checked against a supported version.

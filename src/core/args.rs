@@ -17,8 +17,8 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Com
 /// - report_path: Path to the generated report in markdown format. Ex: report.md.
 /// - ignore_not_working_chd: If true, not-working CHD ROMs and Directories will not be copied.
 /// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
-/// - subset_start: If set, only roms which ascii name alphabetical order is higher than this will be copied.
-/// - subset_end: If set, only roms which ascii name alphabetical order is lower than this will be copied.
+/// - subset_start: If set, skip names that sort before this. Required archives of selected games inside the range are still copied.
+/// - subset_end: If set, skip names that sort after this. Required archives of selected games inside the range are still copied.
 ///
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Args {
@@ -37,9 +37,9 @@ pub struct Args {
     /// Plan operations without creating output directories or copying ROMs.
     /// An optional report must be outside the source/output trees.
     pub simulation: bool,
-    /// If set, only roms which ascii name alphabetical order is higher than this will be copied.
+    /// If set, skip names that sort before this. `Catalog::copy_roms` still copies required archives of selected games inside the range.
     pub subset_start: String,
-    /// If set, only roms which ascii name alphabetical order is lower than this will be copied.
+    /// If set, skip names that sort after this. `Catalog::copy_roms` still copies required archives of selected games inside the range.
     pub subset_end: String,
     /// If true, show progress bar.
     pub progress: bool,
