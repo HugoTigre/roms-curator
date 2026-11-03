@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::core::args::Args;
-use crate::core::roms_service::{parse, RomsExt};
+use crate::core::roms_service::{missing_chds_for_report, parse, RomsExt};
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
 use crate::models::disks::DiskKind;
 use crate::models::plan::{Availability, MediaRole, Plan};
@@ -1245,6 +1245,63 @@ fn map_copy_keeps_disk_directories_without_a_resolved_disk_set() {
 }
 
 #[test]
+fn copy_report_lists_chds_absent_from_the_source() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="game">
+            <disk name="disk" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("game.zip"), b"rom").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    let report = catalog.copy_roms(&args).unwrap();
+    assert_eq!(report.missing_chds.len(), 1);
+    let entry = &report.missing_chds[0];
+    assert_eq!(entry.game, "game");
+    assert_eq!(entry.machine, "game");
+    assert_eq!(entry.disk, "disk");
+    assert_eq!(entry.reason, "Own disk");
+}
+
+#[test]
+fn missing_chds_for_report_lists_unresolved_disks() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="solo">
+            <disk name="only" sha1="2222222222222222222222222222222222222222"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="alias" cloneof="solo" romof="solo">
+            <disk name="other" sha1="3333333333333333333333333333333333333333"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join("source")).unwrap();
+    let mut args = Args::new();
+    args.source_path = vec![root.path().join("source").to_str().unwrap().into()];
+
+    let missing = missing_chds_for_report(&catalog, &args).unwrap();
+    assert!(missing
+        .iter()
+        .any(|entry| entry.game == "alias" && entry.disk == "other"));
+    assert!(missing
+        .iter()
+        .any(|entry| entry.reason.starts_with("Unresolved")));
+}
+
+#[test]
 fn records_a_missing_delta_parent_when_no_same_named_disk_exists() {
     let catalog = catalog_of(
         r#"
@@ -1308,6 +1365,50 @@ fn records_a_missing_delta_parent_when_no_same_named_disk_exists() {
         .missing
         .iter()
         .any(|missing| missing.game == "added"));
+
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("alias.zip"), b"clone").unwrap();
+    fs::write(source.join("optclone.zip"), b"clone").unwrap();
+    fs::write(source.join("added.zip"), b"clone").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+    args.report_path = root.path().join("report.md").to_str().unwrap().to_string();
+
+    let report = catalog.copy_roms(&args).unwrap();
+    assert!(report.missing_chds.iter().any(|entry| {
+        entry.game == "alias"
+            && entry.machine == "solo"
+            && entry.disk == "other"
+            && entry.reason == "Unresolved delta parent"
+    }));
+    assert!(report.missing_chds.iter().any(|entry| {
+        entry.game == "alias"
+            && entry.machine == "alias"
+            && entry.disk == "other"
+            && entry.reason == "Own disk"
+    }));
+    assert!(report.missing_chds.iter().any(|entry| {
+        entry.game == "optclone"
+            && entry.machine == "optparent"
+            && entry.disk == "base"
+            && entry.reason == "Unresolved delta parent"
+    }));
+    assert!(report.missing_chds.iter().any(|entry| {
+        entry.game == "added"
+            && entry.machine == "added"
+            && entry.disk == "own"
+            && entry.reason == "Own disk"
+    }));
+
+    assert!(report.to_file(&args.report_path).unwrap());
+    let markdown = fs::read_to_string(&args.report_path).unwrap();
+    assert!(markdown.contains("### Missing CHDs"));
+    assert!(markdown.contains("reason: Unresolved delta parent"));
 }
 
 #[test]

@@ -35,6 +35,19 @@ pub struct ReportDetailEntry {
     pub error: Option<String>,
 }
 
+/// One CHD file a selected game needs that is not in the source.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MissingChdEntry {
+    /// Selected game that needs this disk.
+    pub game: String,
+    /// Machine directory that should store the CHD (filename stem).
+    pub machine: String,
+    /// Disk name from MAME metadata (CHD filename stem).
+    pub disk: String,
+    /// Why this file is required. Separate from emulation status.
+    pub reason: String,
+}
+
 /// Stores report data
 #[derive(Default, Debug)]
 pub struct Report {
@@ -49,6 +62,8 @@ pub struct Report {
     pub ignored_roms: Vec<ReportDetailEntry>,
     /// Set when every ROM copy succeeded but `selected.txt` could not be published.
     pub names_error: Option<String>,
+    /// CHDs required by selected games but absent from the source.
+    pub missing_chds: Vec<MissingChdEntry>,
     /// False if a copy failed or `selected.txt` could not be published. A
     /// successful simulation does not verify write access or available space.
     pub all_ok: bool,
@@ -174,6 +189,25 @@ impl Report {
             write_all_roms(&mut writer, &self.ignored_roms, OperationStatus::Ignored)?;
         }
 
+        if !self.missing_chds.is_empty() {
+            writer.write_all(b"### Missing CHDs\n\n")?;
+            writer.write_all(
+                b"Selected games still need these CHD files. They were not found in the source.\n",
+            )?;
+            writer.write_all(
+                b"Obtain only these disks rather than downloading a full CHD collection.\n\n",
+            )?;
+            writer.write_all(b"```text\n")?;
+            for entry in &self.missing_chds {
+                writeln!(writer, "game: {}", entry.game)?;
+                writeln!(writer, "  machine folder: {}", entry.machine)?;
+                writeln!(writer, "  disk: {}", entry.disk)?;
+                writeln!(writer, "  reason: {}", entry.reason)?;
+                writer.write_all(b"\n")?;
+            }
+            writer.write_all(b"```\n\n")?;
+        }
+
         writer.flush()?;
 
         Ok(())
@@ -204,8 +238,13 @@ impl Report {
         } else {
             "  - [Ignored roms](#ignored-roms)\n"
         };
+        let missing = if self.missing_chds.is_empty() {
+            ""
+        } else {
+            "  - [Missing CHDs](#missing-chds)\n"
+        };
         format!(
-            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} ROMs folder](#{anchor}-roms-folder)\n  - [{label} Rest folder](#{anchor}-rest-folder)\n{failures}{ignored}\n"
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} ROMs folder](#{anchor}-roms-folder)\n  - [{label} Rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}\n"
         )
     }
 
@@ -238,8 +277,10 @@ impl Report {
             None => String::new(),
         };
         format!(
-            "## Summary\n\n- All OK: {}\n- {label} ROMs folder: {working} ({working_chds} CHDs)\n- {label} Rest folder: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n{names}\n",
-            self.all_ok, self.ignored_roms.len()
+            "## Summary\n\n- All OK: {}\n- {label} ROMs folder: {working} ({working_chds} CHDs)\n- {label} Rest folder: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n- Missing CHDs: {}\n{names}\n",
+            self.all_ok,
+            self.ignored_roms.len(),
+            self.missing_chds.len()
         )
     }
 
@@ -254,6 +295,7 @@ impl Report {
             roms_other: self.roms_other.to_owned(),
             ignored_roms: self.ignored_roms.to_owned(),
             names_error: self.names_error.clone(),
+            missing_chds: self.missing_chds.clone(),
             all_ok: self.all_ok,
         }
     }
@@ -390,6 +432,27 @@ mod tests {
         assert!(ignored.contains("notes.txt"));
         assert!(!ignored.contains("005.zip"));
         assert!(!ignored.contains("100lions.zip"));
+    }
+
+    #[test]
+    fn missing_chd_section_lists_each_required_disk() {
+        let mut report = Report::default();
+        report.missing_chds.push(MissingChdEntry {
+            game: "area51".into(),
+            machine: "Area51".into(),
+            disk: "area51".into(),
+            reason: "Own disk".into(),
+        });
+        let mut output = Vec::new();
+        report.write_to(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("### Missing CHDs"));
+        assert!(output.contains("- Missing CHDs: 1"));
+        assert!(output.contains("game: area51"));
+        assert!(output.contains("machine folder: Area51"));
+        assert!(output.contains("disk: area51"));
+        assert!(output.contains("reason: Own disk"));
+        assert!(output.contains("full CHD collection"));
     }
 
     #[test]

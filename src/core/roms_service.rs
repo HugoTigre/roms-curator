@@ -13,10 +13,10 @@ use crate::models::dependencies::{DependencyKind, DependencySet};
 use crate::models::destination_folders::DestinationFolders;
 use crate::models::disks::{DiskKind, DiskSet};
 use crate::models::plan::{
-    content_bytes, file_sha1, present_copies, Availability, MediaRole, MetadataIdentity, Plan,
-    PlannedGame, PlannedMedia, UnresolvedMedia, PLAN_VERSION,
+    chd_pairs_in_sources, content_bytes, file_sha1, present_copies, source_has_chd, Availability,
+    MediaRole, MetadataIdentity, Plan, PlannedGame, PlannedMedia, UnresolvedMedia, PLAN_VERSION,
 };
-use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
+use crate::models::report::{MissingChdEntry, OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomData, RomDataExt, RomFile, RomStatus,
     Roms, UnfilteredRoms, UNKNOWN_CATEGORY,
@@ -108,7 +108,8 @@ impl Catalog {
         }
         let retain = retained_archives(&self.dependencies, args);
         let disks = required_disk_machines(&self.disks, args);
-        copy_retaining(self.roms, args, &retain, Some(&disks))
+        let missing_chds = missing_chds_for_report(&self, args)?;
+        copy_retaining(self.roms, args, &retain, Some(&disks), missing_chds)
     }
 }
 
@@ -632,11 +633,67 @@ fn unresolved_media(catalog: &Catalog, args: &Args) -> Vec<UnresolvedMedia> {
     unresolved
 }
 
+/// CHD files selected games need that are not present in the source.
+pub(crate) fn missing_chds_for_report(
+    catalog: &Catalog,
+    args: &Args,
+) -> Result<Vec<MissingChdEntry>, Box<dyn Error>> {
+    let present = chd_pairs_in_sources(&args.source_path)?;
+    let mut entries = Vec::new();
+    for missing in &catalog.disks.missing {
+        if Roms::is_excluded(args, &missing.game) {
+            continue;
+        }
+        entries.push(MissingChdEntry {
+            game: missing.game.clone(),
+            machine: missing.machine.clone(),
+            disk: missing.name.clone(),
+            reason: format!("Unresolved {}", missing_disk_kind(missing.kind)),
+        });
+    }
+    for edge in &catalog.disks.edges {
+        if Roms::is_excluded(args, &edge.game) {
+            continue;
+        }
+        if source_has_chd(&present, &edge.machine, &edge.name) {
+            continue;
+        }
+        entries.push(MissingChdEntry {
+            game: edge.game.clone(),
+            machine: edge.machine.clone(),
+            disk: edge.name.clone(),
+            reason: required_disk_kind(edge.kind),
+        });
+    }
+    entries.sort();
+    entries.dedup();
+    Ok(entries)
+}
+
+fn required_disk_kind(kind: DiskKind) -> String {
+    match kind {
+        DiskKind::Own => "Own disk".to_string(),
+        DiskKind::Shared => "Shared disk".to_string(),
+        DiskKind::DeltaParent => "Delta parent disk".to_string(),
+        DiskKind::Device => "Device disk".to_string(),
+    }
+}
+
+fn missing_disk_kind(kind: DiskKind) -> &'static str {
+    match kind {
+        DiskKind::Own => "own disk",
+        DiskKind::Shared => "shared disk",
+        DiskKind::DeltaParent => "delta parent",
+        DiskKind::Device => "device disk",
+    }
+}
+
 fn copy_retaining(
     roms: Roms,
     args: &Args,
     retain: &HashSet<String>,
     disk_machines: Option<&HashSet<String>>,
+    missing_chds: Vec<MissingChdEntry>,
 ) -> Result<Report, Box<dyn Error>> {
     Roms::check_paths(args)?;
     crate::core::paths::validate(args)?;
@@ -694,6 +751,7 @@ fn copy_retaining(
     let mut something_failed = false;
     let mut report = Report {
         simulation: args.simulation,
+        missing_chds,
         ..Report::default()
     };
 
@@ -938,7 +996,7 @@ pub(crate) fn subset_excludes(args: &Args, file_prefix: &str, retain: &HashSet<S
 
 impl RomsExt for Roms {
     fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
-        copy_retaining(self, args, &HashSet::new(), None)
+        copy_retaining(self, args, &HashSet::new(), None, Vec::new())
     }
 
     fn check_paths(args: &Args) -> Result<bool, &'static str> {

@@ -65,9 +65,9 @@ roms-curator \
 collection, and they can take a lot of disk space (around 500Gb).
 The destination has two folders. `roms` holds every archive and CHD directory a selected game needs, including a parent or BIOS that is not itself a game. `rest` holds every other source file, including disk directories no selected game needs. `selected.txt` sits beside those folders and lists the selected machine names. It is written only after every copy succeeds. The report must be a different file from `selected.txt`.
 
-A shared disk keeps the ancestor copy in `roms`. A clone disk with its own content also keeps the parent's same-named non-optional disk, because a delta CHD cannot be read without it. When that parent has disks and none is that same-named disk, the parent disk is missing. A parent with no disks is not missing. A missing CHD stays on the list with its ROM archive copied. The readable list of those missing CHDs is a later report.
+A shared disk keeps the ancestor copy in `roms`. A clone disk with its own content also keeps the parent's same-named non-optional disk, because a delta CHD cannot be read without it. When that parent has disks and none is that same-named disk, the parent disk is missing. A parent with no disks is not missing. A missing CHD stays on the selected list with its ROM archive copied. The Markdown report lists those disks under **Missing CHDs**, with the game, machine folder, disk name, and reason on each row. The summary line `Missing CHDs:` counts them.
 
-`--ignore-not-working-chd` is still accepted so older commands parse. It does not move a required disk out of `roms`. Dump quality is reported on `catalog.disks` and does not change the game's category. A merge or delta parent that cannot be resolved is listed as missing media there.
+`--ignore-not-working-chd` is still accepted so older commands parse. It does not move a required disk out of `roms`. Dump quality is reported on `catalog.disks` and does not change the game's category. Unresolved disk references stay on `catalog.disks.missing` and in the plan JSON.
 
 ```bash
 roms-curator \
