@@ -10,13 +10,14 @@
 //!
 
 use crate::core::args::Args;
-use crate::core::roms_service::{parse, UnfilteredRomsExt};
-use crate::models::roms::Roms;
+use crate::core::roms_service::parse;
+use crate::models::roms::Catalog;
 use crate::utils::{build_progress_bar, ProgressBarEx};
 use roxmltree::Document;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
+use std::path::Path;
 
 pub mod core;
 pub mod models;
@@ -52,9 +53,10 @@ type RomCategories = HashMap<String, String>;
 /// });
 /// ```
 ///
-/// @return A `HashMap<String, Rom>` collection with all ROMs categorized.
+/// The returned catalog includes the MAME build and the names of machines that
+/// have no CatVer category. Those machines use the category `Unknown`.
 ///
-pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
+pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {
         Some(build_progress_bar())
     } else {
@@ -66,52 +68,100 @@ pub fn run(args: &Args) -> Result<Roms, Box<dyn Error>> {
         "* Reading mame database and copying files can last a few minutes, please be patient. *",
     );
 
-    progress_bar.println(format!("Reading {} document...", args.catver_path).as_str());
-    let rom_categories = build_category_list(args.catver_path.clone())?;
+    let catver_path = Path::new(&args.catver_path);
+    let xml_path = Path::new(&args.mame_xml_path);
+    progress_bar.println(format!("Reading {} document...", catver_path.display()).as_str());
+    let rom_categories = read_categories(catver_path)?;
     progress_bar.inc();
 
-    progress_bar.println(format!("Reading {} document...", args.mame_xml_path).as_str());
-    let contents = fs::read_to_string(args.mame_xml_path.clone())?;
-    let doc = read_mame_xml(&contents)?;
+    progress_bar.println(format!("Reading {} document...", xml_path.display()).as_str());
+    let contents = fs::read_to_string(xml_path)
+        .map_err(|error| format!("Cannot read MAME XML {}: {error}", xml_path.display()))?;
+    let doc = read_mame_xml(&contents)
+        .map_err(|error| format!("Cannot parse MAME XML {}: {error}", xml_path.display()))?;
     progress_bar.inc();
 
     progress_bar.println("Categorizing roms...");
-    let unfiltered_roms = parse(doc, rom_categories)?;
-    let roms = unfiltered_roms.categorize_roms()?;
+    let catalog = parse(&doc, &rom_categories, xml_path)?.categorize()?;
+    progress_bar.println(
+        format!(
+            "MAME build {}: {} machines, {} without a CatVer category.",
+            catalog.mame_build,
+            catalog.roms.len(),
+            catalog.unknown_categories.len()
+        )
+        .as_str(),
+    );
     progress_bar.inc();
 
     if let Some(pb) = progress_bar {
         pb.finish();
     }
 
-    Ok(roms)
+    Ok(catalog)
 }
 
-fn build_category_list(file_path: String) -> Result<RomCategories, Box<dyn Error>> {
-    let category_contents = fs::read_to_string(file_path)?;
+pub(crate) fn read_categories(path: &Path) -> Result<RomCategories, Box<dyn Error>> {
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Cannot read CatVer categories {}: {error}", path.display()))?;
+    parse_categories(&contents, path)
+}
 
-    let mut rom_category: HashMap<String, String> = HashMap::new();
+pub(crate) fn parse_categories(
+    contents: &str,
+    path: &Path,
+) -> Result<RomCategories, Box<dyn Error>> {
+    let mut categories = HashMap::new();
+    let mut in_category = false;
+    let mut saw_category = false;
 
-    for line in category_contents.lines() {
-        if line == "[VerAdded]" {
-            break;
-        };
-        if line.is_empty() {
+    for (index, raw) in contents.lines().enumerate() {
+        let line_no = index + 1;
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with(';') {
             continue;
+        }
+        if let Some(section) = section_name(line) {
+            in_category = section == "Category";
+            if in_category {
+                saw_category = true;
+            }
+            continue;
+        }
+        if !in_category {
+            continue;
+        }
+        let Some((name, category)) = line.split_once('=') else {
+            return Err(format!(
+                "{}:{line_no}: expected name=category in [Category]",
+                path.display()
+            )
+            .into());
         };
-
-        let mut name_and_category = line.split('=');
-        let name = name_and_category.next().unwrap_or_default();
-        let category = name_and_category.next().unwrap_or_default();
-
+        let name = name.trim();
+        let category = category.trim();
         if name.is_empty() || category.is_empty() {
-            continue;
-        };
-
-        rom_category.insert(name.to_string(), category.to_string());
+            return Err(format!(
+                "{}:{line_no}: category entry needs a name and a category",
+                path.display()
+            )
+            .into());
+        }
+        categories.insert(name.to_string(), category.to_string());
     }
 
-    Ok(rom_category)
+    if !saw_category {
+        return Err(format!("{}: missing [Category] section", path.display()).into());
+    }
+    Ok(categories)
+}
+
+fn section_name(line: &str) -> Option<&str> {
+    let line = line.trim();
+    line.strip_prefix('[')
+        .and_then(|line| line.strip_suffix(']'))
+        .map(str::trim)
+        .filter(|section| !section.is_empty())
 }
 
 fn read_mame_xml(contents: &str) -> Result<Document<'_>, Box<dyn Error>> {

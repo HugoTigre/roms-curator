@@ -50,7 +50,30 @@ pub struct RomData {
     pub clone_of: Option<String>,
     pub rom_of: Option<String>,
     pub chd: Vec<Chd>,
+    /// CatVer category. [`UNKNOWN_CATEGORY`] when the machine has no `[Category]` entry.
     pub category: String,
+}
+
+/// Category stored when CatVer has no entry for a machine.
+pub const UNKNOWN_CATEGORY: &str = "Unknown";
+
+/// Categorized machines plus the metadata needed to see which source was parsed.
+#[derive(Debug)]
+pub struct Catalog {
+    /// `build` attribute from the MAME XML, stored as written. Any version is accepted.
+    pub mame_build: String,
+    pub roms: Roms,
+    /// Machine names with no `[Category]` entry, sorted by name.
+    pub unknown_categories: Vec<String>,
+}
+
+impl IntoIterator for Catalog {
+    type Item = (String, Rom);
+    type IntoIter = std::collections::hash_map::IntoIter<String, Rom>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.roms.into_iter()
+    }
 }
 
 #[derive(Debug)]
@@ -89,13 +112,19 @@ pub struct RomStatus {
 #[derive(PartialEq, Eq, Debug)]
 pub struct Chd {
     pub name: String,
+    /// Dump quality. Omitted MAME `status` means [`ChdStatus::Good`].
     pub status: ChdStatus,
+    /// MAME `optional="yes"`. Omitted means the disk is required.
+    pub optional: bool,
+    /// Parent disk named by MAME `merge`, when this disk shares that dump.
+    pub merge: Option<String>,
+    pub sha1: Option<String>,
 }
 
 #[derive(Display, Debug, PartialEq, Eq, EnumString)]
 #[strum(ascii_case_insensitive)]
 pub enum ChdStatus {
-    NoStatus,
+    Good,
     NoDump,
     BadDump,
 }

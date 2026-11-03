@@ -5,7 +5,6 @@ use std::iter::Filter;
 use std::path::Path;
 use std::string::ToString;
 
-use roms_curator::core::roms_service::RomsExt;
 use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::RomCategory::Working;
 use roms_curator::models::roms::Roms;

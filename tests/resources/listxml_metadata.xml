@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!-- Current listxml shape. The build attribute is recorded as written. -->
+<mame build="0.289 (mame0289)" debug="no" mameconfig="10">
+    <machine name="parent" sourcefile="fixture.cpp">
+        <description>Parent</description>
+        <disk name="shared" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" status="baddump"/>
+        <disk name="childdisk" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" optional="yes" merge="shared"/>
+        <driver status="good" emulation="imperfect"/>
+    </machine>
+    <machine name="clone" sourcefile="fixture.cpp" cloneof="parent" romof="parent">
+        <description>Clone</description>
+        <feature type="sound" status="imperfect" overall="unemulated"/>
+        <driver status="good" emulation="good"/>
+    </machine>
+    <machine name="nodump" sourcefile="fixture.cpp">
+        <description>No dump</description>
+        <disk name="missing" sha1="cccccccccccccccccccccccccccccccccccccccc" status="nodump"/>
+        <driver status="good" emulation="good"/>
+    </machine>
+    <machine name="nocat" sourcefile="fixture.cpp">
+        <description>Uncategorized</description>
+        <device type="harddisk" tag="hdd"/>
+        <driver status="good" emulation="good"/>
+    </machine>
+    <machine name="spaced" sourcefile="fixture.cpp">
+        <description>Trimmed category</description>
+        <driver status="good" emulation="good"/>
+    </machine>
+</mame>
