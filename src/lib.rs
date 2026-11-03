@@ -63,6 +63,10 @@ type RomCategories = HashMap<String, String>;
 /// visible game list. BIOS, devices, and other unselected machines stay in
 /// `catalog.roms`, and a clone stays selected when its parent does not.
 /// Parent, device, ROM, and disk relationships are kept on each machine.
+/// `catalog.dependencies` names the merged archives those selected games need:
+/// a clone requires its parent archive, and BIOS and device archives stay separate.
+/// Missing names and cycles are listed there. A name-range subset still copies
+/// required archives that fall outside the range.
 ///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {

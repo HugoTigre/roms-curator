@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use strum_macros::{Display, EnumString};
 
+use super::dependencies::DependencySet;
+
 pub type Roms = HashMap<String, Rom>;
 pub type UnfilteredRoms = HashMap<String, RomData>;
 
@@ -75,10 +77,14 @@ pub struct Catalog {
     /// Visible game list: machine names selected from their own emulation policy, sorted by name.
     ///
     /// A parent, BIOS, or device can be absent from this list and still be named by
-    /// [`RomData::clone_of`], [`RomData::rom_of`], or [`RomData::devices`]. Disk and
-    /// `romof` demotion can still move a selected machine's copy folder; that pass
-    /// does not remove the name from this list.
+    /// [`RomData::clone_of`], [`RomData::rom_of`], or [`RomData::devices`].
+    /// [`Catalog::dependencies`] names the merged archives those links require.
     pub selected: Vec<String>,
+    /// Merged archives and support files required by [`Catalog::selected`].
+    ///
+    /// A clone names its parent archive, not its own name. Dump quality does not
+    /// change [`Rom::category`] or this list.
+    pub dependencies: DependencySet,
     /// Machine names with no `[Category]` entry, sorted by name.
     pub unknown_categories: Vec<String>,
 }
@@ -95,7 +101,8 @@ impl IntoIterator for Catalog {
 #[derive(Debug)]
 pub struct Rom {
     pub data: RomData,
-    /// Copy-folder classification. The dependency pass may change this without changing [`Rom::selected`].
+    /// Copy-folder classification from this machine's own type and emulation policy.
+    /// Dependency resolution does not change it.
     pub category: RomCategory,
     /// This machine is on the visible game list. See [`Catalog::selected`].
     pub selected: bool,

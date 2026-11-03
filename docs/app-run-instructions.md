@@ -96,8 +96,9 @@ roms-curator \
 --subset-end="de"
 ```
 
-In this example only roms which ascii name alphabetical order is higher than or
-equal to `a` and lower than or equal to `de` will be copied.
+In this example only names which sort at or after `a` and at or before `de` are
+copied, plus parent, BIOS, and device archives required by a selected game inside
+that range.
 It's also possible to just set `subset-start` or `subset-end`.
 
 ## Putting everything together

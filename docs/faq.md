@@ -18,7 +18,7 @@ Only a report if you request one. It leaves your source and output folders uncha
 
 ### Does this work with split and merged sets?
 
-Yes, it can organize either format. Keep all generated folders available to MAME, since games can depend on files in other folders. The working folder alone may be incomplete.
+Yes, it can organize either format. The dependency list assumes a merged collection: a clone requires its parent archive, plus BIOS and device archives, even when those machines are not games. Keep all generated folders available to MAME. The working folder alone may be incomplete. A name-range subset still copies those required archives when their names fall outside the range.
 
 ### Does this work with any MAME version?
 
@@ -26,4 +26,4 @@ Use metadata matching your ROM collection and MAME version. Games that require C
 
 ### Why use both mame.xml and catver.ini?
 
-MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. The visible list is good or imperfect arcade games. A clone stays on that list when its parent does not. BIOS, devices, and other support machines stay in the catalog outside that list. CatVer groups such as computers and consoles are classified as systems, not dropped as genres.
+MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. The visible list is good or imperfect arcade games. A clone stays on that list when its parent does not, and the parent's archive stays required. BIOS, devices, and other support machines stay in the catalog outside that list. CatVer groups such as computers and consoles are classified as systems, not dropped as genres.

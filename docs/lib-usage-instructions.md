@@ -66,9 +66,17 @@ groups do not. `catalog.selected` is the visible game list, sorted by name.
 BIOS, devices, and other unselected machines remain in `catalog.roms`. A clone
 stays in `catalog.selected` when its parent is not. Each machine keeps its
 `cloneof` parent, `romof` parent, device references, ROM dumps, and disks.
-Copy folders still follow `rom.category`, so a dependency demotion can place a
-selected game in `other` until that pass is replaced. `ParsedMachines::categorize_with(EmulationPolicy::Strict)` keeps
-only machines whose driver and emulation are both good.
+`catalog.dependencies` is the merged-archive list for that visible list. A clone
+requires its parent archive, not its own name. BIOS and other `romof` parents
+are separate archives. A device archive is included when that device, or a
+`cloneof` / `romof` parent of it, has ROM or disk entries. Names that are not
+in the catalog, and dependency cycles, are listed on `missing` and `cycles`.
+Dump quality does not change `rom.category`. `Catalog::copy_roms` still copies
+by category folder. A name-range subset skips other stems, then still copies
+required archives of selected games inside the range.
+`ParsedMachines::categorize_with(EmulationPolicy::Strict)` narrows
+`catalog.selected` to machines whose driver and emulation are both good and leaves
+the rest in `catalog.roms`.
 
 For this, `Args` just needs `mame_xml_path` and `catver_path` paths.
 

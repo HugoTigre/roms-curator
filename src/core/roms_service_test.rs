@@ -3,6 +3,8 @@ use std::path::Path;
 
 use crate::core::args::Args;
 use crate::core::roms_service::{parse, RomsExt};
+use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
+use crate::models::report::OperationStatus;
 use crate::models::roms::ChdStatus::{BadDump, Good, NoDump};
 use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
 use crate::models::roms::{
@@ -36,6 +38,24 @@ fn should_properly_classify_roms() {
             "robocop".to_string()
         ]
     );
+    assert!(catalog.dependencies.missing.iter().any(|missing| {
+        missing.game == "elevatora" && missing.name == "elevator" && missing.kind == Parent
+    }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "elevatora" || name == "elevator"));
+    for name in ["005", "area51", "robocop"] {
+        assert!(
+            catalog
+                .dependencies
+                .archives
+                .iter()
+                .any(|archive| archive == name),
+            "{name}"
+        );
+    }
     let cpu = catalog.roms["005"]
         .data
         .roms
@@ -419,7 +439,7 @@ fn parses_disk_defaults_and_reports_unknown_categories() {
             sha1: Some("cccccccccccccccccccccccccccccccccccccccc".to_string()),
         }]
     );
-    assert!(matches!(nodump.category, NotWorking));
+    assert!(matches!(nodump.category, Working));
 
     let nocat = &catalog.roms["nocat"];
     assert_eq!(nocat.data.category, UNKNOWN_CATEGORY);
@@ -687,8 +707,21 @@ fn keeps_selected_clones_when_support_files_are_not_games() {
         catalog.roms["usesbios"].data.devices,
         vec!["cpu".to_string()]
     );
-    // The preliminary BIOS still demotes the copy folder. The game remains selected.
-    assert!(matches!(catalog.roms["usesbios"].category, NotWorking));
+    // The preliminary BIOS stays off the list and remains a required archive.
+    assert!(matches!(catalog.roms["usesbios"].category, Working));
+    assert!(catalog.dependencies.edges.iter().any(|edge| {
+        edge.game == "usesbios" && edge.archive == "bios" && edge.kind == RomParent
+    }));
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "clone" && edge.archive == "parent" && edge.kind == Parent }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "clone"));
 
     assert_eq!(
         catalog.roms["parent"].data.roms,
@@ -729,9 +762,9 @@ fn keeps_selected_clones_when_support_files_are_not_games() {
             optional: false,
         }]
     );
-    // A missing disk changes the copy folder and leaves the game selected.
+    // A nodump disk does not change the copy category. The game stays selected.
     assert!(catalog.roms["nodump"].selected);
-    assert!(matches!(catalog.roms["nodump"].category, NotWorking));
+    assert!(matches!(catalog.roms["nodump"].category, Working));
     assert_eq!(
         catalog.roms["usesbios"].data.roms,
         vec![RomFile {
@@ -755,4 +788,250 @@ fn keeps_selected_clones_when_support_files_are_not_games() {
             "usesbios".to_string(),
         ]
     );
+}
+
+fn catalog_of(xml: &str) -> crate::models::roms::Catalog {
+    let categories = parse_categories("[Category]\n", Path::new("catver.ini")).unwrap();
+    let contents = format!(r#"<mame build="deps">{xml}</mame>"#);
+    let doc = read_mame_xml(&contents).unwrap();
+    parse(&doc, &categories, Path::new("deps.xml"))
+        .unwrap()
+        .categorize()
+        .unwrap()
+}
+
+#[test]
+fn resolves_merged_archives_without_demoting_games() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="parent">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="clone" cloneof="parent" romof="parent">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="orphan" cloneof="ghost" romof="ghost">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="bios" isbios="yes"/>
+        <machine name="play" romof="bios">
+            <device_ref name="board"/>
+            <device_ref name="z80"/>
+            <device_ref name="gone"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="also" romof="bios">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="board" isdevice="yes" romof="snd"/>
+        <machine name="snd" isdevice="yes">
+            <rom name="s.bin" size="1"/>
+        </machine>
+        <machine name="z80" isdevice="yes"/>
+        <machine name="dsnd" isdevice="yes">
+            <rom name="d.bin" size="1"/>
+        </machine>
+        <machine name="dsndclone" isdevice="yes" cloneof="dsnd"/>
+        <machine name="needsdev">
+            <device_ref name="dsndclone"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="grand">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="mid" cloneof="grand" romof="grand">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="leaf" cloneof="mid" romof="mid">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="early" romof="bios">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="shell" isdevice="yes" cloneof="lost"/>
+        <machine name="useshell">
+            <device_ref name="shell"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+
+    assert!(catalog.roms["clone"].selected);
+    assert!(matches!(catalog.roms["clone"].category, Working));
+    assert!(!catalog.roms["parent"].selected);
+    assert_eq!(
+        catalog
+            .dependencies
+            .edges
+            .iter()
+            .find(|edge| edge.game == "clone")
+            .map(|edge| (edge.kind, edge.archive.as_str())),
+        Some((Parent, "parent"))
+    );
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "clone"));
+    assert!(catalog.dependencies.missing.iter().any(|missing| {
+        missing.game == "orphan" && missing.name == "ghost" && missing.kind == Parent
+    }));
+    assert!(!catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| edge.game == "orphan"));
+
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "play" && edge.kind == Own && edge.archive == "play" }));
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "play" && edge.kind == RomParent && edge.archive == "bios" }));
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "also" && edge.kind == RomParent && edge.archive == "bios" }));
+    assert_eq!(
+        catalog
+            .dependencies
+            .archives
+            .iter()
+            .filter(|name| name.as_str() == "bios")
+            .count(),
+        1
+    );
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "play" && edge.kind == Device && edge.archive == "snd" }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "board" || name == "z80"));
+    assert!(catalog.dependencies.missing.iter().any(|missing| {
+        missing.game == "play" && missing.name == "gone" && missing.kind == Device
+    }));
+    assert!(!catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| edge.game == "early"));
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "needsdev" && edge.kind == Device && edge.archive == "dsnd" }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "dsndclone"));
+    assert!(catalog
+        .dependencies
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "leaf" && edge.kind == Parent && edge.archive == "grand" }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "leaf" || name == "mid"));
+    assert!(catalog.dependencies.missing.iter().any(|missing| {
+        missing.game == "useshell" && missing.name == "lost" && missing.kind == Device
+    }));
+    assert!(!catalog
+        .dependencies
+        .archives
+        .iter()
+        .any(|name| name == "shell" || name == "lost"));
+
+    let cycle = catalog_of(
+        r#"
+        <machine name="a" romof="b"><driver status="good" emulation="good"/></machine>
+        <machine name="b" romof="c"><driver status="good" emulation="good"/></machine>
+        <machine name="c" romof="a"><driver status="good" emulation="good"/></machine>
+        "#,
+    );
+    assert_eq!(
+        cycle.dependencies.cycles,
+        vec![vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "a".to_string()
+        ]]
+    );
+
+    let looped = catalog_of(
+        r#"
+        <machine name="a" cloneof="b"><driver status="good" emulation="good"/></machine>
+        <machine name="b" cloneof="a"><driver status="good" emulation="good"/></machine>
+        "#,
+    );
+    assert_eq!(
+        looped.dependencies.cycles,
+        vec![vec!["a".to_string(), "b".to_string(), "a".to_string()]]
+    );
+    assert!(looped.dependencies.archives.is_empty());
+}
+
+#[test]
+fn subset_keeps_parent_archive_outside_the_range() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="parent">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="clone" cloneof="parent" romof="parent">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(source.join("clone.zip"), b"clone").unwrap();
+    fs::write(source.join("parent.zip"), b"parent").unwrap();
+    fs::write(source.join("aaa.zip"), b"unrelated").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+    args.subset_start = "c".to_string();
+    args.subset_end = "cz".to_string();
+
+    let report = catalog.copy_roms(&args).unwrap();
+    assert!(report.roms_other.iter().any(|entry| {
+        entry.rom_name == "parent.zip" && entry.status == OperationStatus::Copied
+    }));
+    assert!(report
+        .roms_working
+        .iter()
+        .any(|entry| { entry.rom_name == "clone.zip" && entry.status == OperationStatus::Copied }));
+    assert!(!report
+        .roms_other
+        .iter()
+        .chain(&report.roms_working)
+        .chain(&report.ignored_roms)
+        .any(|entry| entry.rom_name == "aaa.zip"));
+    assert_eq!(
+        fs::read(destination.join("other/parent.zip")).unwrap(),
+        b"parent"
+    );
+    assert_eq!(
+        fs::read(destination.join("working/clone.zip")).unwrap(),
+        b"clone"
+    );
+    assert!(!destination.join("other/aaa.zip").exists());
+    assert!(!destination.join("working/aaa.zip").exists());
 }
