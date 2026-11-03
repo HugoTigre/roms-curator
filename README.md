@@ -63,6 +63,7 @@ shooter, puzzle, and slots stay eligible. From here it copies your ROMs to a
 subdirectory in the specified `destination_dir`.
 
 It can also generate a report with all copied files and/or errors encountered.
+`--plan-path` writes a JSON plan of the copy first: which games are kept and why, which files are present or missing, how large they are, and any destination conflicts. The copy checks that plan against the disk before it writes.
 
 Sub-directories include: 
 - **working**: for all ROM files in working/playable state (excluding ROMs with CHD dependencies).

@@ -1,12 +1,14 @@
 extern crate core;
 
 use std::io::{self, Write};
+use std::path::Path;
 use std::process;
 use std::process::ExitCode;
 
 use log::{error, info};
 
 use roms_curator::core::args::build_args;
+use roms_curator::models::plan::Plan;
 use roms_curator::models::report::Report;
 use roms_curator::utils::set_up_logging;
 
@@ -25,7 +27,26 @@ fn main() -> ExitCode {
         process::exit(1);
     });
 
-    let report = roms.copy_roms(&args).unwrap_or_else(|err| {
+    let report = if args.plan_path.is_empty() {
+        roms.copy_roms(&args)
+    } else if Path::new(&args.plan_path).is_file() {
+        let plan = Plan::read(Path::new(&args.plan_path)).unwrap_or_else(|err| {
+            error!("{err}");
+            process::exit(1);
+        });
+        roms.copy_with_plan(&args, &plan)
+    } else {
+        let plan = roms.plan(&args).unwrap_or_else(|err| {
+            error!("Failed to build plan: {err}");
+            process::exit(1);
+        });
+        plan.write(&args.plan_path).unwrap_or_else(|err| {
+            error!("{err}");
+            process::exit(1);
+        });
+        roms.copy_with_plan(&args, &plan)
+    }
+    .unwrap_or_else(|err| {
         error!("Failed to copy roms: {err}");
         process::exit(1);
     });

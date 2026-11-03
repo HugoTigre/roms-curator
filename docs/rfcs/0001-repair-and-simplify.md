@@ -46,8 +46,9 @@ The [software review](../software-review.md) contains the original findings.
 
 ## Phase 3 Plan and export
 
-- [ ] **PLAN-01** Produce a sorted, reusable plan with selection reasons, media availability, paths, expected bytes, conflicts and metadata identity.
+- [x] **PLAN-01** Produce a sorted, reusable plan with selection reasons, media availability, paths, expected bytes, conflicts and metadata identity.
   - Done when identical inputs produce equivalent plans and missing media/conflicts are visible before copying. Recheck affected assumptions before execution. Decide persistence/schema here; JSON is proposed.
+  - Decision: `Catalog::plan` writes schema version 1 as JSON (`--plan-path`). The document records the MAME build, playable or strict policy, and SHA-1 of the XML and CatVer files. Selected games inside the name range carry the policy's selection reason. Media entries are the archives and disk directories the current four-folder copy would use, with source and destination paths, byte size, and present or missing. Archive rows and disk rows keep only their own reasons. Unresolved dependency and disk names, and cycles, are listed separately. Destination clashes are `conflicts` and still stop the copy before anything is written. A new `--plan-path` is written once and `Plan::recheck` checks that value before copying. An existing plan file is read and rechecked, not rebuilt or replaced. Recheck fails when a metadata hash, source size, missing file, or conflict list no longer matches the disk. EXPORT-01 still chooses the single ROM directory.
 - [ ] **EXPORT-01** Execute the plan into a conventional ROM directory and export exact selected machine names separately.
   - Done when output works independently of the full source, dependencies remain available and retained merged variants are documented.
 - [ ] **VERIFY-01** Verify selected names using MAME 0.289 against output paths only. Test reduced merged import/launching in LaunchBox and the intended Android setup.

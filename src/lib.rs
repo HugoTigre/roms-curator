@@ -72,7 +72,10 @@ type RomCategories = HashMap<String, String>;
 /// with no disks is not missing. Optional disks are omitted. Unresolved
 /// disk references are `missing` and do not change the game's category.
 /// A name-range subset still copies required archives and disk directories
-/// that fall outside the range.
+/// that fall outside the range. `Catalog::plan` returns a version-1 plan of
+/// that copy: selection reasons, file paths and sizes, missing media, and
+/// destination conflicts. `Plan::write` or `--plan-path` saves it.
+/// `copy_with_plan` rechecks the plan it is given before copying.
 ///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {

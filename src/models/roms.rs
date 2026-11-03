@@ -3,6 +3,7 @@ use strum_macros::{Display, EnumString};
 
 use super::dependencies::DependencySet;
 use super::disks::DiskSet;
+use super::selection::EmulationPolicy;
 
 pub type Roms = HashMap<String, Rom>;
 pub type UnfilteredRoms = HashMap<String, RomData>;
@@ -96,6 +97,8 @@ pub struct Catalog {
     pub disks: DiskSet,
     /// Machine names with no `[Category]` entry, sorted by name.
     pub unknown_categories: Vec<String>,
+    /// Emulation policy used to build [`Catalog::selected`].
+    pub policy: EmulationPolicy,
 }
 
 impl IntoIterator for Catalog {

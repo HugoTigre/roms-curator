@@ -22,6 +22,19 @@ pub(crate) fn check_targets(
     directories: &[&Path],
     report_path: &str,
 ) -> Result<(), Box<dyn Error>> {
+    let conflicts = destination_conflicts(copies, directories, report_path)?;
+    if let Some(conflict) = conflicts.first() {
+        return Err(conflict.clone().into());
+    }
+    Ok(())
+}
+
+pub(crate) fn destination_conflicts(
+    copies: &[(PathBuf, PathBuf)],
+    directories: &[&Path],
+    report_path: &str,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut conflicts = Vec::new();
     let report = if report_path.is_empty() {
         None
     } else {
@@ -109,32 +122,31 @@ pub(crate) fn check_targets(
                 .ok_or("Missing destination name")?
                 .to_ascii_lowercase(),
         ) {
-            return Err(format!(
+            conflicts.push(format!(
                 "Destination already exists; refusing replacement: {} (source: {})",
                 path.display(),
                 source.display()
-            )
-            .into());
+            ));
+            continue;
         }
 
         visit(source, &mut |path| {
             let target = destination.join(path.strip_prefix(source)?);
             let target_key = key(&target);
             if let Some(previous) = targets.insert(target_key.clone(), path.to_path_buf()) {
-                return Err(format!(
+                conflicts.push(format!(
                     "Conflicting destination {} from sources {} and {}",
                     target.display(),
                     previous.display(),
                     path.display()
-                )
-                .into());
+                ));
             }
             // Reports are already excluded from every category directory, so
             // no per-entry report comparison or metadata lookup is needed.
             Ok(())
         })?;
     }
-    Ok(())
+    Ok(conflicts)
 }
 
 /// Copy through a new staging path on the destination filesystem, then publish

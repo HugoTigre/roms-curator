@@ -5,6 +5,7 @@ use crate::core::args::Args;
 use crate::core::roms_service::{parse, RomsExt};
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
 use crate::models::disks::DiskKind;
+use crate::models::plan::{Availability, MediaRole, Plan};
 use crate::models::report::OperationStatus;
 use crate::models::roms::ChdStatus::{BadDump, Good, NoDump};
 use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
@@ -1324,4 +1325,270 @@ fn records_a_disk_merge_cycle() {
         catalog.disks.cycles
     );
     assert!(catalog.disks.disks.is_empty());
+}
+
+#[test]
+fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
+    let root = tempfile::tempdir().unwrap();
+    let xml = root.path().join("mame.xml");
+    let catver = root.path().join("catver.ini");
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    let body = r#"
+        <machine name="parent">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="clone" cloneof="parent" romof="parent">
+            <driver status="good" emulation="good"/>
+        </machine>
+    "#;
+    let document = format!(r#"<mame build="plan-test">{body}</mame>"#);
+    let categories_text = "[Category]\nclone=Shooter / Gallery\n";
+    fs::write(&xml, &document).unwrap();
+    fs::write(&catver, categories_text).unwrap();
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("clone.zip"), b"clone").unwrap();
+
+    let categories = parse_categories(categories_text, &catver).unwrap();
+    let doc = read_mame_xml(&document).unwrap();
+    let catalog = parse(&doc, &categories, &xml)
+        .unwrap()
+        .categorize()
+        .unwrap();
+
+    let mut args = Args::new();
+    args.mame_xml_path = xml.to_str().unwrap().into();
+    args.catver_path = catver.to_str().unwrap().into();
+    args.source_path = vec![source.to_str().unwrap().into()];
+    args.destination_path = destination.to_str().unwrap().into();
+
+    let plan = catalog.plan(&args).unwrap();
+    assert_eq!(plan, catalog.plan(&args).unwrap());
+    assert_eq!(plan.version, 1);
+    assert_eq!(plan.metadata.mame_build, "plan-test");
+    assert_eq!(plan.metadata.emulation_policy, "playable");
+    assert_eq!(plan.metadata.mame_xml_sha1.len(), 40);
+    assert_eq!(plan.metadata.catver_sha1.len(), 40);
+    assert_eq!(
+        plan.games
+            .iter()
+            .map(|game| game.machine.as_str())
+            .collect::<Vec<_>>(),
+        vec!["clone"]
+    );
+    assert!(plan.games[0].reason.contains("imperfect"));
+    assert_eq!(plan.games[0].category, "Shooter / Gallery");
+    assert!(plan.media.iter().any(|media| {
+        media.machine == "clone"
+            && media.role == MediaRole::Archive
+            && media.availability == Availability::Present
+            && media.bytes == Some(5)
+            && media
+                .reasons
+                .iter()
+                .any(|reason| reason == "Selected game clone")
+    }));
+    assert!(plan.media.iter().any(|media| {
+        media.machine == "parent"
+            && media.role == MediaRole::Archive
+            && media.availability == Availability::Missing
+            && media.bytes.is_none()
+            && media
+                .reasons
+                .iter()
+                .any(|reason| reason == "Parent archive for clone")
+    }));
+    assert!(plan.conflicts.is_empty());
+    plan.recheck().unwrap();
+
+    let plan_path = root.path().join("plan.json");
+    let copy_path = root.path().join("plan-copy.json");
+    plan.write(plan_path.to_str().unwrap()).unwrap();
+    plan.write(copy_path.to_str().unwrap()).unwrap();
+    assert_eq!(fs::read(&plan_path).unwrap(), fs::read(&copy_path).unwrap());
+    assert_eq!(Plan::read(&plan_path).unwrap(), plan);
+
+    fs::write(source.join("clone.zip"), b"clone!").unwrap();
+    let error = plan.recheck().unwrap_err().to_string();
+    assert!(error.contains("Size changed"), "{error}");
+
+    fs::create_dir_all(destination.join("working")).unwrap();
+    fs::write(destination.join("working/clone.zip"), b"already").unwrap();
+    let conflicted = catalog.plan(&args).unwrap();
+    assert!(conflicted
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.contains("Destination already exists")));
+    let error = catalog.copy_roms(&args).unwrap_err().to_string();
+    assert!(error.contains("Destination already exists"), "{error}");
+}
+
+#[test]
+fn plan_recheck_catches_metadata_new_files_disks_and_stable_conflicts() {
+    let root = tempfile::tempdir().unwrap();
+    let xml = root.path().join("mame.xml");
+    let catver = root.path().join("catver.ini");
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    let body = r#"
+        <machine name="parent">
+            <disk name="base" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="clone" cloneof="parent" romof="parent">
+            <disk name="base" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+    "#;
+    let document = format!(r#"<mame build="plan-more">{body}</mame>"#);
+    let categories_text = "[Category]\n";
+    fs::write(&xml, &document).unwrap();
+    fs::write(&catver, categories_text).unwrap();
+    fs::create_dir_all(source.join("clone")).unwrap();
+    fs::write(source.join("clone/base.chd"), b"clone disk").unwrap();
+
+    let categories = parse_categories(categories_text, &catver).unwrap();
+    let doc = read_mame_xml(&document).unwrap();
+    let catalog = parse(&doc, &categories, &xml)
+        .unwrap()
+        .categorize()
+        .unwrap();
+    let mut args = Args::new();
+    args.mame_xml_path = xml.to_str().unwrap().into();
+    args.catver_path = catver.to_str().unwrap().into();
+    args.source_path = vec![source.to_str().unwrap().into()];
+    args.destination_path = destination.to_str().unwrap().into();
+
+    let plan = catalog.plan(&args).unwrap();
+    let clone_disk = plan
+        .media
+        .iter()
+        .find(|media| media.machine == "clone" && media.role == MediaRole::Disk)
+        .unwrap();
+    assert_eq!(clone_disk.availability, Availability::Present);
+    assert!(clone_disk
+        .reasons
+        .iter()
+        .any(|reason| reason == "Own disk base for clone"));
+    assert!(clone_disk
+        .reasons
+        .iter()
+        .all(|reason| !reason.contains("archive")));
+    let parent_archive = plan
+        .media
+        .iter()
+        .find(|media| media.machine == "parent" && media.role == MediaRole::Archive)
+        .unwrap();
+    assert!(parent_archive
+        .reasons
+        .iter()
+        .any(|reason| reason == "Parent archive for clone"));
+    assert!(parent_archive
+        .reasons
+        .iter()
+        .all(|reason| !reason.contains("disk")));
+
+    fs::write(&xml, format!("{document}\n")).unwrap();
+    let error = plan.recheck().unwrap_err().to_string();
+    assert!(error.contains("MAME XML changed"), "{error}");
+    fs::write(&xml, &document).unwrap();
+
+    fs::write(source.join("parent.zip"), b"parent").unwrap();
+    let error = plan.recheck().unwrap_err().to_string();
+    assert!(error.contains("is now at"), "{error}");
+    fs::remove_file(source.join("parent.zip")).unwrap();
+    plan.recheck().unwrap();
+
+    let later = root.path().join("z-source");
+    let earlier = root.path().join("a-source");
+    fs::create_dir_all(&later).unwrap();
+    fs::create_dir_all(&earlier).unwrap();
+    fs::write(later.join("game.zip"), b"one").unwrap();
+    fs::write(earlier.join("game.zip"), b"two").unwrap();
+    let game_xml = root.path().join("game.xml");
+    let game_document = r#"<mame build="clash"><machine name="game"><driver status="good" emulation="good"/></machine></mame>"#;
+    fs::write(&game_xml, game_document).unwrap();
+    let game_doc = read_mame_xml(game_document).unwrap();
+    let games = parse(&game_doc, &categories, &game_xml)
+        .unwrap()
+        .categorize()
+        .unwrap();
+    let mut clash_args = args.clone();
+    clash_args.mame_xml_path = game_xml.to_str().unwrap().into();
+    clash_args.source_path = vec![
+        later.to_str().unwrap().into(),
+        earlier.to_str().unwrap().into(),
+    ];
+    let clash = games.plan(&clash_args).unwrap();
+    assert!(clash
+        .conflicts
+        .iter()
+        .any(|conflict| conflict.contains("Conflicting destination")));
+    clash.recheck().unwrap();
+    let error = games
+        .copy_with_plan(&clash_args, &clash)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("Conflicting destination"), "{error}");
+    assert!(!error.contains("Destination conflicts changed"), "{error}");
+}
+
+#[test]
+fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
+    let root = tempfile::tempdir().unwrap();
+    let xml = root.path().join("mame.xml");
+    let catver = root.path().join("catver.ini");
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&destination).unwrap();
+    let document = r#"<mame build="match"><machine name="clone"><driver status="good" emulation="good"/></machine></mame>"#;
+    fs::write(&xml, document).unwrap();
+    fs::write(&catver, "[Category]\n").unwrap();
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("clone.zip"), b"clone").unwrap();
+    let categories = parse_categories("[Category]\n", &catver).unwrap();
+
+    let load = || {
+        let doc = read_mame_xml(document).unwrap();
+        parse(&doc, &categories, &xml).unwrap()
+    };
+    let mut args = Args::new();
+    args.mame_xml_path = xml.to_str().unwrap().into();
+    args.catver_path = catver.to_str().unwrap().into();
+    args.source_path = vec![source.to_str().unwrap().into()];
+    args.destination_path = destination.to_str().unwrap().into();
+    args.subset_start = "d".into();
+
+    let catalog = load().categorize().unwrap();
+    let plan = catalog.plan(&args).unwrap();
+    assert!(plan.games.is_empty());
+    let strict = load().categorize_with(EmulationPolicy::Strict).unwrap();
+    let error = strict.copy_with_plan(&args, &plan).unwrap_err().to_string();
+    assert!(error.contains("emulation policy"), "{error}");
+
+    let mut wider = args.clone();
+    wider.subset_start.clear();
+    let error = catalog
+        .copy_with_plan(&wider, &plan)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("subset"), "{error}");
+    assert!(!destination.join("working/clone.zip").exists());
+
+    let catalog = load().categorize().unwrap();
+    let mut open = args.clone();
+    open.subset_start.clear();
+    let plan = catalog.plan(&open).unwrap();
+    let mut alias = open.clone();
+    alias.destination_path = destination
+        .join("..")
+        .join("destination")
+        .to_str()
+        .unwrap()
+        .into();
+    catalog.copy_with_plan(&alias, &plan).unwrap();
+    assert_eq!(
+        fs::read(destination.join("working/clone.zip")).unwrap(),
+        b"clone"
+    );
 }
