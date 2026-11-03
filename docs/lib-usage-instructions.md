@@ -78,11 +78,8 @@ non-optional disk a delta CHD needs. A differently named or optional parent
 disk is missing when that parent has disks. A parent with no disks is not missing.
 Optional disks are left out. Unresolved merges, delta parents, and
 devices are `catalog.disks.missing` and do not change `rom.category`.
-`Catalog.policy` is the emulation policy that built the visible list. `Catalog::plan` builds a version-1 JSON plan for the same arguments. It names each selected game and the emulation-policy reason, and each archive or disk directory with its path, size, and whether the source file is present. Missing references and destination conflicts are on the plan. `plan.write` saves a new file and does not replace an existing one. `Plan::read` loads one. `Plan::recheck` compares the recorded metadata hashes, sizes, and conflicts with the disk. `Catalog::copy_with_plan` runs that recheck on the plan you pass in. `Catalog::copy_roms` builds one plan and rechecks that value.
-`Catalog::copy_roms` copies a disk directory only when a selected game needs
-it, and still copies required archives. A name-range subset skips other stems,
-then still copies required archives and disk directories of selected games
-inside the range. `--ignore-not-working-chd` does not drop a required disk.
+`Catalog.policy` is the emulation policy that built the visible list. `Catalog::plan` builds a version-2 JSON plan for the same arguments. It names each selected game and the emulation-policy reason, and each file placed in `roms` or `rest`, with its path, size, and whether the source file is present. Missing references and destination conflicts are on the plan. `plan.write` saves a new file and does not replace an existing one. `Plan::read` loads a version-2 plan. `Plan::recheck` compares the recorded metadata hashes, sizes, and conflicts with the disk. `Catalog::copy_with_plan` runs that recheck on the plan you pass in. `Catalog::copy_roms` builds one plan and rechecks that value.
+`Catalog::copy_roms` copies required archives and CHD directories into `roms`, and every other source file this run keeps into `rest`. It writes `selected.txt` beside those folders when every copy succeeds. A failure to publish that file stays on the returned report (`names_error`, `all_ok` false) so a requested report is still written. The report path must not be that file. A name-range subset skips stems outside the range, then still copies required archives and disk directories of selected games inside the range. `--ignore-not-working-chd` does not move a required disk out of `roms`. A missing CHD leaves the game selected and its ROM archive copied.
 `ParsedMachines::categorize_with(EmulationPolicy::Strict)` narrows
 `catalog.selected` to machines whose driver and emulation are both good and leaves
 the rest in `catalog.roms`.
@@ -104,10 +101,10 @@ see [here](#config--arguments).
 Invoking `copy_roms` will return a `Report` struct, this can be
 used to create a report file in Markdown format.
 
-Before creating category directories or copying ROMs, `copy_roms` rejects
+Before creating `roms` and `rest` or copying ROMs, `copy_roms` rejects
 duplicate destination names (including case-only differences), existing selected
-files or CHD directories, and reports inside category directories. Use a fresh
-output folder: files are not overwritten and CHD folders are not merged.
+files or CHD directories, an existing `selected.txt`, and reports inside those
+directories. Use a fresh output folder: files are not overwritten and CHD folders are not merged.
 Files completed before a later copy failure remain; the export has no whole-run
 rollback or power-loss durability guarantee.
 

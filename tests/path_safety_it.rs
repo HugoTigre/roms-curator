@@ -68,8 +68,8 @@ impl Collection {
         let roms = roms_curator::run(&self.args).unwrap();
         let error = roms.copy_roms(&self.args).unwrap_err().to_string();
         assert!(error.contains(message), "{error}");
-        // A rejected library operation must not create category folders.
-        assert!(!self.root.join("output/chd_other").exists());
+        // A rejected copy must not publish the selected-name list.
+        assert!(!self.root.join("output/selected.txt").exists());
         self.cli()
             .assert()
             .failure()
@@ -105,7 +105,7 @@ fn rejects_equal_and_dot_aliases_without_creating_output_folders() {
     let mut collection = Collection::new();
     collection.args.destination_path = collection.root.join("source/.").to_str().unwrap().into();
     collection.rejected();
-    assert!(!collection.root.join("source/working").exists());
+    assert!(!collection.root.join("source/roms").exists());
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn rejects_source_inside_output() {
     let mut collection = Collection::new();
     collection.args.destination_path = collection.root.to_str().unwrap().into();
     collection.rejected();
-    assert!(!collection.root.join("working").exists());
+    assert!(!collection.root.join("roms").exists());
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn rejects_relative_source_alias_to_absolute_destination() {
         .unwrap()
         .into()];
     collection.rejected();
-    assert!(!collection.root.join("source/working").exists());
+    assert!(!collection.root.join("source/roms").exists());
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn rejects_report_inside_source_before_creating_destination() {
 #[test]
 fn rejects_existing_output_hardlink_to_source() {
     let collection = Collection::new();
-    let working = collection.root.join("output/working");
+    let working = collection.root.join("output/roms");
     fs::create_dir_all(&working).unwrap();
     fs::hard_link(
         collection.root.join("source/005.zip"),
@@ -182,7 +182,7 @@ fn rejects_existing_output_hardlink_to_source() {
     )
     .unwrap();
     collection.rejected();
-    assert!(!collection.root.join("output/chd_other").exists());
+    assert!(!collection.root.join("output/rest").exists());
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn independent_new_destination_copies_source_bytes() {
     let collection = Collection::new();
     collection.cli().assert().success();
     assert_eq!(
-        fs::read(collection.root.join("output/working/005.zip")).unwrap(),
+        fs::read(collection.root.join("output/roms/005.zip")).unwrap(),
         CONTENTS
     );
     assert_eq!(
@@ -277,10 +277,10 @@ fn rejects_links_inside_existing_output() {
     fs::create_dir(collection.root.join("output")).unwrap();
     link_directory(
         &collection.root.join("source"),
-        &collection.root.join("output/working"),
+        &collection.root.join("output/roms"),
     );
     collection.rejected();
-    assert!(!collection.root.join("output/chd_other").exists());
+    assert!(!collection.root.join("output/rest").exists());
 }
 
 #[cfg(any(unix, windows))]
@@ -316,7 +316,7 @@ fn independent_root_aliases_are_allowed() {
     collection.args.source_path = vec![alias.to_str().unwrap().into()];
     collection.cli().assert().success();
     assert_eq!(
-        fs::read(collection.root.join("output/working/005.zip")).unwrap(),
+        fs::read(collection.root.join("output/roms/005.zip")).unwrap(),
         CONTENTS
     );
 }
@@ -342,7 +342,7 @@ fn independent_destination_root_alias_is_allowed() {
     fs::create_dir(&output).unwrap();
     link_directory(&output, Path::new(&collection.args.destination_path));
     collection.cli().assert().success();
-    assert_eq!(fs::read(output.join("working/005.zip")).unwrap(), CONTENTS);
+    assert_eq!(fs::read(output.join("roms/005.zip")).unwrap(), CONTENTS);
     assert_eq!(
         fs::read(collection.root.join("source/005.zip")).unwrap(),
         CONTENTS
@@ -382,7 +382,7 @@ fn rejects_case_aliases() {
 fn existing_archive_is_preserved_and_nothing_else_is_copied() {
     let collection = Collection::new();
     fs::write(collection.root.join("source/robocop.zip"), b"another ROM").unwrap();
-    let working = collection.root.join("output/working");
+    let working = collection.root.join("output/roms");
     fs::create_dir_all(&working).unwrap();
     fs::write(working.join("005.zip"), b"existing archive").unwrap();
     collection.copy_conflict("Destination already exists");
@@ -404,7 +404,7 @@ fn duplicate_archive_names_in_different_sources_are_rejected_before_copying() {
         .source_path
         .push(second.to_str().unwrap().into());
     collection.copy_conflict("Conflicting destination");
-    assert!(!collection.root.join("output/working").exists());
+    assert!(!collection.root.join("output/roms").exists());
     assert_eq!(
         fs::read(second.join("005.zip")).unwrap(),
         b"different archive"
@@ -422,13 +422,13 @@ fn case_only_duplicate_archive_names_are_rejected_on_every_platform() {
         .source_path
         .push(second.to_str().unwrap().into());
     collection.copy_conflict("Conflicting destination");
-    assert!(!collection.root.join("output/working").exists());
+    assert!(!collection.root.join("output/roms").exists());
 }
 
 #[test]
 fn existing_case_variant_archive_is_preserved() {
     let collection = Collection::new();
-    let working = collection.root.join("output/working");
+    let working = collection.root.join("output/roms");
     fs::create_dir_all(&working).unwrap();
     fs::write(working.join("005.ZIP"), b"existing case variant").unwrap();
     collection.copy_conflict("Destination already exists");
@@ -442,7 +442,7 @@ fn existing_case_variant_archive_is_preserved() {
 #[test]
 fn existing_case_variant_category_directory_cannot_hide_a_conflict() {
     let collection = Collection::new();
-    let working = collection.root.join("output/WORKING");
+    let working = collection.root.join("output/ROMS");
     fs::create_dir_all(&working).unwrap();
     fs::write(working.join("005.zip"), b"existing archive").unwrap();
     collection.copy_conflict("Destination");
@@ -464,7 +464,7 @@ fn existing_chd_directory_is_preserved_without_merging() {
     let source = collection.root.join("source/area51");
     fs::create_dir(&source).unwrap();
     fs::write(source.join("disk.chd"), b"new disk").unwrap();
-    let destination = collection.root.join("output/chd_working/area51");
+    let destination = collection.root.join("output/roms/area51");
     fs::create_dir_all(&destination).unwrap();
     fs::write(destination.join("keep.chd"), b"existing disk").unwrap();
     collection.copy_conflict("Destination already exists");
@@ -473,7 +473,7 @@ fn existing_chd_directory_is_preserved_without_merging() {
         b"existing disk"
     );
     assert!(!destination.join("disk.chd").exists());
-    assert!(!collection.root.join("output/working").exists());
+    assert!(!collection.root.join("output/roms/005.zip").exists());
 }
 
 #[test]
@@ -490,31 +490,71 @@ fn duplicate_chd_directories_are_rejected_even_with_disjoint_files() {
         .source_path
         .push(second.to_str().unwrap().into());
     collection.copy_conflict("Conflicting destination");
-    assert!(!collection.root.join("output/chd_working").exists());
+    assert!(!collection.root.join("output/roms").exists());
 }
 
 #[test]
 fn a_file_blocking_a_category_directory_is_rejected_before_copying() {
     let collection = Collection::new();
     fs::create_dir(collection.root.join("output")).unwrap();
-    fs::write(collection.root.join("output/other"), b"keep file").unwrap();
+    fs::write(collection.root.join("output/rest"), b"keep file").unwrap();
     collection.copy_conflict("Output directory is blocked");
     assert_eq!(
-        fs::read(collection.root.join("output/other")).unwrap(),
+        fs::read(collection.root.join("output/rest")).unwrap(),
         b"keep file"
     );
-    assert!(!collection.root.join("output/working").exists());
+    assert!(!collection.root.join("output/roms").exists());
+}
+
+#[test]
+fn existing_selected_names_file_stops_the_copy() {
+    let collection = Collection::new();
+    fs::create_dir(collection.root.join("output")).unwrap();
+    fs::write(collection.root.join("output/selected.txt"), b"keep list").unwrap();
+    let error = roms_curator::run(&collection.args)
+        .unwrap()
+        .copy_roms(&collection.args)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("Destination already exists"), "{error}");
+    collection
+        .cli()
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("Destination already exists"));
+    assert_eq!(
+        fs::read(collection.root.join("output/selected.txt")).unwrap(),
+        b"keep list"
+    );
+    assert!(!collection.root.join("output/roms").exists());
+    assert!(!collection.root.join("output/rest").exists());
+}
+
+#[test]
+fn report_cannot_be_the_selected_names_file() {
+    let mut collection = Collection::new();
+    collection.args.report_path = collection
+        .root
+        .join("output/selected.txt")
+        .to_str()
+        .unwrap()
+        .into();
+    let roms = roms_curator::run(&collection.args).unwrap();
+    let error = roms.copy_roms(&collection.args).unwrap_err().to_string();
+    assert!(
+        error.contains("Report path and selected names path must be different files."),
+        "{error}"
+    );
+    assert!(!collection.root.join("output").exists());
 }
 
 #[test]
 fn requested_report_cannot_occupy_an_output_directory_or_archive() {
     for target in [
-        "output/working",
-        "output/working/notes.md",
-        "output/other/notes.md",
-        "output/chd_working/notes.md",
-        "output/chd_other/notes.md",
-        "output/chd_working/area51/disk.md",
+        "output/roms",
+        "output/roms/notes.md",
+        "output/rest/notes.md",
+        "output/roms/area51/disk.md",
     ] {
         let mut collection = Collection::new();
         fs::create_dir(collection.root.join("source/area51")).unwrap();
@@ -541,10 +581,10 @@ fn subset_exclusions_do_not_cause_spurious_conflicts() {
     collection.args.subset_start = "r".into();
     collection.cli().assert().success();
     assert_eq!(
-        fs::read(collection.root.join("output/working/robocop.zip")).unwrap(),
+        fs::read(collection.root.join("output/roms/robocop.zip")).unwrap(),
         CONTENTS
     );
-    assert!(!collection.root.join("output/working/005.zip").exists());
+    assert!(!collection.root.join("output/roms/005.zip").exists());
 }
 
 #[test]
@@ -572,7 +612,7 @@ fn successful_nested_chd_copy_preserves_bytes_and_leaves_no_temporary_files() {
         .unwrap();
     }
     collection.cli().assert().success();
-    let destination = collection.root.join("output/chd_working/area51");
+    let destination = collection.root.join("output/roms/area51");
     assert_eq!(
         fs::read(destination.join("nested/disk.chd")).unwrap(),
         b"disk contents"
@@ -593,7 +633,7 @@ fn successful_nested_chd_copy_preserves_bytes_and_leaves_no_temporary_files() {
             0o640
         );
         assert_eq!(
-            fs::metadata(collection.root.join("output/working/005.zip"))
+            fs::metadata(collection.root.join("output/roms/005.zip"))
                 .unwrap()
                 .permissions()
                 .mode()
@@ -623,7 +663,7 @@ impl Drop for RestorePermissions {
 #[cfg(unix)]
 fn block_working_directory(collection: &Collection) -> Option<RestorePermissions> {
     use std::os::unix::fs::PermissionsExt;
-    let path = collection.root.join("output/working");
+    let path = collection.root.join("output/roms");
     fs::create_dir_all(&path).unwrap();
     let restore = RestorePermissions {
         permissions: fs::metadata(&path).unwrap().permissions(),
@@ -663,7 +703,7 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
         error.contains(
             collection
                 .root
-                .join("output/working/005.zip")
+                .join("output/roms/005.zip")
                 .to_str()
                 .unwrap()
         ),
@@ -678,22 +718,22 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
     report.to_file(&collection.args.report_path).unwrap();
     let contents = fs::read_to_string(&collection.args.report_path).unwrap();
     assert!(contents.contains(error));
-    assert!(contents.contains("### Copied to Other folder"));
-    assert!(contents.contains("### Failed copies to Working folder"));
+    assert!(contents.contains("### Copied to Rest folder"));
+    assert!(contents.contains("### Failed copies to ROMs folder"));
     assert!(contents.contains("- ROMs copied: 1"));
     assert!(contents.contains("- Failed copies: 1"));
     let copied_other = contents
-        .split_once("### Copied to Other folder")
+        .split_once("### Copied to Rest folder")
         .unwrap()
         .1
-        .split_once("### Failed copies to Working folder")
+        .split_once("### Failed copies to ROMs folder")
         .unwrap()
         .0;
     let failed_working = contents
-        .split_once("### Failed copies to Working folder")
+        .split_once("### Failed copies to ROMs folder")
         .unwrap()
         .1
-        .split_once("### Failed copies to Other folder")
+        .split_once("### Failed copies to Rest folder")
         .unwrap()
         .0;
     assert!(copied_other.contains("100lions.zip"));
@@ -701,7 +741,7 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
     assert!(failed_working.contains("005.zip"));
     assert!(!failed_working.contains("100lions.zip"));
     assert_eq!(
-        fs::read(collection.root.join("output/other/100lions.zip")).unwrap(),
+        fs::read(collection.root.join("output/rest/100lions.zip")).unwrap(),
         b"other ROM"
     );
     assert_eq!(
@@ -709,11 +749,12 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
         CONTENTS
     );
     assert_eq!(
-        fs::read_dir(collection.root.join("output/working"))
+        fs::read_dir(collection.root.join("output/roms"))
             .unwrap()
             .count(),
         0
     );
+    assert!(!collection.root.join("output/selected.txt").exists());
 }
 
 #[cfg(unix)]
@@ -737,7 +778,7 @@ fn cli_copy_failures_return_nonzero_with_and_without_a_report() {
             .stderr(predicates::str::contains("panicked").not());
         assert!(!String::from_utf8_lossy(&assertion.get_output().stdout).contains("panicked"));
         assert_eq!(
-            fs::read(collection.root.join("output/other/100lions.zip")).unwrap(),
+            fs::read(collection.root.join("output/rest/100lions.zip")).unwrap(),
             b"other ROM"
         );
         assert_eq!(
@@ -747,16 +788,16 @@ fn cli_copy_failures_return_nonzero_with_and_without_a_report() {
         if requested_report {
             let contents = fs::read_to_string(&collection.args.report_path).unwrap();
             assert!(contents.contains("All OK: false"));
-            assert!(contents.contains("### Copied to Other folder"));
-            assert!(contents.contains("### Failed copies to Working folder"));
+            assert!(contents.contains("### Copied to Rest folder"));
+            assert!(contents.contains("### Failed copies to ROMs folder"));
             assert!(contents.contains("- ROMs copied: 1"));
             assert!(contents.contains("- Failed copies: 1"));
             assert!(contents.contains("Failed to copy"));
             let failed_working = contents
-                .split_once("### Failed copies to Working folder")
+                .split_once("### Failed copies to ROMs folder")
                 .unwrap()
                 .1
-                .split_once("### Failed copies to Other folder")
+                .split_once("### Failed copies to Rest folder")
                 .unwrap()
                 .0;
             assert!(failed_working.contains("005.zip"));
@@ -845,7 +886,7 @@ fn simulation_leaves_missing_output_ancestors_absent_with_or_without_a_report() 
         );
         if requested_report {
             let contents = fs::read_to_string(&collection.args.report_path).unwrap();
-            assert!(contents.contains("Planned for Working folder"));
+            assert!(contents.contains("Planned for ROMs folder"));
             assert!(contents.contains("area51 (chd)"));
             assert!(contents.contains("ROMs copied: 0"));
             assert!(contents.contains("Failed copies: 0"));
@@ -858,10 +899,10 @@ fn simulation_leaves_missing_output_ancestors_absent_with_or_without_a_report() 
 fn simulation_leaves_existing_source_and_output_trees_unchanged() {
     let mut collection = Collection::new();
     collection.args.simulation = true;
-    fs::create_dir_all(collection.root.join("output/working")).unwrap();
+    fs::create_dir_all(collection.root.join("output/roms")).unwrap();
     fs::create_dir_all(collection.root.join("output/custom")).unwrap();
     fs::write(
-        collection.root.join("output/working/unselected.zip"),
+        collection.root.join("output/roms/unselected.zip"),
         b"keep archive",
     )
     .unwrap();
@@ -887,9 +928,9 @@ fn simulation_leaves_existing_source_and_output_trees_unchanged() {
 fn simulation_still_rejects_conflicts_without_writing_a_report_or_output() {
     let mut collection = Collection::new();
     collection.args.simulation = true;
-    fs::create_dir_all(collection.root.join("output/working")).unwrap();
+    fs::create_dir_all(collection.root.join("output/roms")).unwrap();
     fs::write(
-        collection.root.join("output/working/005.zip"),
+        collection.root.join("output/roms/005.zip"),
         b"existing archive",
     )
     .unwrap();
@@ -984,7 +1025,7 @@ fn simulation_does_not_require_writable_source_or_output_directories() {
     fs::set_permissions(&source, fs::Permissions::from_mode(0o555)).unwrap();
     collection.args.destination_path = collection
         .root
-        .join("output/working/new/deep")
+        .join("output/roms/new/deep")
         .to_str()
         .unwrap()
         .into();

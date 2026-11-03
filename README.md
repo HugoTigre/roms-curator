@@ -15,8 +15,7 @@ Release rules: [CI and release delivery](docs/releasing.md).
 
 Possible usages might include:
 
-1. As an Application to create a new ROM Set
-separating working and non-working ROMs (including CHDs)
+1. As an Application to copy a merged ROM set into the files selected games need, and keep everything else beside them
 
 1. As a Library if you want to categorize your entire collection
 and do with it what you will.
@@ -55,32 +54,23 @@ but are easy to get:
 ## How this works
 
 `roms-curator` reads `mame.xml` and `catver.ini`, then categorizes each machine.
-A runnable arcade machine is working when its driver status and emulation are
+A runnable arcade machine is selected when its driver status and emulation are
 both good or imperfect. Imperfect sound or graphics does not change that.
 Preliminary, mechanical, BIOS, device, and non-arcade CatVer groups (computers,
-consoles, handhelds, and similar) are not working. Arcade genres such as
-shooter, puzzle, and slots stay eligible. From here it copies your ROMs to a
-subdirectory in the specified `destination_dir`.
+consoles, handhelds, and similar) are not selected. Arcade genres such as
+shooter, puzzle, and slots stay eligible. From here it copies your files into
+two folders under `destination_dir`.
 
 It can also generate a report with all copied files and/or errors encountered.
 `--plan-path` writes a JSON plan of the copy first: which games are kept and why, which files are present or missing, how large they are, and any destination conflicts. The copy checks that plan against the disk before it writes.
 
-Sub-directories include: 
-- **working**: for all ROM files in working/playable state (excluding ROMs with CHD dependencies).
-- **other**: for all ROM files NOT in working/playable state (excluding ROMs with CHD dependencies). 
-This also includes BIOS, system, mechanical, and preliminary machines.
-- **chd_working**: CHD directories required by a working game, and ROM archives of working machines that list disks.
-- **chd_other**: CHD directories required by a selected game when the machine that stores the disk is not working, and ROM archives of other machines that list disks.
+- **roms**: every file a selected game needs. That is its merged archive (the parent archive when the game is a clone), BIOS and device archives, and the CHD directories it needs. Point MAME at this folder.
+- **rest**: every other source file. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no selected game needs land here too. This folder is what makes it safe to delete the original collection.
+- **selected.txt**: the exact selected machine names, one per line, written after every file in the run has been copied. A failed copy does not publish this list. A frontend uses it. `mayday` can be in `roms` because `batlzone` is inside that zip, and still stay off the list. The report file must be a different path.
 
-A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. Disk directories that no selected game needs are not copied. A bad or missing dump does not by itself move the game out of working.
+A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. A bad or missing dump does not remove the game. A CHD that is not in the source is recorded as missing and is not copied; the game and its ROM archive stay.
 
-Having the ROMs categorized in these sub-folders will allow you to
-only import working ROMs (working folder) into your mame front-end,
-while still giving MAME executable access to all ROMs by adding all
-directories as ROMs directories (this is needed because of ROM dependency,
-like a working ROM needing a bios ROM or a CHD ROM to work properly).
-
-Do not delete `chd_other` just because those machines are not games. A working clone can still need a parent CHD stored there.
+A merged zip is copied whole, so unselected clones stored in it stay inside the file in `roms`. MAME uses only the `roms` folder. `rest` is the remainder, and a game left there will not run on its own when its parent archive moved into `roms`.
 
 ## Application run instructions
 

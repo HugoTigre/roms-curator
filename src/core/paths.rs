@@ -108,6 +108,13 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     if !args.plan_path.is_empty() && args.plan_path == args.report_path {
         return Err("Plan path and report path must be different files.".into());
     }
+    if !args.report_path.is_empty() {
+        let report = resolve(Path::new(&args.report_path))?;
+        let names = resolve(&args.selected_names_path())?;
+        if report.as_os_str().eq_ignore_ascii_case(names.as_os_str()) {
+            return Err("Report path and selected names path must be different files.".into());
+        }
+    }
     // Include case-only aliases for missing path components, so a plan cannot
     // land inside a future output directory on Windows.
     let destination_key = PathBuf::from(destination.to_string_lossy().to_uppercase());

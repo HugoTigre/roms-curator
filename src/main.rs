@@ -75,12 +75,24 @@ fn finish_with_writer(report: &Report, report_path: &str, stderr: impl Write) ->
         }
     }
     if !report.all_ok {
-        error!("One or more ROMs failed to copy. Files already completed have been retained.");
+        if let Some(error) = &report.names_error {
+            error!("Selected names were not written: {error}");
+        }
+        let copy_failed = report
+            .roms_working
+            .iter()
+            .chain(&report.roms_other)
+            .any(|entry| entry.status == roms_curator::models::report::OperationStatus::Failed);
+        if copy_failed {
+            error!("One or more ROMs failed to copy. Files already completed have been retained.");
+        } else if report.names_error.is_some() {
+            error!("ROM files already copied have been retained.");
+        }
         return ExitCode::FAILURE;
     }
     if report.simulation {
         info!(
-            "Simulation complete: {} working and {} other entries Planned. No ROMs were copied.",
+            "Simulation complete: {} ROMs-folder and {} rest-folder entries Planned. No ROMs were copied.",
             report.total_working, report.total_other
         );
     }
@@ -113,6 +125,30 @@ mod tests {
         assert!(contents.contains("All OK: false"));
         assert!(contents.contains("source/005.zip -> output/005.zip: injected copy failure"));
         assert_eq!(finish(&report, ""), ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn names_file_failure_still_writes_the_report_and_returns_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("report.md");
+        let mut report = Report::new();
+        report.all_ok(false);
+        report.names_error = Some("Cannot publish selected.txt: denied".into());
+        report.add_rom_working(ReportDetailEntry {
+            rom_name: "005.zip".into(),
+            status: OperationStatus::Copied,
+            ..ReportDetailEntry::default()
+        });
+        let mut stderr = Vec::new();
+        assert_eq!(
+            finish_with_writer(&report, path.to_str().unwrap(), &mut stderr),
+            ExitCode::FAILURE
+        );
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("All OK: false"));
+        assert!(contents.contains("Cannot publish selected.txt: denied"));
+        assert!(contents.contains("- Failed copies: 0"));
+        assert!(stderr.is_empty());
     }
 
     #[test]

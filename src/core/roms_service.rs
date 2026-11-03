@@ -18,8 +18,8 @@ use crate::models::plan::{
 };
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
-    Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
-    RomFile, RomStatus, Roms, UnfilteredRoms, UNKNOWN_CATEGORY,
+    Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomData, RomDataExt, RomFile, RomStatus,
+    Roms, UnfilteredRoms, UNKNOWN_CATEGORY,
 };
 use crate::models::selection::{category_preference, machine_override, EmulationPolicy};
 use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
@@ -67,19 +67,24 @@ impl ParsedMachines {
 impl Catalog {
     /// Builds a sorted JSON plan for this catalog and these arguments.
     ///
-    /// The plan lists selected games and their reasons, the archives and disk
-    /// directories the copy would use, sizes, and destination conflicts. It
-    /// does not create output directories or copy files.
+    /// The plan lists selected games and their reasons, the files the copy would
+    /// place in `roms` and `rest`, sizes, and destination conflicts. It does not
+    /// create output directories, write `selected.txt`, or copy files.
     pub fn plan(&self, args: &Args) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
         build_plan(self, args)
     }
 
-    /// Copies source files into the category folders.
+    /// Copies the source into `roms` and `rest`, and writes `selected.txt` when every copy succeeds.
+    ///
+    /// If that file cannot be published, the call still returns the report with
+    /// `all_ok` false and `names_error` set. Copied files stay.
     ///
     /// Builds one plan, rechecks that plan against the disk, then copies.
-    /// A name-range subset skips stems outside the range, then still copies archives
-    /// and disk directories required by a selected game inside the range.
-    /// [`RomsExt::copy_roms`] applies the range only and does not build a plan.
+    /// `roms` receives every merged archive and CHD directory a selected game needs.
+    /// `rest` receives every other source file this run keeps, so a full export can
+    /// replace the original collection. A name-range subset still leaves stems
+    /// outside the range in the source, except required archives and disk directories.
+    /// [`RomsExt::copy_roms`] applies the range only and places every copied file in `rest`.
     pub fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
         let plan = self.plan(args)?;
         self.copy_with_plan(args, &plan)
@@ -209,12 +214,15 @@ fn categorize_machines(
 
 pub trait RomsExt {
     ///
-    /// Copies the selected ROMs to the destination directory in [`Args`].
+    /// Copies source entries into `rest` and writes `selected.txt` when every copy succeeds.
     ///
-    /// Conflicting destination names (including case-only differences), existing
-    /// selected files or CHD directories, and report paths inside category
-    /// directories abort the run before category directories are created or ROMs
-    /// are copied. Files are never overwritten and CHD directories are not merged.
+    /// This path has no dependency resolution, so copied files go to `rest`.
+    /// [`Catalog::copy_roms`] places required archives and CHD directories in `roms`
+    /// and everything else this run keeps in `rest`. Conflicting destination names
+    /// (including case-only differences), existing files or CHD directories, an
+    /// existing `selected.txt`, and report paths inside those directories abort
+    /// the run before the directories are created or ROMs are copied. Files are
+    /// never overwritten and CHD directories are not merged.
     /// Later copy failures retain files already completed; there is no rollback
     /// of the whole collection or guarantee of durability after power loss.
     /// Individual copy failures are recorded in the returned report: check
@@ -261,7 +269,6 @@ pub trait RomsExt {
     ///
     fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>>;
     fn check_paths(args: &Args) -> Result<bool, &'static str>;
-    fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf;
     fn should_move(rom: &Rom, args: &Args) -> bool;
     /// Copy an archive or directory, returning source/destination paths and the
     /// cause on failure. Simulation performs no copy and returns `Ok(())`.
@@ -292,6 +299,12 @@ fn require_same_run(catalog: &Catalog, args: &Args, plan: &Plan) -> Result<(), B
         "destination",
         &plan.destination_path,
         &args.destination_path,
+    )?;
+    same_path(
+        &mut problems,
+        "selected names",
+        &plan.selected_names_path,
+        &args.selected_names_path().display().to_string(),
     )?;
     same_path(
         &mut problems,
@@ -390,15 +403,16 @@ fn build_plan(catalog: &Catalog, args: &Args) -> Result<Plan, Box<dyn Error>> {
                 continue;
             }
             let key = prefix.to_ascii_lowercase();
-            let rom = catalog
+            let machine_has_disks = catalog
                 .roms
                 .get(&key)
-                .expect("copy plan only matches a known machine");
-            let destination = Roms::get_destination_folder(rom, &folders).join(
+                .is_some_and(|rom| !rom.data.chd.is_empty());
+            let disk = is_disk_media(&path, machine_has_disks);
+            let required = file_is_required(disk, &key, &retain, Some(&disk_machines));
+            let destination = export_directory(required, &folders).join(
                 path.file_name()
                     .ok_or_else(|| format!("Missing ROM filename: {}", path.display()))?,
             );
-            let disk = is_disk_media(&path, !rom.data.chd.is_empty());
             let role = if disk {
                 MediaRole::Disk
             } else {
@@ -417,7 +431,11 @@ fn build_plan(catalog: &Catalog, args: &Args) -> Result<Plan, Box<dyn Error>> {
                 source: Some(path.display().to_string()),
                 destination: Some(destination.display().to_string()),
                 bytes: Some(bytes),
-                reasons: media_reasons(&key, role, catalog, args),
+                reasons: if required {
+                    media_reasons(&key, role, catalog, args)
+                } else {
+                    vec!["Not required by a selected game".to_string()]
+                },
             });
         }
     }
@@ -454,16 +472,13 @@ fn build_plan(catalog: &Catalog, args: &Args) -> Result<Plan, Box<dyn Error>> {
     }
     media.sort();
 
-    let directories = [
-        folders.working.as_path(),
-        folders.other.as_path(),
-        folders.chd_working.as_path(),
-        folders.chd_other.as_path(),
-    ];
+    let directories = [folders.roms.as_path(), folders.rest.as_path()];
+    let names_path = args.selected_names_path();
     let conflicts = crate::core::copying::destination_conflicts(
         &present_copies(&media),
         &directories,
         &args.report_path,
+        &names_path,
     )?;
 
     let mut games = Vec::new();
@@ -496,6 +511,7 @@ fn build_plan(catalog: &Catalog, args: &Args) -> Result<Plan, Box<dyn Error>> {
         },
         source_paths: args.source_path.clone(),
         destination_path: args.destination_path.clone(),
+        selected_names_path: args.selected_names_path().display().to_string(),
         report_path: args.report_path.clone(),
         subset_start: args.subset_start.clone(),
         subset_end: args.subset_end.clone(),
@@ -626,11 +642,10 @@ fn copy_retaining(
     crate::core::paths::validate(args)?;
 
     let destination_paths = args.build_destination_folders_path();
+    let names_path = args.selected_names_path();
     let directories = [
-        destination_paths.working.as_path(),
-        destination_paths.other.as_path(),
-        destination_paths.chd_working.as_path(),
-        destination_paths.chd_other.as_path(),
+        destination_paths.roms.as_path(),
+        destination_paths.rest.as_path(),
     ];
     let mut sources = Vec::new();
     let mut copies = Vec::new();
@@ -649,17 +664,20 @@ fn copy_retaining(
             if plan_source_entry(path, prefix, &roms, args, retain, disk_machines)
                 == EntryPlan::Copy
             {
-                let rom = roms
-                    .get(&prefix.to_ascii_lowercase())
-                    .expect("copy plan only matches a known machine");
-                let destination = Roms::get_destination_folder(rom, &destination_paths)
-                    .join(path.file_name().ok_or("Missing ROM filename")?);
+                let destination = export_destination(
+                    path,
+                    prefix,
+                    &roms,
+                    retain,
+                    disk_machines,
+                    &destination_paths,
+                )?;
                 copies.push((path.clone(), destination));
             }
         }
         sources.push((source, entries));
     }
-    crate::core::copying::check_targets(&copies, &directories, &args.report_path)?;
+    crate::core::copying::check_targets(&copies, &directories, &args.report_path, &names_path)?;
     if !args.simulation {
         for directory in directories {
             std::fs::create_dir_all(directory).map_err(|error| {
@@ -708,23 +726,14 @@ fn copy_retaining(
 
             match plan_source_entry(&path, file_prefix, &roms, args, retain, disk_machines) {
                 EntryPlan::Skip => continue,
-                EntryPlan::Ignore => {
-                    let is_chd = roms
-                        .get(&file_prefix.to_ascii_lowercase())
-                        .is_some_and(|rom| !rom.data.chd.is_empty());
-                    report.add_ignored_rom(ReportDetailEntry {
-                        rom_name: file_name.to_string_lossy().into_owned(),
-                        status: OperationStatus::Ignored,
-                        is_chd,
-                        error: None,
-                    });
-                }
                 EntryPlan::Copy => {
-                    let rom = roms
-                        .get(&file_prefix.to_ascii_lowercase())
-                        .expect("copy plan only matches a known machine");
+                    let key = file_prefix.to_ascii_lowercase();
+                    let machine_has_disks =
+                        roms.get(&key).is_some_and(|rom| !rom.data.chd.is_empty());
+                    let disk = is_disk_media(&path, machine_has_disks);
+                    let required = file_is_required(disk, &key, retain, disk_machines);
                     let destination =
-                        Roms::get_destination_folder(rom, &destination_paths).join(file_name);
+                        export_directory(required, &destination_paths).join(file_name);
 
                     let copy_error = Roms::copy_rom(&path, &destination, args)
                         .err()
@@ -744,26 +753,31 @@ fn copy_retaining(
                     let report_detail_entry = ReportDetailEntry {
                         rom_name: file_name.to_string_lossy().into_owned(),
                         status,
-                        is_chd: !rom.data.chd.is_empty(),
+                        is_chd: disk,
                         error: copy_error,
                     };
 
-                    match &rom.category {
-                        RomCategory::Working => {
-                            total_working += 1;
-                            report.add_rom_working(report_detail_entry)
-                        }
-                        _ => {
-                            total_other += 1;
-                            report.add_rom_other(report_detail_entry)
-                        }
-                    };
+                    if required {
+                        total_working += 1;
+                        report.add_rom_working(report_detail_entry);
+                    } else {
+                        total_other += 1;
+                        report.add_rom_other(report_detail_entry);
+                    }
                 }
             }
         }
 
         if let Some(pb) = progress_bar {
             pb.finish();
+        }
+    }
+
+    if !args.simulation && !something_failed {
+        if let Err(error) = write_selected_names(&roms, args, &names_path) {
+            error!("{error}");
+            something_failed = true;
+            report.names_error = Some(error.to_string());
         }
     }
 
@@ -775,14 +789,13 @@ fn copy_retaining(
     Ok(report)
 }
 
-/// Machine names whose CHD directory a name-range subset must still copy.
+/// Machine names whose CHD directory a selected game needs.
 ///
 /// The range limits selected games. A parent directory that stores a required
-/// shared or delta disk stays even when its name falls outside the range.
-/// With no range, this is every machine that stores a required disk.
+/// shared or delta disk stays in `roms` even when its name falls outside the range.
+/// Other disk directories go to `rest` when this run copies them.
 pub(crate) fn required_disk_machines(disks: &DiskSet, args: &Args) -> HashSet<String> {
-    // The flag remains accepted so existing commands parse. Required disks are
-    // kept, and unused disk directories are omitted, for either value.
+    // The flag remains accepted so existing commands parse. It does not choose a folder.
     let _retired = args.ignore_not_working_chd;
     disks
         .edges
@@ -795,7 +808,6 @@ pub(crate) fn required_disk_machines(disks: &DiskSet, args: &Args) -> HashSet<St
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EntryPlan {
     Copy,
-    Ignore,
     Skip,
 }
 
@@ -808,32 +820,90 @@ fn plan_source_entry(
     disk_machines: Option<&HashSet<String>>,
 ) -> EntryPlan {
     let key = prefix.to_ascii_lowercase();
-    let Some(rom) = roms.get(&key) else {
-        if subset_excludes(args, prefix, retain) {
-            return EntryPlan::Skip;
-        }
-        return EntryPlan::Ignore;
-    };
-    // `None` means this caller has no disk resolution, so directories follow the
-    // archive path below. `Some` copies only required disk directories, including
-    // ones whose names fall outside the range, and omits the rest.
-    if is_disk_media(path, !rom.data.chd.is_empty()) {
-        match disk_machines {
-            Some(required) if required.contains(&key) => return EntryPlan::Copy,
-            Some(_) => {
-                if subset_excludes(args, prefix, retain) {
-                    return EntryPlan::Skip;
-                }
-                return EntryPlan::Ignore;
-            }
-            None => {}
-        }
-    }
-    if subset_excludes(args, prefix, retain) {
+    let machine_has_disks = roms.get(&key).is_some_and(|rom| !rom.data.chd.is_empty());
+    let disk = is_disk_media(path, machine_has_disks);
+    // A required file stays even when its name falls outside the range. Every
+    // other name outside the range stays in the source.
+    if !file_is_required(disk, &key, retain, disk_machines) && subset_excludes(args, prefix, retain)
+    {
         EntryPlan::Skip
     } else {
         EntryPlan::Copy
     }
+}
+
+fn file_is_required(
+    disk: bool,
+    key: &str,
+    retain: &HashSet<String>,
+    disk_machines: Option<&HashSet<String>>,
+) -> bool {
+    if disk {
+        disk_machines.is_some_and(|required| required.contains(key))
+    } else {
+        retain.contains(key)
+    }
+}
+
+fn export_directory(required: bool, folders: &DestinationFolders) -> PathBuf {
+    if required {
+        folders.roms.clone()
+    } else {
+        folders.rest.clone()
+    }
+}
+
+fn export_destination(
+    path: &Path,
+    prefix: &str,
+    roms: &Roms,
+    retain: &HashSet<String>,
+    disk_machines: Option<&HashSet<String>>,
+    folders: &DestinationFolders,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let key = prefix.to_ascii_lowercase();
+    let machine_has_disks = roms.get(&key).is_some_and(|rom| !rom.data.chd.is_empty());
+    let required = file_is_required(
+        is_disk_media(path, machine_has_disks),
+        &key,
+        retain,
+        disk_machines,
+    );
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("Missing ROM filename: {}", path.display()))?;
+    Ok(export_directory(required, folders).join(file_name))
+}
+
+fn write_selected_names(roms: &Roms, args: &Args, path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut names: Vec<&str> = roms
+        .iter()
+        .filter(|(name, rom)| rom.selected && !Roms::is_excluded(args, name))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    names.sort_unstable();
+    let mut bytes = names.join("\n");
+    if !bytes.is_empty() {
+        bytes.push('\n');
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".roms-curator-names-")
+        .tempfile_in(parent)
+        .map_err(|error| format!("Cannot create {}: {error}", path.display()))?;
+    std::io::Write::write_all(temporary.as_file_mut(), bytes.as_bytes())
+        .map_err(|error| format!("Cannot write {}: {error}", path.display()))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|error| format!("Cannot write {}: {error}", path.display()))?;
+    temporary
+        .persist_noclobber(path)
+        .map_err(|error| format!("Cannot publish {}: {}", path.display(), error.error))?;
+    Ok(())
 }
 
 fn is_disk_media(path: &Path, machine_has_disks: bool) -> bool {
@@ -847,15 +917,13 @@ fn is_disk_media(path: &Path, machine_has_disks: bool) -> bool {
     path.is_dir() && machine_has_disks
 }
 
-/// Archive stems a name-range subset must still copy.
+/// Merged archive stems a selected game needs.
 ///
-/// The range limits selected games. Parent, BIOS, and device archives of games
-/// inside the range stay even when their names fall outside it. With no range,
-/// nothing extra is retained because every source name is already eligible.
+/// A clone contributes its parent archive, not its own name. A name-range subset
+/// still copies these archives when the archive name falls outside the range.
+/// With no range, this is every archive the full selected list needs; other
+/// source files go to `rest`.
 pub(crate) fn retained_archives(dependencies: &DependencySet, args: &Args) -> HashSet<String> {
-    if args.subset_start.is_empty() && args.subset_end.is_empty() {
-        return HashSet::new();
-    }
     dependencies
         .edges
         .iter()
@@ -881,27 +949,6 @@ impl RomsExt for Roms {
             return Err("Missing roms destination path.");
         }
         Ok(true)
-    }
-
-    fn get_destination_folder(rom: &Rom, destination_folders: &DestinationFolders) -> PathBuf {
-        let is_chd = !rom.data.chd.is_empty();
-
-        match &rom.category {
-            RomCategory::Working => {
-                if is_chd {
-                    destination_folders.chd_working.to_owned()
-                } else {
-                    destination_folders.working.to_owned()
-                }
-            }
-            _ => {
-                if is_chd {
-                    destination_folders.chd_other.to_owned()
-                } else {
-                    destination_folders.other.to_owned()
-                }
-            }
-        }
     }
 
     fn should_move(_rom: &Rom, args: &Args) -> bool {

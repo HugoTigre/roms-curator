@@ -21,8 +21,9 @@ pub(crate) fn check_targets(
     copies: &[(PathBuf, PathBuf)],
     directories: &[&Path],
     report_path: &str,
+    names_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
-    let conflicts = destination_conflicts(copies, directories, report_path)?;
+    let conflicts = destination_conflicts(copies, directories, report_path, names_path)?;
     if let Some(conflict) = conflicts.first() {
         return Err(conflict.clone().into());
     }
@@ -33,6 +34,7 @@ pub(crate) fn destination_conflicts(
     copies: &[(PathBuf, PathBuf)],
     directories: &[&Path],
     report_path: &str,
+    names_path: &Path,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let mut conflicts = Vec::new();
     let report = if report_path.is_empty() {
@@ -145,6 +147,12 @@ pub(crate) fn destination_conflicts(
             // no per-entry report comparison or metadata lookup is needed.
             Ok(())
         })?;
+    }
+    if names_path.exists() {
+        conflicts.push(format!(
+            "Destination already exists; refusing replacement: {}",
+            names_path.display()
+        ));
     }
     Ok(conflicts)
 }

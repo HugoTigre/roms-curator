@@ -18,8 +18,8 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Com
 /// - plan_path: Path to a JSON copy plan. Ex: plan.json. Empty skips writing one.
 /// - ignore_not_working_chd: Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
 /// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
-/// - subset_start: If set, skip names that sort before this. Required archives and disk directories of selected games inside the range are still copied.
-/// - subset_end: If set, skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied.
+/// - subset_start: If set, leave names that sort before this in the source. Required archives and disk directories of selected games inside the range are still copied into `roms`.
+/// - subset_end: If set, leave names that sort after this in the source. Required archives and disk directories of selected games inside the range are still copied into `roms`.
 ///
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Args {
@@ -140,7 +140,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("subset_start")
-                .help("Skip names that sort before this. Required archives and disk directories of selected games inside the range are still copied.")
+                .help("Leave names that sort before this in the source. Required archives and disk directories of selected games inside the range are still copied.")
                 .long("subset-start")
                 .num_args(1)
                 .required(false)
@@ -149,7 +149,7 @@ pub fn command() -> Command {
         )
         .arg(
             Arg::new("subset_end")
-                .help("Skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied.")
+                .help("Leave names that sort after this in the source. Required archives and disk directories of selected games inside the range are still copied.")
                 .long("subset-end")
                 .num_args(1)
                 .required(false)

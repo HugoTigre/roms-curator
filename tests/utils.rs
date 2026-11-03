@@ -25,10 +25,8 @@ pub static WORKING_ARCADE_LIST_PATH: &str = "tests/resources/working_arcade_0244
 pub static ROMS_SOURCE_PATH: &str = "tests/resources/merged_roms/";
 pub static CHDS_SOURCE_PATH: &str = "tests/resources/chds/";
 pub static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
-pub static CATEGORIZED_WORKING_FOLDER_NAME: &str = "working";
-pub static CATEGORIZED_OTHER_FOLDER_NAME: &str = "other";
-pub static CATEGORIZED_CHD_OTHER_FOLDER_NAME: &str = "chd_other";
-pub static CATEGORIZED_CHD_WORKING_FOLDER_NAME: &str = "chd_working";
+pub static CATEGORIZED_WORKING_FOLDER_NAME: &str = "roms";
+pub static CATEGORIZED_OTHER_FOLDER_NAME: &str = "rest";
 
 static INIT: Once = Once::new();
 

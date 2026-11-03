@@ -18,7 +18,7 @@ Only a report if you request one. It leaves your source and output folders uncha
 
 ### Does this work with split and merged sets?
 
-Yes, it can organize either format. The dependency list assumes a merged collection: a clone requires its parent archive, plus BIOS and device archives, even when those machines are not games. Keep all generated folders available to MAME. The working folder alone may be incomplete. A name-range subset still copies those required archives when their names fall outside the range.
+The export assumes a merged collection: a clone requires its parent archive, plus BIOS and device archives, even when those machines are not games. Those files go in `roms` with the CHD directories the selected games need. `rest` keeps every other source file. MAME uses `roms`. A name-range subset still copies required archives and disk directories when their names fall outside the range, and leaves other out-of-range names in the source. Split-set file selection is a later decision.
 
 ### Does this work with any MAME version?
 

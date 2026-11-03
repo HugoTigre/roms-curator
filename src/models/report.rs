@@ -47,8 +47,10 @@ pub struct Report {
     pub roms_working: Vec<ReportDetailEntry>,
     pub roms_other: Vec<ReportDetailEntry>,
     pub ignored_roms: Vec<ReportDetailEntry>,
-    /// False if at least one required copy failed. A successful simulation does
-    /// not verify write access or available space.
+    /// Set when every ROM copy succeeded but `selected.txt` could not be published.
+    pub names_error: Option<String>,
+    /// False if a copy failed or `selected.txt` could not be published. A
+    /// successful simulation does not verify write access or available space.
     pub all_ok: bool,
 }
 
@@ -152,35 +154,25 @@ impl Report {
         writer.write_all(b"## Detail\n\n")?;
 
         let (label, status) = self.success_label();
-        writeln!(writer, "### {label} Working folder\n")?;
+        writeln!(writer, "### {label} ROMs folder\n")?;
         write_all_roms(&mut writer, &self.roms_working, status)?;
 
-        writeln!(writer, "### {label} Other folder\n")?;
+        writeln!(writer, "### {label} Rest folder\n")?;
         write_all_roms(&mut writer, &self.roms_other, status)?;
 
         if !self.simulation {
-            writer.write_all(b"### Failed copies to Working folder\n\n")?;
+            writer.write_all(b"### Failed copies to ROMs folder\n\n")?;
             write_all_roms(&mut writer, &self.roms_working, OperationStatus::Failed)?;
 
-            writer.write_all(b"### Failed copies to Other folder\n\n")?;
+            writer.write_all(b"### Failed copies to Rest folder\n\n")?;
             write_all_roms(&mut writer, &self.roms_other, OperationStatus::Failed)?;
         }
 
-        writer.write_all(b"### Ignored roms\n\n")?;
-        writer.write_all(
-            b"Files included here most likely means there are roms files in your collection\n",
-        )?;
-        writer.write_all(
-            b"that are not found in mame.xml file or you have non-rom files in your collection.\n",
-        )?;
-        writer.write_all(b"You might be using different rom collection and mame versions.\n")?;
-        writer.write_all(
-            b"Since these roms are not in the database, there is no way to know if it's a normal\n",
-        )?;
-        writer.write_all(
-            b"rom or a CHD file (folders should indicate chd while zip file should be a rom).\n\n",
-        )?;
-        write_all_roms(&mut writer, &self.ignored_roms, OperationStatus::Ignored)?;
+        if !self.ignored_roms.is_empty() {
+            writer.write_all(b"### Ignored roms\n\n")?;
+            writer.write_all(b"These source entries were not copied.\n\n")?;
+            write_all_roms(&mut writer, &self.ignored_roms, OperationStatus::Ignored)?;
+        }
 
         writer.flush()?;
 
@@ -205,10 +197,15 @@ impl Report {
         let failures = if self.simulation {
             ""
         } else {
-            "  - [Failed copies to Working folder](#failed-copies-to-working-folder)\n  - [Failed copies to Other folder](#failed-copies-to-other-folder)\n"
+            "  - [Failed copies to ROMs folder](#failed-copies-to-roms-folder)\n  - [Failed copies to Rest folder](#failed-copies-to-rest-folder)\n"
+        };
+        let ignored = if self.ignored_roms.is_empty() {
+            ""
+        } else {
+            "  - [Ignored roms](#ignored-roms)\n"
         };
         format!(
-            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} Working folder](#{anchor}-working-folder)\n  - [{label} Other folder](#{anchor}-other-folder)\n{failures}  - [Ignored roms](#ignored-roms)\n\n"
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} ROMs folder](#{anchor}-roms-folder)\n  - [{label} Rest folder](#{anchor}-rest-folder)\n{failures}{ignored}\n"
         )
     }
 
@@ -236,8 +233,12 @@ impl Report {
             .chain(&self.roms_other)
             .filter(|entry| entry.status == OperationStatus::Failed)
             .count();
+        let names = match &self.names_error {
+            Some(error) => format!("- Selected names: {error}\n"),
+            None => String::new(),
+        };
         format!(
-            "## Summary\n\n- All OK: {}\n- {label} working folders: {working} ({working_chds} CHDs)\n- {label} other folders: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n\n",
+            "## Summary\n\n- All OK: {}\n- {label} ROMs folder: {working} ({working_chds} CHDs)\n- {label} Rest folder: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n{names}\n",
             self.all_ok, self.ignored_roms.len()
         )
     }
@@ -252,6 +253,7 @@ impl Report {
             roms_working: self.roms_working.to_owned(),
             roms_other: self.roms_other.to_owned(),
             ignored_roms: self.ignored_roms.to_owned(),
+            names_error: self.names_error.clone(),
             all_ok: self.all_ok,
         }
     }
@@ -323,8 +325,8 @@ mod tests {
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("Simulation: Planned operations only"));
-        assert!(output.contains("Planned for working folders: 1 (0 CHDs)"));
-        assert!(output.contains("Planned for other folders: 1 (1 CHDs)"));
+        assert!(output.contains("Planned for ROMs folder: 1 (0 CHDs)"));
+        assert!(output.contains("Planned for Rest folder: 1 (1 CHDs)"));
         assert!(output.contains("ROMs copied: 0"));
         assert!(output.contains("Failed copies: 0"));
         assert!(output.contains("005.zip"));
@@ -358,26 +360,26 @@ mod tests {
         let mut output = Vec::new();
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("- Copied to working folders: 0 (0 CHDs)"));
-        assert!(output.contains("- Copied to other folders: 1 (0 CHDs)"));
+        assert!(output.contains("- Copied to ROMs folder: 0 (0 CHDs)"));
+        assert!(output.contains("- Copied to Rest folder: 1 (0 CHDs)"));
         assert!(output.contains("- ROMs copied: 1"));
         assert!(output.contains("- Ignored ROMs: 1"));
         assert!(output.contains("- Failed copies: 1"));
-        assert!(output.contains("### Copied to Working folder"));
-        assert!(output.contains("### Copied to Other folder"));
-        assert!(output.contains("### Failed copies to Working folder"));
-        assert!(output.contains("### Failed copies to Other folder"));
+        assert!(output.contains("### Copied to ROMs folder"));
+        assert!(output.contains("### Copied to Rest folder"));
+        assert!(output.contains("### Failed copies to ROMs folder"));
+        assert!(output.contains("### Failed copies to Rest folder"));
         assert!(!output.contains("### Planned for"));
 
         let copied_other = section(
             &output,
-            "### Copied to Other folder",
-            "### Failed copies to Working folder",
+            "### Copied to Rest folder",
+            "### Failed copies to ROMs folder",
         );
         let failed_working = section(
             &output,
-            "### Failed copies to Working folder",
-            "### Failed copies to Other folder",
+            "### Failed copies to ROMs folder",
+            "### Failed copies to Rest folder",
         );
         let ignored = section(&output, "### Ignored roms", "");
         assert!(copied_other.contains("100lions.zip"));
@@ -388,6 +390,28 @@ mod tests {
         assert!(ignored.contains("notes.txt"));
         assert!(!ignored.contains("005.zip"));
         assert!(!ignored.contains("100lions.zip"));
+    }
+
+    #[test]
+    fn a_names_file_failure_is_listed_without_counting_as_a_failed_copy() {
+        let mut report = Report {
+            all_ok: false,
+            names_error: Some("Cannot publish destination/selected.txt: denied".into()),
+            ..Report::default()
+        };
+        report.add_rom_working(ReportDetailEntry {
+            rom_name: "005.zip".into(),
+            status: OperationStatus::Copied,
+            ..ReportDetailEntry::default()
+        });
+        let mut output = Vec::new();
+        report.write_to(&mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("- All OK: false"));
+        assert!(output.contains("- Failed copies: 0"));
+        assert!(
+            output.contains("- Selected names: Cannot publish destination/selected.txt: denied")
+        );
     }
 
     fn section<'a>(report: &'a str, start: &str, end: &str) -> &'a str {

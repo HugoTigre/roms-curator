@@ -11,7 +11,6 @@ use roms_curator::models::roms::Roms;
 
 use crate::utils::{
     clean_up, get_files_from_folder, get_test_tag, run_expensive_tests, set_up,
-    CATEGORIZED_CHD_OTHER_FOLDER_NAME, CATEGORIZED_CHD_WORKING_FOLDER_NAME,
     CATEGORIZED_OTHER_FOLDER_NAME, CATEGORIZED_ROMS_FOLDER_NAME, CATEGORIZED_WORKING_FOLDER_NAME,
     TARGET_FOLDER, WORKING_ARCADE_LIST_PATH,
 };
@@ -99,62 +98,49 @@ fn should_copy_files_to_destination_folder_and_create_report() {
 
     let report = results.copy_roms(&args).expect("Error copying roms");
 
-    assert_eq!(report.total_working, 5);
-    assert_eq!(report.total_other, 7);
+    assert_eq!(report.total_working, 4);
+    assert_eq!(report.total_other, 8);
 
     let test_folder = Path::new(TARGET_FOLDER).join(&tag);
 
     let path = test_folder
         .join(CATEGORIZED_ROMS_FOLDER_NAME)
         .join(CATEGORIZED_WORKING_FOLDER_NAME);
-    let mut working_roms = get_files_from_folder(path.to_str().unwrap());
+    let mut roms = get_files_from_folder(path.to_str().unwrap());
     let mut expected = vec![
         "005.zip".to_string(),
-        "elevatora.zip".to_string(),
+        "Area51".to_string(),
+        "area51.zip".to_string(),
         "robocop.zip".to_string(),
     ];
-    working_roms.sort();
+    roms.sort();
     expected.sort();
-    assert_eq!(working_roms, expected);
+    assert_eq!(roms, expected);
 
     let path = test_folder
         .join(CATEGORIZED_ROMS_FOLDER_NAME)
         .join(CATEGORIZED_OTHER_FOLDER_NAME);
-    let mut other_roms = get_files_from_folder(path.to_str().unwrap());
+    let mut rest = get_files_from_folder(path.to_str().unwrap());
     let mut expected = vec![
         "100lions.zip".to_string(),
-        "3dobios.zip".to_string(), // bios
-        "a24play.zip".to_string(), // system
+        "3dobios.zip".to_string(),
+        "99bottles.zip".to_string(),
+        "a24play.zip".to_string(),
         "aristmk6.zip".to_string(),
         "as_acp.zip".to_string(),
-        "sv801.zip".to_string(), // device
+        "elevatora.zip".to_string(),
+        "sv801.zip".to_string(),
     ];
-    other_roms.sort();
+    rest.sort();
     expected.sort();
-    assert_eq!(other_roms, expected);
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
-    let mut chd_other_roms = get_files_from_folder(path.to_str().unwrap());
-    let mut expected = vec![
-        "99bottles.zip".to_string(), // chd
-    ];
-    chd_other_roms.sort();
-    expected.sort();
-    assert_eq!(chd_other_roms, expected);
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
-    let mut chd_working_roms = get_files_from_folder(path.to_str().unwrap());
-    let mut expected = vec![
-        "Area51".to_string(),     // chd
-        "area51.zip".to_string(), // rom that depends on chd
-    ];
-    chd_working_roms.sort();
-    expected.sort();
-    assert_eq!(chd_working_roms, expected);
+    assert_eq!(rest, expected);
+    let names = std::fs::read_to_string(
+        test_folder
+            .join(CATEGORIZED_ROMS_FOLDER_NAME)
+            .join("selected.txt"),
+    )
+    .unwrap();
+    assert_eq!(names, "005\narea51\nelevatora\nrobocop\n");
 
     assert!(matches!(
         report.to_file(args.report_path.as_str()),
@@ -170,8 +156,8 @@ fn simulation_should_generate_a_planned_report_without_creating_category_folders
     set_up(&tag);
     let args = utils::build_args(&tag, true, String::new(), String::new());
     let report = roms_curator::run(&args).unwrap().copy_roms(&args).unwrap();
-    assert_eq!(report.total_working, 5);
-    assert_eq!(report.total_other, 7);
+    assert_eq!(report.total_working, 4);
+    assert_eq!(report.total_other, 8);
     assert!(report.simulation);
     assert!(report.all_ok);
     assert!(report
@@ -180,12 +166,13 @@ fn simulation_should_generate_a_planned_report_without_creating_category_folders
         .chain(&report.roms_other)
         .all(|entry| entry.status == OperationStatus::Planned && entry.error.is_none()));
     let output = Path::new(&args.destination_path);
-    for category in ["working", "other", "chd_working", "chd_other"] {
+    for category in ["roms", "rest"] {
         assert!(!output.join(category).exists());
     }
+    assert!(!output.join("selected.txt").exists());
     assert!(report.to_file(&args.report_path).unwrap());
     let contents = std::fs::read_to_string(&args.report_path).unwrap();
-    assert!(contents.contains("Planned for Working folder"));
+    assert!(contents.contains("Planned for ROMs folder"));
     assert!(contents.contains("- ROMs copied: 0"));
     assert!(contents.contains("- Failed copies: 0"));
     assert!(!contents.contains("### Copied to"));
@@ -211,31 +198,24 @@ fn should_copy_files_to_destination_folder_excluding_subsets() {
     let path = test_folder
         .join(CATEGORIZED_ROMS_FOLDER_NAME)
         .join(CATEGORIZED_WORKING_FOLDER_NAME);
-    let mut working_roms = get_files_from_folder(path.to_str().unwrap());
+    let mut roms = get_files_from_folder(path.to_str().unwrap());
     let mut expected = vec!["robocop.zip".to_string()];
-    working_roms.sort();
+    roms.sort();
     expected.sort();
-    assert_eq!(working_roms, expected);
-
-    let expected: Vec<String> = Vec::new();
+    assert_eq!(roms, expected);
 
     let path = test_folder
         .join(CATEGORIZED_ROMS_FOLDER_NAME)
         .join(CATEGORIZED_OTHER_FOLDER_NAME);
-    let other_roms = get_files_from_folder(path.to_str().unwrap());
-    assert_eq!(other_roms, expected);
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_OTHER_FOLDER_NAME);
-    let chd_other_roms = get_files_from_folder(path.to_str().unwrap());
-    assert_eq!(chd_other_roms, expected);
-
-    let path = test_folder
-        .join(CATEGORIZED_ROMS_FOLDER_NAME)
-        .join(CATEGORIZED_CHD_WORKING_FOLDER_NAME);
-    let chd_working_roms = get_files_from_folder(path.to_str().unwrap());
-    assert_eq!(chd_working_roms, expected);
+    let rest = get_files_from_folder(path.to_str().unwrap());
+    assert!(rest.is_empty());
+    let names = std::fs::read_to_string(
+        test_folder
+            .join(CATEGORIZED_ROMS_FOLDER_NAME)
+            .join("selected.txt"),
+    )
+    .unwrap();
+    assert_eq!(names, "robocop\n");
 
     assert!(matches!(
         report.to_file(args.report_path.as_str()),

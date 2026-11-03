@@ -1013,11 +1013,11 @@ fn subset_keeps_parent_archive_outside_the_range() {
     args.subset_end = "cz".to_string();
 
     let report = catalog.copy_roms(&args).unwrap();
-    assert!(report.roms_other.iter().any(|entry| {
+    assert!(report.roms_working.iter().any(|entry| {
         entry.rom_name == "parent.zip" && entry.status == OperationStatus::Copied
     }));
     assert!(report
-        .roms_working
+        .roms_other
         .iter()
         .any(|entry| { entry.rom_name == "clone.zip" && entry.status == OperationStatus::Copied }));
     assert!(!report
@@ -1027,15 +1027,17 @@ fn subset_keeps_parent_archive_outside_the_range() {
         .chain(&report.ignored_roms)
         .any(|entry| entry.rom_name == "aaa.zip"));
     assert_eq!(
-        fs::read(destination.join("other/parent.zip")).unwrap(),
+        fs::read(destination.join("roms/parent.zip")).unwrap(),
         b"parent"
     );
     assert_eq!(
-        fs::read(destination.join("working/clone.zip")).unwrap(),
+        fs::read(destination.join("rest/clone.zip")).unwrap(),
         b"clone"
     );
-    assert!(!destination.join("other/aaa.zip").exists());
-    assert!(!destination.join("working/aaa.zip").exists());
+    assert!(!destination.join("roms/aaa.zip").exists());
+    assert!(!destination.join("rest/aaa.zip").exists());
+    let names = fs::read_to_string(destination.join("selected.txt")).unwrap();
+    assert_eq!(names, "clone\n");
 }
 
 #[test]
@@ -1160,30 +1162,33 @@ fn resolves_shared_delta_and_device_disks_without_changing_category() {
 
     let report = catalog.copy_roms(&args).unwrap();
     assert_eq!(
-        fs::read(destination.join("chd_other/parent/base.chd")).unwrap(),
+        fs::read(destination.join("roms/parent/base.chd")).unwrap(),
         b"parent disk"
     );
     assert_eq!(
-        fs::read(destination.join("chd_working/delta/base.chd")).unwrap(),
+        fs::read(destination.join("roms/delta/base.chd")).unwrap(),
         b"delta disk"
     );
     assert_eq!(
-        fs::read(destination.join("chd_working/nodump/missing.chd")).unwrap(),
+        fs::read(destination.join("roms/nodump/missing.chd")).unwrap(),
         b"nodump disk"
     );
     assert_eq!(
-        fs::read(destination.join("chd_other/hdd/disk.chd")).unwrap(),
+        fs::read(destination.join("roms/hdd/disk.chd")).unwrap(),
         b"device disk"
     );
-    assert!(!destination.join("chd_other/optional").exists());
-    assert!(!destination.join("chd_working/optional").exists());
+    assert_eq!(
+        fs::read(destination.join("rest/optional/opt.chd")).unwrap(),
+        b"optional disk"
+    );
+    assert!(!destination.join("roms/optional").exists());
     assert!(report.roms_working.iter().any(|entry| {
         entry.rom_name == "gallery.zip" && entry.status == OperationStatus::Copied
     }));
     assert!(report
-        .ignored_roms
+        .roms_other
         .iter()
-        .any(|entry| entry.rom_name == "optional"));
+        .any(|entry| { entry.rom_name == "optional" && entry.status == OperationStatus::Copied }));
 }
 
 #[test]
@@ -1207,7 +1212,7 @@ fn copies_an_unzipped_rom_directory_that_has_no_disks() {
 
     catalog.copy_roms(&args).unwrap();
     assert_eq!(
-        fs::read(destination.join("working/plain/rom.bin")).unwrap(),
+        fs::read(destination.join("roms/plain/rom.bin")).unwrap(),
         b"rom"
     );
 }
@@ -1234,7 +1239,7 @@ fn map_copy_keeps_disk_directories_without_a_resolved_disk_set() {
 
     catalog.roms.copy_roms(&args).unwrap();
     assert_eq!(
-        fs::read(destination.join("chd_working/game/disk.chd")).unwrap(),
+        fs::read(destination.join("rest/game/disk.chd")).unwrap(),
         b"disk"
     );
 }
@@ -1364,7 +1369,7 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
 
     let plan = catalog.plan(&args).unwrap();
     assert_eq!(plan, catalog.plan(&args).unwrap());
-    assert_eq!(plan.version, 1);
+    assert_eq!(plan.version, 2);
     assert_eq!(plan.metadata.mame_build, "plan-test");
     assert_eq!(plan.metadata.emulation_policy, "playable");
     assert_eq!(plan.metadata.mame_xml_sha1.len(), 40);
@@ -1384,10 +1389,13 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
             && media.availability == Availability::Present
             && media.bytes == Some(5)
             && media
-                .reasons
-                .iter()
-                .any(|reason| reason == "Selected game clone")
+                .destination
+                .as_deref()
+                .unwrap()
+                .ends_with("rest/clone.zip")
+            && media.reasons == vec!["Not required by a selected game".to_string()]
     }));
+    assert!(plan.selected_names_path.ends_with("selected.txt"));
     assert!(plan.media.iter().any(|media| {
         media.machine == "parent"
             && media.role == MediaRole::Archive
@@ -1412,8 +1420,8 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
     let error = plan.recheck().unwrap_err().to_string();
     assert!(error.contains("Size changed"), "{error}");
 
-    fs::create_dir_all(destination.join("working")).unwrap();
-    fs::write(destination.join("working/clone.zip"), b"already").unwrap();
+    fs::create_dir_all(destination.join("rest")).unwrap();
+    fs::write(destination.join("rest/clone.zip"), b"already").unwrap();
     let conflicted = catalog.plan(&args).unwrap();
     assert!(conflicted
         .conflicts
@@ -1573,7 +1581,8 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("subset"), "{error}");
-    assert!(!destination.join("working/clone.zip").exists());
+    assert!(!destination.join("roms/clone.zip").exists());
+    assert!(!destination.join("rest/clone.zip").exists());
 
     let catalog = load().categorize().unwrap();
     let mut open = args.clone();
@@ -1588,7 +1597,7 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
         .into();
     catalog.copy_with_plan(&alias, &plan).unwrap();
     assert_eq!(
-        fs::read(destination.join("working/clone.zip")).unwrap(),
+        fs::read(destination.join("roms/clone.zip")).unwrap(),
         b"clone"
     );
 }

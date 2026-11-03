@@ -1,9 +1,9 @@
 //! # roms-curator
 //!
-//! `roms-curator`, at the moment, is a utility to help and sort MAME ROMs Sets.
-//! For example to create a working only ROM Set. It separates bios/working/not-working/other
-//! roms into sub-folders, so that it can, more easily, be added to frontends without filling
-//! the collection with stuff you don't want.
+//! `roms-curator` exports a merged MAME collection into two folders.
+//! `roms` holds every file a selected game needs. `rest` holds every other source
+//! file, so the original collection can be removed. `selected.txt` lists the
+//! selected machine names for a frontend.
 //!
 //! See [documentation](https://github.com/HugoTigre/roms-curator) for more details
 //! on how to use this as a command-line Application or as a Library.
@@ -72,10 +72,11 @@ type RomCategories = HashMap<String, String>;
 /// with no disks is not missing. Optional disks are omitted. Unresolved
 /// disk references are `missing` and do not change the game's category.
 /// A name-range subset still copies required archives and disk directories
-/// that fall outside the range. `Catalog::plan` returns a version-1 plan of
-/// that copy: selection reasons, file paths and sizes, missing media, and
-/// destination conflicts. `Plan::write` or `--plan-path` saves it.
-/// `copy_with_plan` rechecks the plan it is given before copying.
+/// that fall outside the range, and leaves other out-of-range names in the
+/// source. `Catalog::plan` returns a version-2 plan of that copy: selection
+/// reasons, `roms` and `rest` paths and sizes, missing media, and destination
+/// conflicts. `Plan::write` or `--plan-path` saves it. `copy_with_plan` rechecks
+/// the plan it is given, then copies and writes `selected.txt` when every copy succeeds.
 ///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {

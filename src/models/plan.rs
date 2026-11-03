@@ -1,6 +1,6 @@
 //! A reusable copy plan.
 //!
-//! Version 1 is JSON. Field order is the struct order below, and every list
+//! Version 2 is JSON. Field order is the struct order below, and every list
 //! the builder sorts is sorted again on read only by the builder. Two builds
 //! from the same catalog, arguments, and file bytes produce the same document.
 //! [`Plan::recheck`] compares those file bytes, source sizes, and destination
@@ -20,7 +20,7 @@ use crate::core::copying::destination_conflicts;
 use crate::core::paths::visit;
 
 /// Schema version written by this crate. [`Plan::read`] rejects any other value.
-pub const PLAN_VERSION: u32 = 1;
+pub const PLAN_VERSION: u32 = 2;
 
 /// Sorted plan for one catalog and one set of arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +31,8 @@ pub struct Plan {
     /// Source directories, in the order they were given.
     pub source_paths: Vec<String>,
     pub destination_path: String,
+    /// `selected.txt` beside `roms` and `rest`. One exact selected machine name per line.
+    pub selected_names_path: String,
     /// Empty when no report was requested. Conflict checks use this path.
     pub report_path: String,
     pub subset_start: String,
@@ -124,7 +126,7 @@ impl Plan {
         publish(path, &bytes)
     }
 
-    /// Read a version-1 plan.
+    /// Read a version-2 plan.
     pub fn read(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let file = File::open(path)
             .map_err(|error| format!("Cannot read plan {}: {error}", path.display()))?;
@@ -206,13 +208,9 @@ impl Plan {
             ..Args::default()
         }
         .build_destination_folders_path();
-        let directories = [
-            folders.working.as_path(),
-            folders.other.as_path(),
-            folders.chd_working.as_path(),
-            folders.chd_other.as_path(),
-        ];
-        let conflicts = destination_conflicts(&copies, &directories, &self.report_path)?;
+        let directories = [folders.roms.as_path(), folders.rest.as_path()];
+        let names = Path::new(&self.selected_names_path);
+        let conflicts = destination_conflicts(&copies, &directories, &self.report_path, names)?;
         if conflicts != self.conflicts {
             problems.push(format!(
                 "Destination conflicts changed: {}",
@@ -362,4 +360,39 @@ fn publish(path: &str, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         .persist_noclobber(path)
         .map_err(|error| format!("Cannot publish plan {path}: {}", error.error))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_rejects_a_version_1_plan() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("plan.json");
+        let document = r#"{
+            "version": 1,
+            "metadata": {
+                "mame_build": "0",
+                "emulation_policy": "playable",
+                "mame_xml_path": "",
+                "mame_xml_sha1": "",
+                "catver_path": "",
+                "catver_sha1": ""
+            },
+            "source_paths": [],
+            "destination_path": "destination",
+            "selected_names_path": "destination/selected.txt",
+            "report_path": "",
+            "subset_start": "",
+            "subset_end": "",
+            "games": [],
+            "media": [],
+            "unresolved": [],
+            "conflicts": []
+        }"#;
+        fs::write(&path, document).unwrap();
+        let error = Plan::read(&path).unwrap_err().to_string();
+        assert!(error.contains("Unsupported plan version 1"), "{error}");
+    }
 }
