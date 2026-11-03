@@ -8,6 +8,7 @@ use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
 use crate::models::roms::{
     Chd, Feature, FeatureStatus, RomData, RomStatus, Roms, Status, UNKNOWN_CATEGORY,
 };
+use crate::models::selection::EmulationPolicy;
 use crate::{parse_categories, read_categories, read_mame_xml};
 
 #[test]
@@ -458,4 +459,70 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
             && entry_error.to_string().contains("expected name=category"),
         "{entry_error}"
     );
+}
+
+#[test]
+fn selects_good_and_imperfect_arcade_machines() {
+    let source = Path::new("selection.xml");
+    let categories = parse_categories(
+        "[Category]\n\
+         both=Shooter / Gallery\n\
+         unemulated=Puzzle / Maze\n\
+         early=Shooter / Gallery\n\
+         rough=Shooter / Gallery\n\
+         pins=Shooter / Gallery\n\
+         slots=Slot Machine / Video Slot\n\
+         sy888b=Shooter / Gallery\n\
+         home=Computer / Home\n\
+         labeled=Shooter / Computer\n",
+        Path::new("catver.ini"),
+    )
+    .unwrap();
+    let doc = read_mame_xml(
+        r#"<mame build="fixture">
+            <machine name="both">
+                <feature type="sound" status="imperfect"/>
+                <feature type="graphics" status="imperfect"/>
+                <driver status="good" emulation="imperfect"/>
+            </machine>
+            <machine name="unemulated">
+                <feature type="sound" status="unemulated"/>
+                <feature type="graphics" status="unemulated"/>
+                <driver status="imperfect" emulation="good"/>
+            </machine>
+            <machine name="early"><driver status="preliminary" emulation="good"/></machine>
+            <machine name="rough"><driver status="good" emulation="preliminary"/></machine>
+            <machine name="pins" ismechanical="yes"><driver status="good" emulation="good"/></machine>
+            <machine name="slots">
+                <feature type="sound" status="imperfect"/>
+                <feature type="graphics" status="imperfect"/>
+                <driver status="good" emulation="imperfect"/>
+            </machine>
+            <machine name="sy888b"><driver status="good" emulation="good"/></machine>
+            <machine name="home"><driver status="good" emulation="good"/></machine>
+            <machine name="labeled"><driver status="good" emulation="good"/></machine>
+        </mame>"#,
+    )
+    .unwrap();
+
+    let parsed = parse(&doc, &categories, source).unwrap();
+    let playable = parsed.categorize().unwrap();
+    assert!(matches!(playable.roms["both"].category, Working));
+    assert!(matches!(playable.roms["unemulated"].category, Working));
+    assert!(matches!(playable.roms["slots"].category, Working));
+    assert!(matches!(playable.roms["labeled"].category, Working));
+    assert!(matches!(playable.roms["early"].category, NotWorking));
+    assert!(matches!(playable.roms["rough"].category, NotWorking));
+    assert!(matches!(playable.roms["pins"].category, NotWorking));
+    assert!(playable.roms["sy888b"].data.is_system);
+    assert!(matches!(playable.roms["sy888b"].category, System));
+    assert!(playable.roms["home"].data.is_system);
+    assert!(matches!(playable.roms["home"].category, System));
+
+    let parsed = parse(&doc, &categories, source).unwrap();
+    let strict = parsed.categorize_with(EmulationPolicy::Strict).unwrap();
+    assert!(matches!(strict.roms["both"].category, NotWorking));
+    assert!(matches!(strict.roms["unemulated"].category, NotWorking));
+    assert!(matches!(strict.roms["labeled"].category, Working));
+    assert!(matches!(strict.roms["home"].category, System));
 }

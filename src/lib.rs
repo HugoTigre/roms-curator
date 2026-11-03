@@ -56,6 +56,11 @@ type RomCategories = HashMap<String, String>;
 /// The returned catalog includes the MAME build and the names of machines that
 /// have no CatVer category. Those machines use the category `Unknown`.
 ///
+/// The default selection is the playable policy: driver status and emulation
+/// are each good or imperfect. Imperfect or unemulated sound and graphics
+/// features stay selected. Preliminary machines, mechanical machines, BIOS,
+/// devices, and non-arcade CatVer groups do not.
+///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {
         Some(build_progress_bar())

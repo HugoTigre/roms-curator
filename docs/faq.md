@@ -26,4 +26,4 @@ Use metadata matching your ROM collection and MAME version. Games that require C
 
 ### Why use both mame.xml and catver.ini?
 
-MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. The tool combines them to classify the collection.
+MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. Working machines are good or imperfect arcade games. CatVer groups such as computers and consoles are classified as systems, not dropped as genres.

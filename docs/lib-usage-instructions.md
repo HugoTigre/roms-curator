@@ -22,11 +22,13 @@ so that we can exclude from our collection a certain type of category.
    - At this point is we can go through the collection and
       include/exclude the ROMs that you want based on their categorization.
    - `rom.category` tells us if the ROM is working or not or if it is a bios
-     or system ROM.
-   - `rom.data.category` tells us the game type category, so if we wanted to
-     exclude casino games, we could check if `rom.data.category` contains `Slot Machine`,
-     among others. To know all possible categories the best way to check
-     [catver.ini](./../README.md) file.
+     or system ROM. Working means the driver status and emulation are good or
+     imperfect. The library does not drop a genre such as slots or shooters
+     for being that genre.
+   - `rom.data.category` is the CatVer category. A caller can still filter it.
+     For example, excluding categories that contain `Slot Machine` keeps those
+     machines out of a copied subset. The category names come from
+     [catver.ini](./../README.md).
 1. [Copy the ROMs](#copy-roms) to a directory.
    - If, in the previous step, we created a new collection with only the ROMs
      categories that we want, then only those will be copied.
@@ -56,6 +58,12 @@ collection paths and destination conflicts. Parsing arguments performs no writes
 stored as written. `catalog.unknown_categories` lists machines with no CatVer
 entry; those machines use the category `Unknown`. A disk with no `status`
 attribute is `ChdStatus::Good`.
+
+Selection uses the playable policy: driver status and emulation are each good
+or imperfect. Imperfect or unemulated sound and graphics stay selected.
+Preliminary machines, mechanical machines, BIOS, devices, and non-arcade CatVer
+groups do not. `ParsedMachines::categorize_with(EmulationPolicy::Strict)` keeps
+only machines whose driver and emulation are both good.
 
 For this, `Args` just needs `mame_xml_path` and `catver_path` paths.
 
