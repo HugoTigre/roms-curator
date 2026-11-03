@@ -68,7 +68,7 @@ It can also generate a report with all copied files and/or errors encountered.
 - **rest**: every other source file. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no selected game needs land here too. This folder is what makes it safe to delete the original collection.
 - **selected.txt**: the exact selected machine names, one per line, written after every file in the run has been copied. A failed copy does not publish this list. A frontend uses it. `mayday` can be in `roms` because `batlzone` is inside that zip, and still stay off the list. The report file must be a different path.
 
-A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. A bad or missing dump does not remove the game. A CHD that is not in the source is recorded as missing and is not copied; the game and its ROM archive stay.
+A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. A bad or missing dump does not remove the game. A CHD that is not in the source is recorded as missing and is not copied; the game and its ROM archive stay. The Markdown report lists those disks under **Missing CHDs**.
 
 A merged zip is copied whole, so unselected clones stored in it stay inside the file in `roms`. MAME uses only the `roms` folder. `rest` is the remainder, and a game left there will not run on its own when its parent archive moved into `roms`.
 

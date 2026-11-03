@@ -6,7 +6,7 @@
 //! [`Plan::recheck`] compares those file bytes, source sizes, and destination
 //! conflicts with the disk before a later copy.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -337,6 +337,68 @@ fn fills(role: MediaRole, path: &Path) -> bool {
         MediaRole::Disk => path.is_dir() || chd_file,
         MediaRole::Archive => !path.is_dir() && !chd_file,
     }
+}
+
+/// Every `(machine folder stem, disk name)` pair for a CHD under the source roots.
+pub(crate) fn chd_pairs_in_sources(
+    roots: &[String],
+) -> Result<HashSet<(String, String)>, Box<dyn std::error::Error>> {
+    let mut pairs = HashSet::new();
+    for root in roots {
+        let entries = fs::read_dir(root)
+            .map_err(|error| format!("Cannot read source directory {root}: {error}"))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("Cannot read entry in source directory {root}: {error}"))?
+                .path();
+            if !fills(MediaRole::Disk, &path) {
+                continue;
+            }
+            let Some(machine) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+            let machine = machine.to_ascii_lowercase();
+            if path.is_dir() {
+                index_chd_pairs_in_directory(&path, &machine, &mut pairs)?;
+            } else {
+                pairs.insert((machine.clone(), machine));
+            }
+        }
+    }
+    Ok(pairs)
+}
+
+fn index_chd_pairs_in_directory(
+    directory: &Path,
+    machine: &str,
+    pairs: &mut HashSet<(String, String)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for entry in fs::read_dir(directory)
+        .map_err(|error| format!("Cannot read CHD directory {}: {error}", directory.display()))?
+    {
+        let path = entry
+            .map_err(|error| {
+                format!(
+                    "Cannot read entry in CHD directory {}: {error}",
+                    directory.display()
+                )
+            })?
+            .path();
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("chd"))
+        {
+            if let Some(disk) = path.file_stem().and_then(|stem| stem.to_str()) {
+                pairs.insert((machine.to_string(), disk.to_ascii_lowercase()));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn source_has_chd(pairs: &HashSet<(String, String)>, machine: &str, disk: &str) -> bool {
+    pairs.contains(&(machine.to_ascii_lowercase(), disk.to_ascii_lowercase()))
 }
 
 fn publish(path: &str, bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
