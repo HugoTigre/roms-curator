@@ -18,7 +18,7 @@ The [software review](../software-review.md) contains the original findings.
 - [x] **BASE-02** Separate CD with intentional version-tag publishing and readable action versions.
 - [x] **BASE-03** Document [release rules](../releasing.md).
 - [x] **BASE-04** Create this implementation checklist.
-- [ ] **BASE-05** Confirm hosted Linux, Windows and macOS checks pass. Live publishing is verified only during an intentional release.
+- [x] **BASE-05** Confirm hosted Linux, Windows and macOS checks pass. Live publishing is verified only during an intentional release.
 
 ## Phase 1 Safe file operations
 
@@ -68,7 +68,6 @@ Proposed stack: **Tauri 2 + React/TypeScript + Vite**, sharing the Rust library 
 
 ## Remaining validation
 
-- Hosted Windows junction/case-alias coverage for SAFE-01.
 - Real MAME 0.289 collection export and frontend/device checks at VERIFY-01.
 - First intentional crates.io/GitHub release.
 
