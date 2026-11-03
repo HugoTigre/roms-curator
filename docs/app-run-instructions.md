@@ -6,7 +6,7 @@ __Index__
 - [Mandatory arguments](#mandatory-arguments)
 - [Categorize and create a new rom collection](#categorize-and-create-a-new-rom-collection)
 - [Simulate operation](#simulate-operation)
-- [Include/exclude useless CHD roms](#includeexclude-useless-chd-roms)
+- [CHD files](#chd-files)
 - [Include/exclude rom files](#includeexclude-rom-files)
 - [Putting everything together](#putting-everything-together)
 
@@ -58,16 +58,22 @@ roms-curator \
 --simulation=true
 ```
 
-## Include/exclude useless CHD roms
+## CHD files
 
-[CHD roms](https://fileinfo.com/extension/chd) are usually a separate
+[CHD files](https://fileinfo.com/extension/chd) are usually a separate
 collection, and they can take a lot of disk space (around 500Gb).
-For this reason when copying CHD files you can choose not to include
-`not working` CHD file, this way your new collection should be smaller.
+Copying keeps a disk directory only when a selected game needs that disk.
+A shared disk keeps the ancestor copy. A clone disk with its own content
+also keeps the parent's same-named non-optional disk, because a delta CHD
+cannot be read without it. When that parent has disks and none is that
+same-named disk, the parent disk is missing. A parent with no disks is not missing.
+A disk directory that no selected game needs is left out.
 
-By default, all CHD files are included, so that you don't miss anything
-in your new rom collection, but these files should not be needed if you
-only want to create a working collection set.
+`--ignore-not-working-chd` is still accepted so older commands parse. It no
+longer drops a disk a selected game needs, and it does not copy unused disks
+either. Dump quality is reported on `catalog.disks` and does not change the
+game's working category. A merge or delta parent that cannot be resolved is
+listed as missing media there.
 
 ```bash
 roms-curator \
@@ -75,8 +81,7 @@ roms-curator \
 --mame-xml-path=/mame/mame.xml \
 --catver-path=/mame/catver.ini \
 --source-path=/roms,/chd-roms \
---destination-path=/roms-new/ \
---ignore-not-working-chd=true
+--destination-path=/roms-new/
 ```
 
 ## Include/exclude rom files
@@ -97,8 +102,8 @@ roms-curator \
 ```
 
 In this example only names which sort at or after `a` and at or before `de` are
-copied, plus parent, BIOS, and device archives required by a selected game inside
-that range.
+copied, plus parent, BIOS, and device archives and required disk directories for
+a selected game inside that range.
 It's also possible to just set `subset-start` or `subset-end`.
 
 ## Putting everything together

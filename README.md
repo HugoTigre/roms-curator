@@ -68,8 +68,10 @@ Sub-directories include:
 - **working**: for all ROM files in working/playable state (excluding ROMs with CHD dependencies).
 - **other**: for all ROM files NOT in working/playable state (excluding ROMs with CHD dependencies). 
 This also includes BIOS, system, mechanical, and preliminary machines.
-- **chd_working**: for all CHDs and ROMs dependent on CHD files in working/playable state.
-- **chd_other**: for all CHDs and ROMs dependent on CHD files NOT in working/playable state.
+- **chd_working**: CHD directories required by a working game, and ROM archives of working machines that list disks.
+- **chd_other**: CHD directories required by a selected game when the machine that stores the disk is not working, and ROM archives of other machines that list disks.
+
+A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. Disk directories that no selected game needs are not copied. A bad or missing dump does not by itself move the game out of working.
 
 Having the ROMs categorized in these sub-folders will allow you to
 only import working ROMs (working folder) into your mame front-end,
@@ -77,9 +79,7 @@ while still giving MAME executable access to all ROMs by adding all
 directories as ROMs directories (this is needed because of ROM dependency,
 like a working ROM needing a bios ROM or a CHD ROM to work properly).
 
-You might also want to reduce the size of your collection and one way to
-achieve that without breaking anything is to delete the non-working CHD directories.
-Complete Set of CHD files can be `500+ GB`.
+Do not delete `chd_other` just because those machines are not games. A working clone can still need a parent CHD stored there.
 
 ## Application run instructions
 

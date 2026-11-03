@@ -71,9 +71,17 @@ requires its parent archive, not its own name. BIOS and other `romof` parents
 are separate archives. A device archive is included when that device, or a
 `cloneof` / `romof` parent of it, has ROM or disk entries. Names that are not
 in the catalog, and dependency cycles, are listed on `missing` and `cycles`.
-Dump quality does not change `rom.category`. `Catalog::copy_roms` still copies
-by category folder. A name-range subset skips other stems, then still copies
-required archives of selected games inside the range.
+Dump quality does not change `rom.category`. `catalog.disks` lists the CHD
+files that visible list needs. A `merge` or a matching sha1 keeps one ancestor
+copy. A clone disk with different content also names the parent's same-named
+non-optional disk a delta CHD needs. A differently named or optional parent
+disk is missing when that parent has disks. A parent with no disks is not missing.
+Optional disks are left out. Unresolved merges, delta parents, and
+devices are `catalog.disks.missing` and do not change `rom.category`.
+`Catalog::copy_roms` copies a disk directory only when a selected game needs
+it, and still copies required archives. A name-range subset skips other stems,
+then still copies required archives and disk directories of selected games
+inside the range. `--ignore-not-working-chd` does not drop a required disk.
 `ParsedMachines::categorize_with(EmulationPolicy::Strict)` narrows
 `catalog.selected` to machines whose driver and emulation are both good and leaves
 the rest in `catalog.roms`.

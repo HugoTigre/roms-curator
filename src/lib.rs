@@ -65,8 +65,14 @@ type RomCategories = HashMap<String, String>;
 /// Parent, device, ROM, and disk relationships are kept on each machine.
 /// `catalog.dependencies` names the merged archives those selected games need:
 /// a clone requires its parent archive, and BIOS and device archives stay separate.
-/// Missing names and cycles are listed there. A name-range subset still copies
-/// required archives that fall outside the range.
+/// Missing names and cycles are listed there. `catalog.disks` names the CHD
+/// files those games need, including one shared ancestor copy and the parent's
+/// same-named non-optional disk when a clone disk may be a delta. A differently
+/// named or optional parent disk is missing when that parent has disks. A parent
+/// with no disks is not missing. Optional disks are omitted. Unresolved
+/// disk references are `missing` and do not change the game's category.
+/// A name-range subset still copies required archives and disk directories
+/// that fall outside the range.
 ///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {

@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::core::args::Args;
 use crate::core::roms_service::{parse, RomsExt};
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
+use crate::models::disks::DiskKind;
 use crate::models::report::OperationStatus;
 use crate::models::roms::ChdStatus::{BadDump, Good, NoDump};
 use crate::models::roms::RomCategory::{Bios, NotWorking, System, Working};
@@ -1034,4 +1035,293 @@ fn subset_keeps_parent_archive_outside_the_range() {
     );
     assert!(!destination.join("other/aaa.zip").exists());
     assert!(!destination.join("working/aaa.zip").exists());
+}
+
+#[test]
+fn resolves_shared_delta_and_device_disks_without_changing_category() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="parent">
+            <disk name="base" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" status="baddump"/>
+            <disk name="extra" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="share" cloneof="parent" romof="parent">
+            <disk name="child" merge="base" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="delta" cloneof="parent" romof="parent">
+            <disk name="base" sha1="cccccccccccccccccccccccccccccccccccccccc"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="same" cloneof="parent" romof="parent">
+            <disk name="renamed" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="nodump">
+            <disk name="missing" sha1="dddddddddddddddddddddddddddddddddddddddd" status="nodump"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="optional">
+            <disk name="opt" sha1="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" optional="yes"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="hdd" isdevice="yes">
+            <disk name="disk" sha1="ffffffffffffffffffffffffffffffffffffffff"/>
+        </machine>
+        <machine name="gallery">
+            <device_ref name="hdd"/>
+            <device_ref name="missingdev"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="gap" cloneof="parent" romof="parent">
+            <disk name="child" merge="nope"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="unused">
+            <disk name="lonely" sha1="1111111111111111111111111111111111111111"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        "#,
+    );
+
+    assert!(matches!(catalog.roms["share"].category, Working));
+    assert!(catalog.roms["share"].selected);
+    assert!(matches!(catalog.roms["parent"].category, NotWorking));
+    assert!(!catalog.roms["parent"].selected);
+    assert!(matches!(catalog.roms["nodump"].category, Working));
+
+    let stored = |game: &str, kind: DiskKind, machine: &str, name: &str| {
+        catalog.disks.edges.iter().any(|edge| {
+            edge.game == game && edge.kind == kind && edge.machine == machine && edge.name == name
+        })
+    };
+    assert!(stored("share", DiskKind::Shared, "parent", "base"));
+    assert!(stored("same", DiskKind::Shared, "parent", "base"));
+    assert!(stored("delta", DiskKind::Own, "delta", "base"));
+    assert!(stored("delta", DiskKind::DeltaParent, "parent", "base"));
+    assert!(stored("nodump", DiskKind::Own, "nodump", "missing"));
+    assert!(catalog
+        .disks
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "nodump" && edge.status == NoDump }));
+    assert!(stored("gallery", DiskKind::Device, "hdd", "disk"));
+    assert!(!catalog
+        .disks
+        .disks
+        .iter()
+        .any(|disk| disk.name == "extra" || disk.name == "opt" || disk.name == "lonely"));
+    assert!(catalog.disks.missing.iter().any(|missing| {
+        missing.game == "gap" && missing.kind == DiskKind::Shared && missing.name == "nope"
+    }));
+    assert!(catalog.disks.missing.iter().any(|missing| {
+        missing.game == "gallery"
+            && missing.kind == DiskKind::Device
+            && missing.machine == "missingdev"
+    }));
+    assert_eq!(
+        catalog
+            .disks
+            .edges
+            .iter()
+            .find(|edge| edge.game == "share")
+            .map(|edge| edge.status),
+        Some(BadDump)
+    );
+
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(source.join("parent")).unwrap();
+    fs::write(source.join("parent/base.chd"), b"parent disk").unwrap();
+    fs::create_dir_all(source.join("delta")).unwrap();
+    fs::write(source.join("delta/base.chd"), b"delta disk").unwrap();
+    fs::create_dir_all(source.join("nodump")).unwrap();
+    fs::write(source.join("nodump/missing.chd"), b"nodump disk").unwrap();
+    fs::create_dir_all(source.join("hdd")).unwrap();
+    fs::write(source.join("hdd/disk.chd"), b"device disk").unwrap();
+    fs::create_dir_all(source.join("optional")).unwrap();
+    fs::write(source.join("optional/opt.chd"), b"optional disk").unwrap();
+    fs::write(source.join("gallery.zip"), b"gallery").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+    // `parent` sorts after this end. `delta`, `nodump`, `hdd`, and `gallery` sort inside it.
+    args.subset_start = "d".to_string();
+    args.subset_end = "optional".to_string();
+    args.ignore_not_working_chd = true;
+    assert!(Roms::is_excluded(&args, "parent"));
+    assert!(!Roms::is_excluded(&args, "delta"));
+    assert!(!Roms::is_excluded(&args, "nodump"));
+    assert!(!Roms::is_excluded(&args, "hdd"));
+
+    let report = catalog.copy_roms(&args).unwrap();
+    assert_eq!(
+        fs::read(destination.join("chd_other/parent/base.chd")).unwrap(),
+        b"parent disk"
+    );
+    assert_eq!(
+        fs::read(destination.join("chd_working/delta/base.chd")).unwrap(),
+        b"delta disk"
+    );
+    assert_eq!(
+        fs::read(destination.join("chd_working/nodump/missing.chd")).unwrap(),
+        b"nodump disk"
+    );
+    assert_eq!(
+        fs::read(destination.join("chd_other/hdd/disk.chd")).unwrap(),
+        b"device disk"
+    );
+    assert!(!destination.join("chd_other/optional").exists());
+    assert!(!destination.join("chd_working/optional").exists());
+    assert!(report.roms_working.iter().any(|entry| {
+        entry.rom_name == "gallery.zip" && entry.status == OperationStatus::Copied
+    }));
+    assert!(report
+        .ignored_roms
+        .iter()
+        .any(|entry| entry.rom_name == "optional"));
+}
+
+#[test]
+fn copies_an_unzipped_rom_directory_that_has_no_disks() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="plain">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(source.join("plain")).unwrap();
+    fs::write(source.join("plain/rom.bin"), b"rom").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    catalog.copy_roms(&args).unwrap();
+    assert_eq!(
+        fs::read(destination.join("working/plain/rom.bin")).unwrap(),
+        b"rom"
+    );
+}
+
+#[test]
+fn map_copy_keeps_disk_directories_without_a_resolved_disk_set() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="game">
+            <disk name="disk" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(source.join("game")).unwrap();
+    fs::write(source.join("game/disk.chd"), b"disk").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    catalog.roms.copy_roms(&args).unwrap();
+    assert_eq!(
+        fs::read(destination.join("chd_working/game/disk.chd")).unwrap(),
+        b"disk"
+    );
+}
+
+#[test]
+fn records_a_missing_delta_parent_when_no_same_named_disk_exists() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="solo">
+            <disk name="only" sha1="2222222222222222222222222222222222222222"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="alias" cloneof="solo" romof="solo">
+            <disk name="other" sha1="3333333333333333333333333333333333333333"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="optparent">
+            <disk name="base" sha1="4444444444444444444444444444444444444444" optional="yes"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="optclone" cloneof="optparent" romof="optparent">
+            <disk name="base" sha1="5555555555555555555555555555555555555555"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="empty">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        <machine name="added" cloneof="empty" romof="empty">
+            <disk name="own" sha1="6666666666666666666666666666666666666666"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+
+    assert!(catalog.disks.edges.iter().any(|edge| {
+        edge.game == "alias" && edge.kind == DiskKind::Own && edge.machine == "alias"
+    }));
+    assert!(catalog.disks.missing.iter().any(|missing| {
+        missing.game == "alias" && missing.kind == DiskKind::DeltaParent && missing.name == "other"
+    }));
+    assert!(!catalog
+        .disks
+        .disks
+        .iter()
+        .any(|disk| disk.machine == "solo"));
+    assert!(catalog.disks.edges.iter().any(|edge| {
+        edge.game == "optclone" && edge.kind == DiskKind::Own && edge.name == "base"
+    }));
+    assert!(catalog.disks.missing.iter().any(|missing| {
+        missing.game == "optclone"
+            && missing.kind == DiskKind::DeltaParent
+            && missing.name == "base"
+    }));
+    assert!(!catalog
+        .disks
+        .disks
+        .iter()
+        .any(|disk| disk.machine == "optparent"));
+    assert!(catalog
+        .disks
+        .edges
+        .iter()
+        .any(|edge| { edge.game == "added" && edge.kind == DiskKind::Own && edge.name == "own" }));
+    assert!(!catalog
+        .disks
+        .missing
+        .iter()
+        .any(|missing| missing.game == "added"));
+}
+
+#[test]
+fn records_a_disk_merge_cycle() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="a" cloneof="b">
+            <disk name="da" merge="db"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="b" cloneof="a">
+            <disk name="db" merge="da"/>
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        "#,
+    );
+    assert!(
+        !catalog.disks.cycles.is_empty(),
+        "{:?}",
+        catalog.disks.cycles
+    );
+    assert!(catalog.disks.disks.is_empty());
 }

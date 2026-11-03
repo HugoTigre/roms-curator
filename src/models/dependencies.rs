@@ -5,8 +5,8 @@ use super::roms::Roms;
 /// Why a merged archive is required by a selected game.
 ///
 /// Resolution assumes a merged collection: clone bytes live in the parent archive,
-/// and BIOS and device archives are separate files. Disk sharing and delta parents
-/// are not resolved here.
+/// and BIOS and device archives are separate files. Shared disks and delta parents
+/// are resolved in [`super::disks`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DependencyKind {
     /// The selected machine is not a clone. Its bytes are in its own archive.
