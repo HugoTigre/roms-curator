@@ -15,12 +15,13 @@ use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Com
 /// - source_path: Where the original ROM collection is. Can be more than one directory.
 /// - destination_path: Where to copy the roms.
 /// - report_path: Path to the generated report in markdown format. Ex: report.md.
+/// - plan_path: Path to a JSON copy plan. Ex: plan.json. Empty skips writing one.
 /// - ignore_not_working_chd: Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
 /// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
 /// - subset_start: If set, skip names that sort before this. Required archives and disk directories of selected games inside the range are still copied.
 /// - subset_end: If set, skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied.
 ///
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Args {
     /// Path to MAME ROM database file. See README on how to get this.
     pub mame_xml_path: String,
@@ -32,6 +33,9 @@ pub struct Args {
     pub destination_path: String,
     /// Path to the generated report in markdown format. Ex: report.md.
     pub report_path: String,
+    /// Path to the JSON copy plan. Empty skips the file.
+    /// A new path is written before copying. An existing file is checked and not replaced.
+    pub plan_path: String,
     /// Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
     pub ignore_not_working_chd: bool,
     /// Plan operations without creating output directories or copying ROMs.
@@ -107,6 +111,15 @@ pub fn command() -> Command {
                 .value_parser(validate_report_path),
         )
         .arg(
+            Arg::new("plan_path")
+                .help("JSON copy plan. A new path is written before copying. An existing file is checked and not replaced.")
+                .long("plan-path")
+                .num_args(1)
+                .required(false)
+                .default_value("")
+                .value_parser(validate_plan_path),
+        )
+        .arg(
             Arg::new("ignore_not_working_chd")
                 .help("Accepted for compatibility. Required CHD directories are kept and unused ones are omitted either way. (true|false)")
                 .long("ignore-not-working-chd")
@@ -177,6 +190,9 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
     let report: &String = matches
         .get_one("report_path")
         .expect("validated in args parser");
+    let plan: &String = matches
+        .get_one("plan_path")
+        .expect("validated in args parser");
     let ignore_not_working_chd: &bool = matches
         .get_one("ignore_not_working_chd")
         .expect("validated in args parser");
@@ -201,6 +217,7 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
         source_path: source_path.to_vec(),
         destination_path: destination.clone(),
         report_path: report.clone(),
+        plan_path: plan.clone(),
         ignore_not_working_chd: *ignore_not_working_chd,
         simulation: *simulation,
         subset_start: subset_start.clone(),
@@ -272,6 +289,16 @@ fn validate_report_path(value: &str) -> Result<String, String> {
     } else {
         Ok(path)
     }
+}
+
+fn validate_plan_path(value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Ok(value.to_string());
+    }
+    if !value.ends_with(".json") {
+        return Err("Plan file should have the extension .json".into());
+    }
+    Ok(sanitize_path(value))
 }
 
 fn validate_ignore_not_working_chd(value: &str) -> Result<bool, String> {

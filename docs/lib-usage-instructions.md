@@ -78,6 +78,7 @@ non-optional disk a delta CHD needs. A differently named or optional parent
 disk is missing when that parent has disks. A parent with no disks is not missing.
 Optional disks are left out. Unresolved merges, delta parents, and
 devices are `catalog.disks.missing` and do not change `rom.category`.
+`Catalog.policy` is the emulation policy that built the visible list. `Catalog::plan` builds a version-1 JSON plan for the same arguments. It names each selected game and the emulation-policy reason, and each archive or disk directory with its path, size, and whether the source file is present. Missing references and destination conflicts are on the plan. `plan.write` saves a new file and does not replace an existing one. `Plan::read` loads one. `Plan::recheck` compares the recorded metadata hashes, sizes, and conflicts with the disk. `Catalog::copy_with_plan` runs that recheck on the plan you pass in. `Catalog::copy_roms` builds one plan and rechecks that value.
 `Catalog::copy_roms` copies a disk directory only when a selected game needs
 it, and still copies required archives. A name-range subset skips other stems,
 then still copies required archives and disk directories of selected games

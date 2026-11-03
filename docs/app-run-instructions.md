@@ -7,6 +7,7 @@ __Index__
 - [Categorize and create a new rom collection](#categorize-and-create-a-new-rom-collection)
 - [Simulate operation](#simulate-operation)
 - [CHD files](#chd-files)
+- [Write a copy plan](#write-a-copy-plan)
 - [Include/exclude rom files](#includeexclude-rom-files)
 - [Putting everything together](#putting-everything-together)
 
@@ -82,6 +83,22 @@ roms-curator \
 --catver-path=/mame/catver.ini \
 --source-path=/roms,/chd-roms \
 --destination-path=/roms-new/
+```
+
+## Write a copy plan
+
+`--plan-path` writes a JSON file before copying when that path is new. It lists each selected game and why it was kept, each archive and disk directory the copy would use, whether that file is present, its source and destination paths, and its size. Missing files and destination conflicts are in the file. The copy then checks that written plan and stops when a hash, size, or conflict has changed. An existing plan file is read and checked the same way, and is not replaced.
+
+The plan file must end in `.json` and must sit outside the source and destination trees.
+
+```bash
+roms-curator \
+--mame-xml-path=/mame/mame.xml \
+--catver-path=/mame/catver.ini \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--plan-path=/mame/plan.json \
+--simulation=true
 ```
 
 ## Include/exclude rom files

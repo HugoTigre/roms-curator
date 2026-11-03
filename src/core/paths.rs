@@ -105,13 +105,25 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     if destination.exists() && !destination.is_dir() {
         return Err("Destination path needs to be a directory.".into());
     }
+    if !args.plan_path.is_empty() && args.plan_path == args.report_path {
+        return Err("Plan path and report path must be different files.".into());
+    }
+    // Include case-only aliases for missing path components, so a plan cannot
+    // land inside a future output directory on Windows.
+    let destination_key = PathBuf::from(destination.to_string_lossy().to_uppercase());
+    if !args.plan_path.is_empty() {
+        let plan = resolve(Path::new(&args.plan_path))?;
+        let plan_key = PathBuf::from(plan.to_string_lossy().to_uppercase());
+        if plan_key.starts_with(&destination_key)
+            || (destination.exists() && contains(&destination, &plan)?)
+        {
+            return Err("Plan path must be outside the output directory.".into());
+        }
+    }
     if args.simulation && !args.report_path.is_empty() {
         let report = resolve(Path::new(&args.report_path))?;
-        // Include case-only aliases for missing path components, so planning
-        // cannot create a report inside a future output directory on Windows.
         let report_key = PathBuf::from(report.to_string_lossy().to_uppercase());
-        let destination_key = PathBuf::from(destination.to_string_lossy().to_uppercase());
-        if report_key.starts_with(destination_key)
+        if report_key.starts_with(&destination_key)
             || (destination.exists() && contains(&destination, &report)?)
         {
             return Err("Simulation report must be outside the output directory.".into());
@@ -130,10 +142,10 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
                 "[source-path] and [destination-path] cannot be the same or overlap.".into(),
             );
         }
-        if !args.report_path.is_empty()
-            && contains(&source, &resolve(Path::new(&args.report_path))?)?
-        {
-            return Err("Report path must be outside every source directory.".into());
+        for (label, path) in [("Report", &args.report_path), ("Plan", &args.plan_path)] {
+            if !path.is_empty() && contains(&source, &resolve(Path::new(path))?)? {
+                return Err(format!("{label} path must be outside every source directory.").into());
+            }
         }
         visit(&source, &mut |path| {
             source_ids.insert(identity(path)?);
@@ -149,13 +161,16 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     if destination.exists() {
         visit(&destination, &mut reject_alias)?;
     }
-    if !args.report_path.is_empty() {
-        let report = resolve(Path::new(&args.report_path))?;
-        if report.exists() {
-            if !report.is_file() {
-                return Err("Report path must be a regular file.".into());
+    for (label, path) in [("Report", &args.report_path), ("Plan", &args.plan_path)] {
+        if path.is_empty() {
+            continue;
+        }
+        let sidecar = resolve(Path::new(path))?;
+        if sidecar.exists() {
+            if !sidecar.is_file() {
+                return Err(format!("{label} path must be a regular file.").into());
             }
-            reject_alias(&report)?;
+            reject_alias(&sidecar)?;
         }
     }
     Ok(())

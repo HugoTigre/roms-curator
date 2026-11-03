@@ -9,9 +9,13 @@ use log::error;
 use roxmltree::{Document, Node};
 
 use crate::core::args::Args;
-use crate::models::dependencies::DependencySet;
+use crate::models::dependencies::{DependencyKind, DependencySet};
 use crate::models::destination_folders::DestinationFolders;
-use crate::models::disks::DiskSet;
+use crate::models::disks::{DiskKind, DiskSet};
+use crate::models::plan::{
+    content_bytes, file_sha1, present_copies, Availability, MediaRole, MetadataIdentity, Plan,
+    PlannedGame, PlannedMedia, UnresolvedMedia, PLAN_VERSION,
+};
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
     Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
@@ -55,17 +59,48 @@ impl ParsedMachines {
             dependencies,
             disks,
             unknown_categories: self.unknown_categories,
+            policy,
         })
     }
 }
 
 impl Catalog {
+    /// Builds a sorted JSON plan for this catalog and these arguments.
+    ///
+    /// The plan lists selected games and their reasons, the archives and disk
+    /// directories the copy would use, sizes, and destination conflicts. It
+    /// does not create output directories or copy files.
+    pub fn plan(&self, args: &Args) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
+        build_plan(self, args)
+    }
+
     /// Copies source files into the category folders.
     ///
+    /// Builds one plan, rechecks that plan against the disk, then copies.
     /// A name-range subset skips stems outside the range, then still copies archives
     /// and disk directories required by a selected game inside the range.
-    /// [`RomsExt::copy_roms`] applies the range only.
+    /// [`RomsExt::copy_roms`] applies the range only and does not build a plan.
     pub fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
+        let plan = self.plan(args)?;
+        self.copy_with_plan(args, &plan)
+    }
+
+    /// Rechecks `plan` and copies. Use this for a plan just written or loaded
+    /// from `--plan-path`, so the copy does not build a second plan.
+    ///
+    /// The plan's sources, destination, subset, report path, metadata paths,
+    /// and emulation policy must match this catalog and these arguments.
+    /// Paths are compared after resolution. The copy still follows `args`.
+    pub fn copy_with_plan(
+        self,
+        args: &Args,
+        plan: &crate::models::plan::Plan,
+    ) -> Result<Report, Box<dyn Error>> {
+        require_same_run(&self, args, plan)?;
+        plan.recheck()?;
+        if let Some(conflict) = plan.conflicts.first() {
+            return Err(conflict.clone().into());
+        }
         let retain = retained_archives(&self.dependencies, args);
         let disks = required_disk_machines(&self.disks, args);
         copy_retaining(self.roms, args, &retain, Some(&disks))
@@ -232,6 +267,353 @@ pub trait RomsExt {
     /// cause on failure. Simulation performs no copy and returns `Ok(())`.
     fn copy_rom(path: &Path, destination: &Path, args: &Args) -> io::Result<()>;
     fn is_excluded(args: &Args, file_prefix: &str) -> bool;
+}
+
+fn require_same_run(catalog: &Catalog, args: &Args, plan: &Plan) -> Result<(), Box<dyn Error>> {
+    let mut problems = Vec::new();
+    let policy = match catalog.policy {
+        EmulationPolicy::Playable => "playable",
+        EmulationPolicy::Strict => "strict",
+    };
+    if plan.metadata.emulation_policy != policy {
+        problems.push(format!(
+            "emulation policy is {}, catalog is {policy}",
+            plan.metadata.emulation_policy
+        ));
+    }
+    if plan.subset_start != args.subset_start || plan.subset_end != args.subset_end {
+        problems.push(format!(
+            "subset is '{}'..'{}', arguments are '{}'..'{}'",
+            plan.subset_start, plan.subset_end, args.subset_start, args.subset_end
+        ));
+    }
+    same_path(
+        &mut problems,
+        "destination",
+        &plan.destination_path,
+        &args.destination_path,
+    )?;
+    same_path(
+        &mut problems,
+        "report path",
+        &plan.report_path,
+        &args.report_path,
+    )?;
+    same_path(
+        &mut problems,
+        "MAME XML",
+        &plan.metadata.mame_xml_path,
+        &args.mame_xml_path,
+    )?;
+    same_path(
+        &mut problems,
+        "CatVer",
+        &plan.metadata.catver_path,
+        &args.catver_path,
+    )?;
+    if plan.source_paths.len() != args.source_path.len() {
+        problems.push(format!(
+            "source list has {} directories, arguments have {}",
+            plan.source_paths.len(),
+            args.source_path.len()
+        ));
+    } else {
+        for (planned, given) in plan.source_paths.iter().zip(&args.source_path) {
+            same_path(&mut problems, "source", planned, given)?;
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Plan does not match this catalog and arguments: {}",
+            problems.join("; ")
+        )
+        .into())
+    }
+}
+
+fn same_path(
+    problems: &mut Vec<String>,
+    label: &str,
+    planned: &str,
+    given: &str,
+) -> Result<(), Box<dyn Error>> {
+    if planned.is_empty() || given.is_empty() {
+        if planned != given {
+            problems.push(format!("{label} is set on only one side"));
+        }
+        return Ok(());
+    }
+    let planned = crate::core::paths::resolve(Path::new(planned))?;
+    let given = crate::core::paths::resolve(Path::new(given))?;
+    if planned != given {
+        problems.push(format!(
+            "{label} {} does not match {}",
+            planned.display(),
+            given.display()
+        ));
+    }
+    Ok(())
+}
+
+fn build_plan(catalog: &Catalog, args: &Args) -> Result<Plan, Box<dyn Error>> {
+    crate::core::paths::validate(args)?;
+    let retain = retained_archives(&catalog.dependencies, args);
+    let disk_machines = required_disk_machines(&catalog.disks, args);
+    let folders = args.build_destination_folders_path();
+    let mut media = Vec::new();
+    let mut seen_archives = HashSet::new();
+    let mut seen_disks = HashSet::new();
+
+    for source in &args.source_path {
+        let mut entries = read_dir(source)
+            .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Cannot read entry in source directory {source}: {error}"))?;
+        entries.sort();
+        for path in entries {
+            let prefix = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| format!("Unsupported ROM name: {}", path.display()))?;
+            if plan_source_entry(
+                &path,
+                prefix,
+                &catalog.roms,
+                args,
+                &retain,
+                Some(&disk_machines),
+            ) != EntryPlan::Copy
+            {
+                continue;
+            }
+            let key = prefix.to_ascii_lowercase();
+            let rom = catalog
+                .roms
+                .get(&key)
+                .expect("copy plan only matches a known machine");
+            let destination = Roms::get_destination_folder(rom, &folders).join(
+                path.file_name()
+                    .ok_or_else(|| format!("Missing ROM filename: {}", path.display()))?,
+            );
+            let disk = is_disk_media(&path, !rom.data.chd.is_empty());
+            let role = if disk {
+                MediaRole::Disk
+            } else {
+                MediaRole::Archive
+            };
+            if disk {
+                seen_disks.insert(key.clone());
+            } else {
+                seen_archives.insert(key.clone());
+            }
+            let bytes = content_bytes(&path)?;
+            media.push(PlannedMedia {
+                machine: key.clone(),
+                role,
+                availability: Availability::Present,
+                source: Some(path.display().to_string()),
+                destination: Some(destination.display().to_string()),
+                bytes: Some(bytes),
+                reasons: media_reasons(&key, role, catalog, args),
+            });
+        }
+    }
+
+    for archive in required_archive_names(&catalog.dependencies, args) {
+        if seen_archives.contains(&archive) {
+            continue;
+        }
+        media.push(PlannedMedia {
+            machine: archive.clone(),
+            role: MediaRole::Archive,
+            availability: Availability::Missing,
+            source: None,
+            destination: None,
+            bytes: None,
+            reasons: media_reasons(&archive, MediaRole::Archive, catalog, args),
+        });
+    }
+    let mut disks = disk_machines.into_iter().collect::<Vec<_>>();
+    disks.sort();
+    for machine in disks {
+        if seen_disks.contains(&machine) {
+            continue;
+        }
+        media.push(PlannedMedia {
+            machine: machine.clone(),
+            role: MediaRole::Disk,
+            availability: Availability::Missing,
+            source: None,
+            destination: None,
+            bytes: None,
+            reasons: media_reasons(&machine, MediaRole::Disk, catalog, args),
+        });
+    }
+    media.sort();
+
+    let directories = [
+        folders.working.as_path(),
+        folders.other.as_path(),
+        folders.chd_working.as_path(),
+        folders.chd_other.as_path(),
+    ];
+    let conflicts = crate::core::copying::destination_conflicts(
+        &present_copies(&media),
+        &directories,
+        &args.report_path,
+    )?;
+
+    let mut games = Vec::new();
+    for name in &catalog.selected {
+        if Roms::is_excluded(args, name) {
+            continue;
+        }
+        let rom = &catalog.roms[name];
+        games.push(PlannedGame {
+            machine: name.clone(),
+            category: rom.data.category.clone(),
+            folder: rom.category.to_string(),
+            reason: catalog.policy.effect().to_string(),
+        });
+    }
+
+    Ok(Plan {
+        version: PLAN_VERSION,
+        metadata: MetadataIdentity {
+            mame_build: catalog.mame_build.clone(),
+            emulation_policy: match catalog.policy {
+                EmulationPolicy::Playable => "playable",
+                EmulationPolicy::Strict => "strict",
+            }
+            .to_string(),
+            mame_xml_path: args.mame_xml_path.clone(),
+            mame_xml_sha1: file_sha1(&args.mame_xml_path)?,
+            catver_path: args.catver_path.clone(),
+            catver_sha1: file_sha1(&args.catver_path)?,
+        },
+        source_paths: args.source_path.clone(),
+        destination_path: args.destination_path.clone(),
+        report_path: args.report_path.clone(),
+        subset_start: args.subset_start.clone(),
+        subset_end: args.subset_end.clone(),
+        games,
+        media,
+        unresolved: unresolved_media(catalog, args),
+        conflicts,
+    })
+}
+
+fn required_archive_names(dependencies: &DependencySet, args: &Args) -> Vec<String> {
+    let mut names = dependencies
+        .edges
+        .iter()
+        .filter(|edge| !Roms::is_excluded(args, &edge.game))
+        .map(|edge| edge.archive.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn media_reasons(machine: &str, role: MediaRole, catalog: &Catalog, args: &Args) -> Vec<String> {
+    let mut reasons = Vec::new();
+    if role == MediaRole::Archive
+        && catalog
+            .selected
+            .iter()
+            .any(|game| game.eq_ignore_ascii_case(machine) && !Roms::is_excluded(args, game))
+    {
+        reasons.push(format!("Selected game {machine}"));
+    }
+    if role == MediaRole::Archive {
+        for edge in &catalog.dependencies.edges {
+            if edge.archive.eq_ignore_ascii_case(machine) && !Roms::is_excluded(args, &edge.game) {
+                let why = match edge.kind {
+                    DependencyKind::Own => "Own archive",
+                    DependencyKind::Parent => "Parent archive",
+                    DependencyKind::RomParent => "ROM parent archive",
+                    DependencyKind::Device => "Device archive",
+                };
+                reasons.push(format!("{why} for {}", edge.game));
+            }
+        }
+    }
+    if role == MediaRole::Disk {
+        for edge in &catalog.disks.edges {
+            if edge.machine.eq_ignore_ascii_case(machine) && !Roms::is_excluded(args, &edge.game) {
+                let why = match edge.kind {
+                    DiskKind::Own => "Own disk",
+                    DiskKind::Shared => "Shared disk",
+                    DiskKind::DeltaParent => "Delta parent disk",
+                    DiskKind::Device => "Device disk",
+                };
+                reasons.push(format!("{why} {} for {}", edge.name, edge.game));
+            }
+        }
+    }
+    if reasons.is_empty() {
+        if let Some(rom) = catalog.roms.get(machine) {
+            reasons.push(format!("Category {}", rom.category));
+        }
+    }
+    reasons.sort();
+    reasons.dedup();
+    reasons
+}
+
+fn unresolved_media(catalog: &Catalog, args: &Args) -> Vec<UnresolvedMedia> {
+    let mut unresolved = Vec::new();
+    for missing in &catalog.dependencies.missing {
+        if Roms::is_excluded(args, &missing.game) {
+            continue;
+        }
+        let kind = match missing.kind {
+            DependencyKind::Own => "own-archive",
+            DependencyKind::Parent => "parent-archive",
+            DependencyKind::RomParent => "rom-parent-archive",
+            DependencyKind::Device => "device-archive",
+        };
+        unresolved.push(UnresolvedMedia {
+            game: missing.game.clone(),
+            kind: kind.to_string(),
+            name: missing.name.clone(),
+        });
+    }
+    for cycle in &catalog.dependencies.cycles {
+        unresolved.push(UnresolvedMedia {
+            game: String::new(),
+            kind: "dependency-cycle".to_string(),
+            name: cycle.join(" -> "),
+        });
+    }
+    for missing in &catalog.disks.missing {
+        if Roms::is_excluded(args, &missing.game) {
+            continue;
+        }
+        let kind = match missing.kind {
+            DiskKind::Own => "own-disk",
+            DiskKind::Shared => "shared-disk",
+            DiskKind::DeltaParent => "delta-parent",
+            DiskKind::Device => "device-disk",
+        };
+        unresolved.push(UnresolvedMedia {
+            game: missing.game.clone(),
+            kind: kind.to_string(),
+            name: missing.name.clone(),
+        });
+    }
+    for cycle in &catalog.disks.cycles {
+        unresolved.push(UnresolvedMedia {
+            game: String::new(),
+            kind: "disk-cycle".to_string(),
+            name: cycle.join(" -> "),
+        });
+    }
+    unresolved.sort();
+    unresolved
 }
 
 fn copy_retaining(

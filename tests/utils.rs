@@ -194,6 +194,7 @@ pub fn build_args(tag: &str, simulate: bool, subset_start: String, subset_end: S
         source_path: vec![ROMS_SOURCE_PATH.to_string(), CHDS_SOURCE_PATH.to_string()],
         destination_path,
         report_path,
+        plan_path: String::new(),
         ignore_not_working_chd,
         simulation,
         subset_start,
