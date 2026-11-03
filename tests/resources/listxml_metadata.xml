@@ -3,9 +3,12 @@
 <mame build="0.289 (mame0289)" debug="no" mameconfig="10">
     <machine name="parent" sourcefile="fixture.cpp">
         <description>Parent</description>
+        <rom name="parent.bin" size="16" crc="abcdabcd" sha1="dddddddddddddddddddddddddddddddddddddddd"/>
+        <rom name="merged.bin" size="8" merge="parent.bin"/>
         <disk name="shared" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" status="baddump"/>
         <disk name="childdisk" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" optional="yes" merge="shared"/>
-        <driver status="good" emulation="imperfect"/>
+        <device_ref name="z80"/>
+        <driver status="preliminary" emulation="preliminary"/>
     </machine>
     <machine name="clone" sourcefile="fixture.cpp" cloneof="parent" romof="parent">
         <description>Clone</description>
@@ -14,7 +17,21 @@
     </machine>
     <machine name="nodump" sourcefile="fixture.cpp">
         <description>No dump</description>
+        <rom name="missing.bin" status="nodump"/>
         <disk name="missing" sha1="cccccccccccccccccccccccccccccccccccccccc" status="nodump"/>
+        <driver status="good" emulation="good"/>
+    </machine>
+    <machine name="bios" sourcefile="fixture.cpp" isbios="yes">
+        <description>BIOS</description>
+        <driver status="preliminary" emulation="preliminary"/>
+    </machine>
+    <machine name="cpu" sourcefile="fixture.cpp" isdevice="yes" runnable="no">
+        <description>CPU</description>
+    </machine>
+    <machine name="usesbios" sourcefile="fixture.cpp" romof="bios">
+        <description>Uses BIOS</description>
+        <rom name="game.bin" bios="default" size="4" sha1="ffffffffffffffffffffffffffffffffffffffff" status="good" optional="no"/>
+        <device_ref name="cpu"/>
         <driver status="good" emulation="good"/>
     </machine>
     <machine name="nocat" sourcefile="fixture.cpp">

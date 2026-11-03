@@ -16,37 +16,47 @@ impl RomDataExt for RomData {
         Rom {
             data: self,
             category: RomCategory::Working,
+            selected: true,
         }
     }
     fn to_not_working_rom(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::NotWorking,
+            selected: false,
         }
     }
     fn to_bios_rom(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::Bios,
+            selected: false,
         }
     }
     fn to_system_rom(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::System,
+            selected: false,
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RomData {
     pub status: Option<RomStatus>,
     pub is_bios: bool,
     pub is_system: bool,
     pub is_mechanical: bool,
     pub features: Vec<Feature>,
+    /// Game parent from MAME `cloneof`.
     pub clone_of: Option<String>,
+    /// ROM parent from MAME `romof`. This is often the clone parent or a BIOS.
     pub rom_of: Option<String>,
+    /// `<device_ref name>` values, in document order.
+    pub devices: Vec<String>,
+    /// `<rom>` entries. These are dump requirements, not the copy-folder category.
+    pub roms: Vec<RomFile>,
     pub chd: Vec<Chd>,
     /// CatVer category. [`UNKNOWN_CATEGORY`] when the machine has no `[Category]` entry.
     pub category: String,
@@ -60,7 +70,15 @@ pub const UNKNOWN_CATEGORY: &str = "Unknown";
 pub struct Catalog {
     /// `build` attribute from the MAME XML, stored as written. Any version is accepted.
     pub mame_build: String,
+    /// Every parsed machine, including BIOS, devices, and games that were not selected.
     pub roms: Roms,
+    /// Visible game list: machine names selected from their own emulation policy, sorted by name.
+    ///
+    /// A parent, BIOS, or device can be absent from this list and still be named by
+    /// [`RomData::clone_of`], [`RomData::rom_of`], or [`RomData::devices`]. Disk and
+    /// `romof` demotion can still move a selected machine's copy folder; that pass
+    /// does not remove the name from this list.
+    pub selected: Vec<String>,
     /// Machine names with no `[Category]` entry, sorted by name.
     pub unknown_categories: Vec<String>,
 }
@@ -77,7 +95,10 @@ impl IntoIterator for Catalog {
 #[derive(Debug)]
 pub struct Rom {
     pub data: RomData,
+    /// Copy-folder classification. The dependency pass may change this without changing [`Rom::selected`].
     pub category: RomCategory,
+    /// This machine is on the visible game list. See [`Catalog::selected`].
+    pub selected: bool,
 }
 
 #[derive(Display, PartialEq, Eq, Debug)]
@@ -107,7 +128,7 @@ pub struct RomStatus {
     pub emulation: Status,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Chd {
     pub name: String,
     /// Dump quality. Omitted MAME `status` means [`ChdStatus::Good`].
@@ -119,7 +140,7 @@ pub struct Chd {
     pub sha1: Option<String>,
 }
 
-#[derive(Display, Debug, PartialEq, Eq, EnumString)]
+#[derive(Display, Debug, PartialEq, Eq, EnumString, Clone)]
 #[strum(ascii_case_insensitive)]
 pub enum ChdStatus {
     Good,
@@ -127,13 +148,32 @@ pub enum ChdStatus {
     BadDump,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+/// One MAME `<rom>` entry.
+///
+/// `status` uses the same dump vocabulary as a disk. Omitted `status` means [`ChdStatus::Good`].
+/// Omitted `size` is recorded as absent; a nodump entry often has no size.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct RomFile {
+    pub name: String,
+    pub size: Option<u64>,
+    pub crc: Option<String>,
+    pub sha1: Option<String>,
+    /// Parent ROM named by MAME `merge`, when this file shares that dump.
+    pub merge: Option<String>,
+    /// BIOS set named by MAME `bios`, when this file belongs to that set.
+    pub bios: Option<String>,
+    pub status: ChdStatus,
+    /// MAME `optional="yes"`. Omitted means the ROM is required.
+    pub optional: bool,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Feature {
     pub typ: String,
     pub status: FeatureStatus,
 }
 
-#[derive(Display, Debug, PartialEq, Eq, EnumString)]
+#[derive(Display, Debug, PartialEq, Eq, EnumString, Clone)]
 #[strum(ascii_case_insensitive)]
 pub enum FeatureStatus {
     Imperfect,

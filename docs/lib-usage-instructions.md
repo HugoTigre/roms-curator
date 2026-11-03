@@ -62,7 +62,12 @@ attribute is `ChdStatus::Good`.
 Selection uses the playable policy: driver status and emulation are each good
 or imperfect. Imperfect or unemulated sound and graphics stay selected.
 Preliminary machines, mechanical machines, BIOS, devices, and non-arcade CatVer
-groups do not. `ParsedMachines::categorize_with(EmulationPolicy::Strict)` keeps
+groups do not. `catalog.selected` is the visible game list, sorted by name.
+BIOS, devices, and other unselected machines remain in `catalog.roms`. A clone
+stays in `catalog.selected` when its parent is not. Each machine keeps its
+`cloneof` parent, `romof` parent, device references, ROM dumps, and disks.
+Copy folders still follow `rom.category`, so a dependency demotion can place a
+selected game in `other` until that pass is replaced. `ParsedMachines::categorize_with(EmulationPolicy::Strict)` keeps
 only machines whose driver and emulation are both good.
 
 For this, `Args` just needs `mame_xml_path` and `catver_path` paths.

@@ -59,7 +59,10 @@ type RomCategories = HashMap<String, String>;
 /// The default selection is the playable policy: driver status and emulation
 /// are each good or imperfect. Imperfect or unemulated sound and graphics
 /// features stay selected. Preliminary machines, mechanical machines, BIOS,
-/// devices, and non-arcade CatVer groups do not.
+/// devices, and non-arcade CatVer groups do not. `catalog.selected` is that
+/// visible game list. BIOS, devices, and other unselected machines stay in
+/// `catalog.roms`, and a clone stays selected when its parent does not.
+/// Parent, device, ROM, and disk relationships are kept on each machine.
 ///
 pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if args.progress {

@@ -45,6 +45,7 @@ The next release targets **0.2.0** because these changes break source compatibil
 - `UnfilteredRomsExt::categorize_roms` is removed. Categorization goes through `ParsedMachines::categorize`, which names the XML that was parsed.
 - Disk quality uses `ChdStatus::Good` for a good dump, including when `status` is omitted. `NoStatus` is gone.
 - `EXCLUDED_CATEGORIES`, `SPECIAL_CASES_DEMOTE`, and `SPECIAL_CASES_PROMOTE` are removed. Non-arcade groups and named system overrides live in `models::selection`. A CatVer group matches as a whole group, so `Computer` matches `Computer / Home` and `Shooter / Computer` stays selected. Named overrides such as `sy888b` are categorized as System even when their CatVer entry is an arcade genre. Sound and graphics features no longer change selection.
+- `RomData` stores device references and ROM dumps alongside the existing parent and disk links. `Rom.selected` and `Catalog.selected` are the visible game list. A clone stays on that list when its parent is not selected. Copy folders still follow `Rom.category`, including dependency demotion.
 
 Cargo treats 0.1.x updates as compatible, so these changes must not ship as 0.1.6. See [Cargo's compatibility rules](https://doc.rust-lang.org/cargo/reference/semver.html#change-categories).
 
