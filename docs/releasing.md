@@ -38,7 +38,14 @@ git push origin v0.2.0
 
 Follow the CD run and verify its release assets. Ordinary merges continue to run CI only. Bare tags such as `0.2.0` do not trigger CD; prerelease tags fail validation under this initial stable-release policy.
 
-The next release targets **0.2.0** because `RomsExt::copy_rom` now returns `io::Result<()>` and reports use explicit operation statuses and error details instead of a `moved` boolean. These break source compatibility with 0.1.5. Cargo treats 0.1.x updates as compatible, so these changes must not ship as 0.1.6. See [Cargo's compatibility rules](https://doc.rust-lang.org/cargo/reference/semver.html#change-categories).
+The next release targets **0.2.0** because these changes break source compatibility with 0.1.5:
+
+- `RomsExt::copy_rom` returns `io::Result<()>` and reports use explicit operation statuses and error details instead of a `moved` boolean.
+- `run` returns `Catalog` instead of `Roms` (`HashMap<String, Rom>`). `Catalog` iterates as that map and exposes `copy_roms`.
+- `UnfilteredRomsExt::categorize_roms` is removed. Categorization goes through `ParsedMachines::categorize`, which names the XML that was parsed.
+- Disk quality uses `ChdStatus::Good` for a good dump, including when `status` is omitted. `NoStatus` is gone.
+
+Cargo treats 0.1.x updates as compatible, so these changes must not ship as 0.1.6. See [Cargo's compatibility rules](https://doc.rust-lang.org/cargo/reference/semver.html#change-categories).
 
 These are instructions, not publication actions. Bumping the package version does not publish it. Version 0.1.5 already exists on crates.io; published versions cannot be replaced.
 

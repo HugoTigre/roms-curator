@@ -30,7 +30,7 @@ The [software review](../software-review.md) contains the original findings.
 ## Phase 2 Metadata and selection
 
 - [ ] **META-01** Parse CatVer sections, MAME version, disk defaults/quality/optionality and required fields explicitly. Preserve native paths.
-  - Done when sibling disks cannot inherit status, malformed input returns contextual errors and unknown categories/coverage are visible. Add a small 0.289 fixture; retain 0.244 as a regression.
+  - Done when sibling disks cannot inherit status, malformed input returns contextual errors and unknown categories/coverage are visible. Any MAME build string is accepted. Keep the 0.244 files as an older regression sample and cover current listxml and CatVer shape with a small fixture.
 - [ ] **SELECT-01** Separate emulation status from category preferences and overrides. Default to good/imperfect runnable arcade machines; remove the implicit two-feature exclusion.
   - Done when minor sound/graphics issues are accepted, preliminary machines are excluded and every rule/override explains its effect. Decide genre preferences here.
 - [ ] **MODEL-01** Separate selected machines from required storage. Retain parent, BIOS, device, ROM and disk relationships.

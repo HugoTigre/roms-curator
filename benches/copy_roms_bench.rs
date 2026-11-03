@@ -1,7 +1,6 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use roms_curator::core::roms_service::RomsExt;
 
 mod utils;
 

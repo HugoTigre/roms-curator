@@ -51,16 +51,16 @@ collection paths and destination conflicts. Parsing arguments performs no writes
 
 ## Categorize ROMs
 
-This will return a collection `HashMap<String, Rom>` with all the ROMs
-categorized, we can inspect [Rom](/src/models/roms.rs)
-struct to know more.
+`run` returns a [Catalog](/src/models/roms.rs). `catalog.roms` is the
+`HashMap<String, Rom>`. `catalog.mame_build` is the XML `build` attribute,
+stored as written. `catalog.unknown_categories` lists machines with no CatVer
+entry; those machines use the category `Unknown`. A disk with no `status`
+attribute is `ChdStatus::Good`.
 
 For this, `Args` just needs `mame_xml_path` and `catver_path` paths.
 
 ```rust
-use roms_curator::core::roms_service::RomsExt;
-
-let roms = roms_curator::run(&args).unwrap_or_else(|err| {
+let catalog = roms_curator::run(&args).unwrap_or_else(|err| {
     error!("Application error: {err}");
     process::exit(1);
 });
@@ -105,7 +105,7 @@ existing directory. `RomsExt::copy_rom` returns `io::Result<()>` with copy error
 context rather than a success boolean.
 
 ```rust
-let report = roms.copy_roms(&args).unwrap_or_else(|err| {
+let report = catalog.copy_roms(&args).unwrap_or_else(|err| {
     error!("Failed to copy roms: {err}");
     process::exit(1);
 });

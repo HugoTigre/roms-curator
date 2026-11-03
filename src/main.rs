@@ -7,7 +7,6 @@ use std::process::ExitCode;
 use log::{error, info};
 
 use roms_curator::core::args::build_args;
-use roms_curator::core::roms_service::RomsExt;
 use roms_curator::models::report::Report;
 use roms_curator::utils::set_up_logging;
 

@@ -11,127 +11,153 @@ use crate::core::args::Args;
 use crate::models::destination_folders::DestinationFolders;
 use crate::models::report::{OperationStatus, Report, ReportDetailEntry};
 use crate::models::roms::{
-    Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt, RomStatus, Roms,
-    Status, UnfilteredRoms, EXCLUDED_CATEGORIES, SPECIAL_CASES_DEMOTE, SPECIAL_CASES_PROMOTE,
+    Catalog, Chd, ChdStatus, Feature, FeatureStatus, Rom, RomCategory, RomData, RomDataExt,
+    RomStatus, Roms, Status, UnfilteredRoms, EXCLUDED_CATEGORIES, SPECIAL_CASES_DEMOTE,
+    SPECIAL_CASES_PROMOTE, UNKNOWN_CATEGORY,
 };
 use crate::utils::{build_progress_bar, copy_dir_recursive, ProgressBarEx};
 use crate::RomCategories;
 
-pub fn parse(doc: Document, categories: RomCategories) -> Result<UnfilteredRoms, Box<dyn Error>> {
-    let mut roms = UnfilteredRoms::new();
+#[derive(Debug)]
+pub struct ParsedMachines {
+    pub mame_build: String,
+    pub machines: UnfilteredRoms,
+    pub unknown_categories: Vec<String>,
+    source: PathBuf,
+}
 
-    // go through mame xml doc to build categorized collection with all roms
-    for node in doc.descendants() {
-        if node.is_element() && node.tag_name().name() == "machine" {
-            // found rom
-
-            let name =
-                match node.attribute("name") {
-                    Some(value) => value.to_string(),
-                    None => return Err(
-                        "Machine with no name!!! Probably something wrong with file, aborting..."
-                            .into(),
-                    ),
-                };
-
-            let is_bios = is_bios(node);
-            let is_system = is_system(node, &name, &categories);
-
-            let clone_of = node.attribute("cloneof").map(|value| value.to_string());
-
-            let is_mechanical = match node.attribute("ismechanical") {
-                Some(value) => value == "yes",
-                _ => false,
-            };
-
-            let rom_of = node.attribute("romof").map(|value| value.to_string());
-
-            let status = extract_status(node);
-
-            let features = extract_features(node);
-
-            let chd = extract_chd(node);
-
-            let category = match categories.get(&name) {
-                Some(v) => v.to_string(),
-                _ => "".to_string(),
-            };
-
-            roms.insert(
-                name,
-                RomData {
-                    status,
-                    is_bios,
-                    is_system,
-                    is_mechanical,
-                    features,
-                    clone_of,
-                    rom_of,
-                    chd,
-                    category,
-                },
-            );
-        }
+impl ParsedMachines {
+    pub fn categorize(self) -> Result<Catalog, Box<dyn Error>> {
+        Ok(Catalog {
+            mame_build: self.mame_build,
+            roms: categorize_machines(self.machines, &self.source)?,
+            unknown_categories: self.unknown_categories,
+        })
     }
+}
+
+impl Catalog {
+    pub fn copy_roms(self, args: &Args) -> Result<Report, Box<dyn Error>> {
+        self.roms.copy_roms(args)
+    }
+}
+
+pub fn parse(
+    doc: &Document,
+    categories: &RomCategories,
+    source: &Path,
+) -> Result<ParsedMachines, Box<dyn Error>> {
+    let mame_build = mame_build(doc, source)?.to_string();
+    let mut machines = UnfilteredRoms::new();
+    let mut unknown_categories = Vec::new();
+
+    for node in doc.descendants() {
+        if !(node.is_element() && node.tag_name().name() == "machine") {
+            continue;
+        }
+
+        let name = node
+            .attribute("name")
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "{}: machine is missing required attribute 'name'",
+                    source.display()
+                )
+            })?;
+        if machines.contains_key(name) {
+            return Err(format!(
+                "Machine '{name}' in {}: duplicate machine name",
+                source.display()
+            )
+            .into());
+        }
+
+        let category = match categories.get(name) {
+            Some(category) => category.clone(),
+            None => {
+                unknown_categories.push(name.to_string());
+                UNKNOWN_CATEGORY.to_string()
+            }
+        };
+        machines.insert(
+            name.to_string(),
+            RomData {
+                status: extract_status(node, name, source)?,
+                is_bios: is_bios(node),
+                is_system: is_system(node, name, categories),
+                is_mechanical: node.attribute("ismechanical") == Some("yes"),
+                features: extract_features(node, name, source)?,
+                clone_of: node.attribute("cloneof").map(str::to_string),
+                rom_of: node.attribute("romof").map(str::to_string),
+                chd: extract_disks(node, name, source)?,
+                category,
+            },
+        );
+    }
+
+    unknown_categories.sort();
+    Ok(ParsedMachines {
+        mame_build,
+        machines,
+        unknown_categories,
+        source: source.to_path_buf(),
+    })
+}
+
+fn categorize_machines(machines: UnfilteredRoms, source: &Path) -> Result<Roms, Box<dyn Error>> {
+    let mut roms = Roms::new();
+
+    for (name, data) in machines {
+        let categorized_rom = if data.is_bios {
+            (name, data.to_bios_rom())
+        } else if data.is_system {
+            (name, data.to_system_rom())
+        } else {
+            let status = data.status.clone().ok_or_else(|| {
+                format!(
+                    "Machine '{name}' in {}: missing required driver status and emulation",
+                    source.display()
+                )
+            })?;
+
+            if data.is_mechanical
+                || matches!(status.driver, Status::Preliminary)
+                || SPECIAL_CASES_DEMOTE.contains(&name)
+                || check_features_status(&name, &data.features)
+            {
+                (name, data.to_not_working_rom())
+            } else {
+                match status.emulation {
+                    Status::Imperfect | Status::Good => (name, data.to_working_rom()),
+                    _ => (name, data.to_not_working_rom()),
+                }
+            }
+        };
+
+        roms.insert(categorized_rom.0.clone(), categorized_rom.1);
+    }
+
+    // Re-assign categories based on rom dependencies
+    let to_demote = check_roms_dependency(&roms);
+
+    to_demote.iter().for_each(|name| {
+        roms.remove(name).and_then(|rom| {
+            if matches!(rom.category, RomCategory::Working) {
+                roms.insert(
+                    name.clone(),
+                    Rom {
+                        data: rom.data,
+                        category: RomCategory::NotWorking,
+                    },
+                )
+            } else {
+                None
+            }
+        });
+    });
 
     Ok(roms)
-}
-
-pub trait UnfilteredRomsExt {
-    fn categorize_roms(self) -> Result<Roms, Box<dyn Error>>;
-}
-
-impl UnfilteredRomsExt for UnfilteredRoms {
-    fn categorize_roms(self) -> Result<Roms, Box<dyn Error>> {
-        let mut roms = Roms::new();
-
-        // First split roms into categories
-        self.into_iter().for_each(|(name, data)| {
-            let categorized_rom = if data.is_bios {
-                (name, data.to_bios_rom())
-            } else if data.is_system {
-                (name, data.to_system_rom())
-            } else {
-                let status = data.status.clone().unwrap();
-
-                if data.is_mechanical
-                    || matches!(status.driver, Status::Preliminary)
-                    || SPECIAL_CASES_DEMOTE.contains(&name)
-                    || check_features_status(&name, &data.features)
-                {
-                    (name, data.to_not_working_rom())
-                } else {
-                    match status.emulation {
-                        Status::Imperfect | Status::Good => (name, data.to_working_rom()),
-                        _ => (name, data.to_not_working_rom()),
-                    }
-                }
-            };
-
-            roms.insert(categorized_rom.0.clone(), categorized_rom.1);
-        });
-
-        // Re-assign categories based on rom dependencies
-        let to_demote = check_roms_dependency(&roms);
-
-        to_demote.iter().for_each(|name| {
-            roms.remove(name).and_then(|rom| {
-                if matches!(rom.category, RomCategory::Working) {
-                    roms.insert(
-                        name.clone(),
-                        Rom {
-                            data: rom.data,
-                            category: RomCategory::NotWorking,
-                        },
-                    )
-                } else {
-                    None
-                }
-            });
-        });
-
-        Ok(roms)
-    }
 }
 
 pub trait RomsExt {
@@ -156,8 +182,6 @@ pub trait RomsExt {
     /// # use std::process;
     /// # use log::error;
     /// use roms_curator::core::args::build_args;
-    /// use roms_curator::core::roms_service::RomsExt;
-    /// use roms_curator::utils::build_progress_bar;
     ///
     /// let args = build_args().unwrap_or_else(|err| {
     ///     error!("Application error: {err}");
@@ -449,9 +473,8 @@ fn check_roms_dependency(roms: &Roms) -> Vec<String> {
                 }
             } else if !rom.data.chd.is_empty() {
                 rom.data.chd.iter().for_each(|chd| match chd.status {
-                    ChdStatus::BadDump => demote_working.push(name.clone()),
-                    ChdStatus::NoDump => demote_working.push(name.clone()),
-                    _ => (),
+                    ChdStatus::BadDump | ChdStatus::NoDump => demote_working.push(name.clone()),
+                    ChdStatus::Good => (),
                 })
             }
         });
@@ -507,107 +530,174 @@ fn check_features_status(name: &String, features: &[Feature]) -> bool {
     invalid > 1
 }
 
-fn extract_status(node: Node) -> Option<RomStatus> {
-    let mut driver_status: &str = "";
-    let mut emulation_status: &str = "";
-
-    for machine_node in node.children() {
-        if machine_node.tag_name().name() == "driver" {
-            if let Some(status) = machine_node.attribute("status") {
-                driver_status = status
-            }
-            if let Some(status) = machine_node.attribute("emulation") {
-                emulation_status = status
-            }
-        }
+/// Records the XML `build` attribute. The value is not checked against a supported version.
+fn mame_build<'a>(doc: &'a Document, source: &Path) -> Result<&'a str, Box<dyn Error>> {
+    let root = doc.root_element();
+    if root.tag_name().name() != "mame" {
+        return Err(format!("{}: root element must be 'mame'", source.display()).into());
     }
+    root.attribute("build")
+        .filter(|build| !build.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "{}: mame element is missing required attribute 'build'",
+                source.display()
+            )
+            .into()
+        })
+}
 
-    if driver_status.is_empty() || emulation_status.is_empty() {
-        None
-    } else {
-        let rom_status = RomStatus {
-            driver: Status::from_str(driver_status).unwrap(),
-            emulation: Status::from_str(emulation_status).unwrap(),
+fn worse_feature_status(own: FeatureStatus, overall: FeatureStatus) -> FeatureStatus {
+    match (own, overall) {
+        (FeatureStatus::Unemulated, _) | (_, FeatureStatus::Unemulated) => {
+            FeatureStatus::Unemulated
+        }
+        _ => FeatureStatus::Imperfect,
+    }
+}
+
+fn machine_error(source: &Path, machine: &str, detail: String) -> Box<dyn Error> {
+    format!("Machine '{machine}' in {}: {detail}", source.display()).into()
+}
+
+fn parse_enum<T: FromStr>(
+    source: &Path,
+    machine: &str,
+    attribute: &str,
+    value: &str,
+) -> Result<T, Box<dyn Error>> {
+    T::from_str(value)
+        .map_err(|_| machine_error(source, machine, format!("unknown {attribute} '{value}'")))
+}
+
+fn extract_status(
+    node: Node,
+    machine: &str,
+    source: &Path,
+) -> Result<Option<RomStatus>, Box<dyn Error>> {
+    let mut status = None;
+    for child in node.children() {
+        if child.tag_name().name() != "driver" {
+            continue;
+        }
+        let driver = required_attr(child, source, machine, "driver", "status")?;
+        let emulation = required_attr(child, source, machine, "driver", "emulation")?;
+        status = Some(RomStatus {
+            driver: parse_enum(source, machine, "driver status", driver)?,
+            emulation: parse_enum(source, machine, "driver emulation", emulation)?,
+        });
+    }
+    Ok(status)
+}
+
+fn extract_features(
+    node: Node,
+    machine: &str,
+    source: &Path,
+) -> Result<Vec<Feature>, Box<dyn Error>> {
+    let mut features = Vec::new();
+    for child in node.children() {
+        if child.tag_name().name() != "feature" {
+            continue;
+        }
+        let typ = required_attr(child, source, machine, "feature", "type")?;
+        let own = child.attribute("status").filter(|value| !value.is_empty());
+        let overall = child.attribute("overall").filter(|value| !value.is_empty());
+        // MAME's own flag is `status`. `overall` includes subdevices and can be worse.
+        let status = match (own, overall) {
+            (None, None) => {
+                return Err(machine_error(
+                    source,
+                    machine,
+                    "feature is missing required attribute 'status'".to_string(),
+                ));
+            }
+            (Some(value), None) => parse_enum(source, machine, "feature status", value)?,
+            (None, Some(value)) => parse_enum(source, machine, "feature overall", value)?,
+            (Some(own), Some(overall)) => {
+                let own = parse_enum(source, machine, "feature status", own)?;
+                let overall = parse_enum(source, machine, "feature overall", overall)?;
+                worse_feature_status(own, overall)
+            }
         };
-        Some(rom_status)
+        features.push(Feature {
+            typ: typ.to_string(),
+            status,
+        });
     }
+    Ok(features)
 }
 
-fn extract_features(node: Node) -> Vec<Feature> {
-    let mut feature_type: &str = "";
-    let mut feature_status: &str = "";
-    let mut features: Vec<Feature> = Vec::new();
-
-    for machine_node in node.children() {
-        if machine_node.tag_name().name() == "feature" {
-            if let Some(typ) = machine_node.attribute("type") {
-                feature_type = typ
-            }
-            if let Some(status) = machine_node.attribute("status") {
-                feature_status = status
-            } else if let Some(overall) = machine_node.attribute("overall") {
-                feature_status = overall
-            }
-            let feature = Feature {
-                typ: feature_type.to_string(),
-                status: FeatureStatus::from_str(feature_status).unwrap(),
-            };
-            features.push(feature)
+fn extract_disks(node: Node, machine: &str, source: &Path) -> Result<Vec<Chd>, Box<dyn Error>> {
+    let mut disks = Vec::new();
+    for child in node.children() {
+        if child.tag_name().name() != "disk" {
+            continue;
         }
+        // Each disk is parsed from its own attributes. A missing status is the
+        // MAME default, Good, and must not reuse the previous disk's status.
+        let name = required_attr(child, source, machine, "disk", "name")?;
+        let status = match child.attribute("status") {
+            None => ChdStatus::Good,
+            Some(value) => parse_enum(source, machine, "disk status", value)?,
+        };
+        let optional = match child.attribute("optional") {
+            None => false,
+            Some(value) if value.eq_ignore_ascii_case("yes") => true,
+            Some(value) if value.eq_ignore_ascii_case("no") => false,
+            Some(value) => {
+                return Err(machine_error(
+                    source,
+                    machine,
+                    format!("disk '{name}' has unknown optional value '{value}'"),
+                ));
+            }
+        };
+        disks.push(Chd {
+            name: name.to_string(),
+            status,
+            optional,
+            merge: child
+                .attribute("merge")
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            sha1: child
+                .attribute("sha1")
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+        });
     }
-
-    features
+    Ok(disks)
 }
 
-fn extract_chd(node: Node) -> Vec<Chd> {
-    let mut chd_status: &str = "";
-    let mut chd_name: &str = "";
-    let mut chd_vec: Vec<Chd> = Vec::new();
-
-    for machine_node in node.children() {
-        if machine_node.tag_name().name() == "disk" {
-            if let Some(name) = machine_node.attribute("name") {
-                chd_name = name
-            }
-            if let Some(status) = machine_node.attribute("status") {
-                chd_status = status
-            }
-            let chd = Chd {
-                name: chd_name.to_string(),
-                status: ChdStatus::from_str(chd_status).unwrap_or(ChdStatus::NoStatus),
-            };
-            chd_vec.push(chd);
-        }
-    }
-
-    chd_vec
+fn required_attr<'input>(
+    node: Node<'input, 'input>,
+    source: &Path,
+    machine: &str,
+    element: &str,
+    attribute: &str,
+) -> Result<&'input str, Box<dyn Error>> {
+    node.attribute(attribute)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            machine_error(
+                source,
+                machine,
+                format!("{element} is missing required attribute '{attribute}'"),
+            )
+        })
 }
 
 fn is_system(node: Node, name: &str, categories: &RomCategories) -> bool {
     if is_device(node) {
         return true;
-    };
-
-    let mut has_device = false;
-    let mut requires_chd = false;
-
-    {
-        match categories.get(name) {
-            Some(v) => EXCLUDED_CATEGORIES.iter().any(|cat| v.contains(cat)),
-            _ => {
-                // couldn't match category, determine by having device (void if entry is chd)
-                for machine_node in node.children() {
-                    if machine_node.tag_name().name() == "disk" {
-                        requires_chd = true;
-                    }
-                    if machine_node.tag_name().name() == "device" {
-                        has_device = true;
-                    }
-                }
-                has_device && !requires_chd
-            }
-        }
     }
+    // A missing category stays Unknown. It is not guessed to be a system.
+    categories.get(name).is_some_and(|category| {
+        EXCLUDED_CATEGORIES
+            .iter()
+            .any(|excluded| category.contains(excluded.as_str()))
+    })
 }
 
 fn is_bios(node: Node) -> bool {
