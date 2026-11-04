@@ -8,36 +8,32 @@ use super::selection::EmulationPolicy;
 pub type Roms = HashMap<String, Rom>;
 pub type UnfilteredRoms = HashMap<String, RomData>;
 
-pub trait RomDataExt {
-    fn to_working_rom(self) -> Rom;
-    fn to_not_working_rom(self) -> Rom;
-    fn to_bios_rom(self) -> Rom;
-    fn to_system_rom(self) -> Rom;
-}
-
-impl RomDataExt for RomData {
-    fn to_working_rom(self) -> Rom {
+impl RomData {
+    pub(crate) fn into_working(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::Working,
             selected: true,
         }
     }
-    fn to_not_working_rom(self) -> Rom {
+
+    pub(crate) fn into_not_working(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::NotWorking,
             selected: false,
         }
     }
-    fn to_bios_rom(self) -> Rom {
+
+    pub(crate) fn into_bios(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::Bios,
             selected: false,
         }
     }
-    fn to_system_rom(self) -> Rom {
+
+    pub(crate) fn into_system(self) -> Rom {
         Rom {
             data: self,
             category: RomCategory::System,

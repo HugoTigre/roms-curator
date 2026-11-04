@@ -57,7 +57,7 @@ The [software review](../software-review.md) contains the original findings.
   - Decision: a missing CHD does not remove the game or skip its ROM archive. The Markdown report adds a `Missing CHDs` section when the list is not empty, plus a summary count. Each row names the selected game, the machine folder, the disk, and why it is required. Rows come from `catalog.disks.missing` and from required disk edges whose CHD file is not in the source. The section is omitted when nothing is missing. Selection is unchanged.
 - [ ] **VERIFY-01** Verify selected names using MAME 0.289 against output paths only. Test reduced merged import/launching in LaunchBox and the intended Android setup.
   - Done when parent, merged clone, BIOS/device and CHD cases pass and failures identify missing media. Keep optional CHD integrity checks separate; auditing does not prove device performance.
-- [ ] **CLEAN-01** Separate CLI parsing from library configuration and filesystem work. Simplify map extensions/builders, remove unused report fields/clones and move test-only dependencies.
+- [x] **CLEAN-01** Separate CLI parsing from library configuration and filesystem work. Simplify map extensions/builders, remove unused report fields/clones and move test-only dependencies.
   - Done when a library caller can select/plan independently and reports distinguish games, archives, disks and operation outcomes.
 - [ ] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
   - Done when measurements justify any optimization and results remain unchanged.
