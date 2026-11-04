@@ -67,8 +67,8 @@ fn build_plan_preview_blocking(
     config.validate().map_err(|error| error.to_string())?;
 
     let mut status = |message: &str| emit(app, message);
-    let catalog = run_with_progress(&config, Some(&mut status))
-        .map_err(|error| error.to_string())?;
+    let catalog =
+        run_with_progress(&config, Some(&mut status)).map_err(|error| error.to_string())?;
 
     let plan: Plan = catalog
         .plan_with_progress(&config, Some(&mut status))
@@ -124,9 +124,7 @@ fn emit(app: &AppHandle, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use roms_curator::models::plan::{
-        MediaRole, MetadataIdentity, PlannedMedia, UnresolvedMedia,
-    };
+    use roms_curator::models::plan::{MediaRole, MetadataIdentity, PlannedMedia, UnresolvedMedia};
 
     #[test]
     fn metadata_override_requires_both_paths() {
