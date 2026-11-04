@@ -7,53 +7,10 @@ use std::path::Path;
 
 use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Command};
 
-/// Stores startup program arguments
-///
-/// ## Arguments
-/// - mamexml_path: Path to MAME ROM database file. See README on how to get this.
-/// - catver_path: Path to MAME support file. See README on how to get this.
-/// - source_path: Where the original ROM collection is. Can be more than one directory.
-/// - destination_path: Where to copy the roms.
-/// - report_path: Path to the generated report in markdown format. Ex: report.md.
-/// - plan_path: Path to a JSON copy plan. Ex: plan.json. Empty skips writing one.
-/// - ignore_not_working_chd: Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
-/// - simulation: If true, plan operations without writing source/output trees. An optional report labels entries Planned.
-/// - subset_start: If set, leave names that sort before this in the source. Required archives and disk directories of selected games inside the range are still copied into `roms`.
-/// - subset_end: If set, leave names that sort after this in the source. Required archives and disk directories of selected games inside the range are still copied into `roms`.
-///
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct Args {
-    /// Path to MAME ROM database file. See README on how to get this.
-    pub mame_xml_path: String,
-    /// Path to MAME support file. See README on how to get this.
-    pub catver_path: String,
-    /// Where the original ROM collection is. Can be more than one directory.
-    pub source_path: Vec<String>,
-    /// Where to copy the roms.
-    pub destination_path: String,
-    /// Path to the generated report in markdown format. Ex: report.md.
-    pub report_path: String,
-    /// Path to the JSON copy plan. Empty skips the file.
-    /// A new path is written before copying. An existing file is checked and not replaced.
-    pub plan_path: String,
-    /// Accepted for compatibility. Required disks are kept and unused disk directories are omitted either way.
-    pub ignore_not_working_chd: bool,
-    /// Plan operations without creating output directories or copying ROMs.
-    /// An optional report must be outside the source/output trees.
-    pub simulation: bool,
-    /// If set, skip names that sort before this. `Catalog::copy_roms` still copies required archives and disk directories of selected games inside the range.
-    pub subset_start: String,
-    /// If set, skip names that sort after this. `Catalog::copy_roms` still copies required archives and disk directories of selected games inside the range.
-    pub subset_end: String,
-    /// If true, show progress bar.
-    pub progress: bool,
-}
+pub use crate::core::config::ExportConfig;
 
-impl Args {
-    pub fn new() -> Args {
-        Default::default()
-    }
-}
+/// Alias for [`ExportConfig`]. Prefer [`ExportConfig`] in new library code.
+pub type Args = ExportConfig;
 
 pub fn command() -> Command {
     Command::new(crate_name!())
@@ -168,7 +125,7 @@ pub fn command() -> Command {
         )
 }
 
-pub fn build_args() -> Result<Args, Box<dyn Error>> {
+pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
     let command = command();
     let matches = command.get_matches();
 
@@ -211,7 +168,7 @@ pub fn build_args() -> Result<Args, Box<dyn Error>> {
         .get_one("progress")
         .expect("validated in args parser");
 
-    let args = Args {
+    let args = ExportConfig {
         mame_xml_path: mame_xml_path.clone(),
         catver_path: catver_path.clone(),
         source_path: source_path.to_vec(),

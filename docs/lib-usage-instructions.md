@@ -35,21 +35,26 @@ so that we can exclude from our collection a certain type of category.
 
 ## Config / Arguments
 
-Build the `Args` struct:
+Library callers build [`ExportConfig`](../../src/core/config.rs) and call
+[`ExportConfig::validate`](../../src/core/config.rs) before planning or copying.
+The CLI uses the same struct via [`build_args`](../../src/core/args.rs).
 
 ```rust
-use roms_curator::core::args::build_args;
+use roms_curator::ExportConfig;
 
-let args = build_args().unwrap_or_else(|err| {
-    error!("Application error: {err}");
-    process::exit(1);
-});
+let mut config = ExportConfig {
+    mame_xml_path: "mame.xml".into(),
+    catver_path: "catver.ini".into(),
+    source_path: vec!["/roms".into()],
+    destination_path: "/export".into(),
+    ..ExportConfig::default()
+};
+config.validate().unwrap();
 ```
 
-Arguments are build from command line input arguments, see [here](app-run-instructions.md)
-for more details on that including minimum required arguments. We can also manually build
-the `Args` struct. This skips CLI value parsing; `copy_roms` still validates
-collection paths and destination conflicts. Parsing arguments performs no writes.
+For a command-line program, use `roms_curator::core::args::build_args()` instead.
+That parses flags and runs the same validation. `Args` is a type alias for
+`ExportConfig`.
 
 ## Categorize ROMs
 
@@ -84,10 +89,10 @@ devices are `catalog.disks.missing` and do not change `rom.category`.
 `catalog.selected` to machines whose driver and emulation are both good and leaves
 the rest in `catalog.roms`.
 
-For this, `Args` just needs `mame_xml_path` and `catver_path` paths.
+For this, `ExportConfig` just needs `mame_xml_path` and `catver_path` paths.
 
 ```rust
-let catalog = roms_curator::run(&args).unwrap_or_else(|err| {
+let catalog = roms_curator::run(&config).unwrap_or_else(|err| {
     error!("Application error: {err}");
     process::exit(1);
 });
@@ -95,8 +100,7 @@ let catalog = roms_curator::run(&args).unwrap_or_else(|err| {
 
 ## Copy ROMs
 
-To copy ROMs `Args` needs all the mandatory properties,
-see [here](#config--arguments).
+To copy ROMs, `ExportConfig` needs all mandatory fields; see [here](#config--arguments).
 
 Invoking `copy_roms` will return a `Report` struct, this can be
 used to create a report file in Markdown format.
@@ -118,21 +122,26 @@ completed ROMs were kept and will not be replaced on a rerun. Report files are
 published only after a successful flushed write, so failed writes leave no
 partial report at the requested path. Existing reports are never replaced.
 
-With `args.simulation = true`, `copy_roms` returns a simulation report without
+With `config.simulation = true`, `copy_roms` returns a simulation report without
 creating output directories or copying files. Entries use `OperationStatus::Planned`;
-normal outcomes are `Copied`, `Failed` or `Ignored`. The old `moved` boolean has
-been replaced by `ReportDetailEntry.status`. `report.simulation` identifies the
-mode, and copied/failed counts exclude Planned entries. Simulation does not test
-write access or available space. Only write a report if requested, outside both
-source/output trees; a CLI report path is optional.
+normal outcomes are `Copied`, `Failed` or `Ignored`. Each entry also has
+`ReportDetailEntry.media_kind` (`Archive`, `DiskDirectory`, or `OtherFile`).
+The summary lists selected games separately from archives and disk directories in
+each export folder. `report.simulation` identifies the mode, and copied/failed
+counts exclude Planned entries. Simulation does not test write access or available
+space. Only write a report if requested, outside both source/output trees; a CLI
+report path is optional.
 
 The lower-level `utils::copy_dir_recursive` requires a destination path that does
 not exist yet, with an existing parent directory. It does not merge into an
-existing directory. `RomsExt::copy_rom` returns `io::Result<()>` with copy error
-context rather than a success boolean.
+existing directory. Copy failures surface as `OperationStatus::Failed` with paths
+and causes on the report entry.
+
+`copy_all_to_rest` copies every source entry into `rest` without dependency
+resolution or `selected.txt`. Prefer `Catalog::copy_roms` for a curated export.
 
 ```rust
-let report = catalog.copy_roms(&args).unwrap_or_else(|err| {
+let report = catalog.copy_roms(&config).unwrap_or_else(|err| {
     error!("Failed to copy roms: {err}");
     process::exit(1);
 });

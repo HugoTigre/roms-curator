@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use same_file::Handle;
 
-use super::args::Args;
+use super::config::ExportConfig;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -97,20 +97,20 @@ pub(crate) fn visit(path: &Path, check: &mut impl FnMut(&Path) -> Result<()>) ->
     Ok(())
 }
 
-pub(crate) fn validate(args: &Args) -> Result<()> {
-    if args.source_path.is_empty() || args.destination_path.is_empty() {
+pub(crate) fn validate(config: &ExportConfig) -> Result<()> {
+    if config.source_path.is_empty() || config.destination_path.is_empty() {
         return Err("Source and destination paths are required.".into());
     }
-    let destination = resolve(Path::new(&args.destination_path))?;
+    let destination = resolve(Path::new(&config.destination_path))?;
     if destination.exists() && !destination.is_dir() {
         return Err("Destination path needs to be a directory.".into());
     }
-    if !args.plan_path.is_empty() && args.plan_path == args.report_path {
+    if !config.plan_path.is_empty() && config.plan_path == config.report_path {
         return Err("Plan path and report path must be different files.".into());
     }
-    if !args.report_path.is_empty() {
-        let report = resolve(Path::new(&args.report_path))?;
-        let names = resolve(&args.selected_names_path())?;
+    if !config.report_path.is_empty() {
+        let report = resolve(Path::new(&config.report_path))?;
+        let names = resolve(&config.selected_names_path())?;
         if report.as_os_str().eq_ignore_ascii_case(names.as_os_str()) {
             return Err("Report path and selected names path must be different files.".into());
         }
@@ -118,8 +118,8 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     // Include case-only aliases for missing path components, so a plan cannot
     // land inside a future output directory on Windows.
     let destination_key = PathBuf::from(destination.to_string_lossy().to_uppercase());
-    if !args.plan_path.is_empty() {
-        let plan = resolve(Path::new(&args.plan_path))?;
+    if !config.plan_path.is_empty() {
+        let plan = resolve(Path::new(&config.plan_path))?;
         let plan_key = PathBuf::from(plan.to_string_lossy().to_uppercase());
         if plan_key.starts_with(&destination_key)
             || (destination.exists() && contains(&destination, &plan)?)
@@ -127,8 +127,8 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
             return Err("Plan path must be outside the output directory.".into());
         }
     }
-    if args.simulation && !args.report_path.is_empty() {
-        let report = resolve(Path::new(&args.report_path))?;
+    if config.simulation && !config.report_path.is_empty() {
+        let report = resolve(Path::new(&config.report_path))?;
         let report_key = PathBuf::from(report.to_string_lossy().to_uppercase());
         if report_key.starts_with(&destination_key)
             || (destination.exists() && contains(&destination, &report)?)
@@ -137,7 +137,7 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
         }
     }
     let mut source_ids = HashSet::new();
-    for source in &args.source_path {
+    for source in &config.source_path {
         let source = fs::canonicalize(source)?;
         if !source.is_dir() {
             return Err(format!("Source must be a directory: {}", source.display()).into());
@@ -149,7 +149,7 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
                 "[source-path] and [destination-path] cannot be the same or overlap.".into(),
             );
         }
-        for (label, path) in [("Report", &args.report_path), ("Plan", &args.plan_path)] {
+        for (label, path) in [("Report", &config.report_path), ("Plan", &config.plan_path)] {
             if !path.is_empty() && contains(&source, &resolve(Path::new(path))?)? {
                 return Err(format!("{label} path must be outside every source directory.").into());
             }
@@ -168,7 +168,7 @@ pub(crate) fn validate(args: &Args) -> Result<()> {
     if destination.exists() {
         visit(&destination, &mut reject_alias)?;
     }
-    for (label, path) in [("Report", &args.report_path), ("Plan", &args.plan_path)] {
+    for (label, path) in [("Report", &config.report_path), ("Plan", &config.plan_path)] {
         if path.is_empty() {
             continue;
         }

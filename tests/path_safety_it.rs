@@ -5,7 +5,7 @@ use assert_cmd::Command;
 #[cfg(unix)]
 use predicates::prelude::PredicateBooleanExt;
 use roms_curator::core::args::Args;
-use roms_curator::core::roms_service::RomsExt;
+use roms_curator::core::roms_service::copy_all_to_rest;
 use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::Roms;
 
@@ -65,8 +65,8 @@ impl Collection {
     }
 
     fn copy_conflict(&self, message: &str) {
-        let roms = roms_curator::run(&self.args).unwrap();
-        let error = roms.copy_roms(&self.args).unwrap_err().to_string();
+        let catalog = roms_curator::run(&self.args).unwrap();
+        let error = catalog.copy_roms(&self.args).unwrap_err().to_string();
         assert!(error.contains(message), "{error}");
         // A rejected copy must not publish the selected-name list.
         assert!(!self.root.join("output/selected.txt").exists());
@@ -84,7 +84,7 @@ impl Collection {
     fn rejected(&self) {
         // Library callers constructing Args manually must receive the same protection.
         let report_before = fs::read(self.root.join("report.md")).ok();
-        assert!(Roms::new().copy_roms(&self.args).is_err());
+        assert!(copy_all_to_rest(Roms::new(), &self.args).is_err());
         self.cli().assert().failure();
         assert_eq!(
             fs::read(self.root.join("source/005.zip")).unwrap(),
@@ -718,22 +718,22 @@ fn library_records_copy_paths_and_cause_and_retains_successful_copies() {
     report.to_file(&collection.args.report_path).unwrap();
     let contents = fs::read_to_string(&collection.args.report_path).unwrap();
     assert!(contents.contains(error));
-    assert!(contents.contains("### Copied to Rest folder"));
-    assert!(contents.contains("### Failed copies to ROMs folder"));
-    assert!(contents.contains("- ROMs copied: 1"));
+    assert!(contents.contains("### Copied to rest folder"));
+    assert!(contents.contains("### Failed copies to required folder (roms)"));
+    assert!(contents.contains("- Files copied: 1"));
     assert!(contents.contains("- Failed copies: 1"));
     let copied_other = contents
-        .split_once("### Copied to Rest folder")
+        .split_once("### Copied to rest folder")
         .unwrap()
         .1
-        .split_once("### Failed copies to ROMs folder")
+        .split_once("### Failed copies to required folder (roms)")
         .unwrap()
         .0;
     let failed_working = contents
-        .split_once("### Failed copies to ROMs folder")
+        .split_once("### Failed copies to required folder (roms)")
         .unwrap()
         .1
-        .split_once("### Failed copies to Rest folder")
+        .split_once("### Failed copies to rest folder")
         .unwrap()
         .0;
     assert!(copied_other.contains("100lions.zip"));
@@ -788,16 +788,16 @@ fn cli_copy_failures_return_nonzero_with_and_without_a_report() {
         if requested_report {
             let contents = fs::read_to_string(&collection.args.report_path).unwrap();
             assert!(contents.contains("All OK: false"));
-            assert!(contents.contains("### Copied to Rest folder"));
-            assert!(contents.contains("### Failed copies to ROMs folder"));
-            assert!(contents.contains("- ROMs copied: 1"));
+            assert!(contents.contains("### Copied to rest folder"));
+            assert!(contents.contains("### Failed copies to required folder (roms)"));
+            assert!(contents.contains("- Files copied: 1"));
             assert!(contents.contains("- Failed copies: 1"));
             assert!(contents.contains("Failed to copy"));
             let failed_working = contents
-                .split_once("### Failed copies to ROMs folder")
+                .split_once("### Failed copies to required folder (roms)")
                 .unwrap()
                 .1
-                .split_once("### Failed copies to Rest folder")
+                .split_once("### Failed copies to rest folder")
                 .unwrap()
                 .0;
             assert!(failed_working.contains("005.zip"));
@@ -886,9 +886,9 @@ fn simulation_leaves_missing_output_ancestors_absent_with_or_without_a_report() 
         );
         if requested_report {
             let contents = fs::read_to_string(&collection.args.report_path).unwrap();
-            assert!(contents.contains("Planned for ROMs folder"));
-            assert!(contents.contains("area51 (chd)"));
-            assert!(contents.contains("ROMs copied: 0"));
+            assert!(contents.contains("Planned for required folder (roms)"));
+            assert!(contents.contains("area51 (disk)"));
+            assert!(contents.contains("Files copied: 0"));
             assert!(contents.contains("Failed copies: 0"));
             assert!(!contents.contains("### Copied to"));
         }
@@ -951,8 +951,7 @@ fn simulation_reports_must_be_outside_existing_and_future_output_trees() {
                 fs::write(collection.root.join("output/keep"), b"keep bytes").unwrap();
             }
             let before = tree_snapshot(&collection.root);
-            let error = Roms::new()
-                .copy_roms(&collection.args)
+            let error = copy_all_to_rest(Roms::new(), &collection.args)
                 .unwrap_err()
                 .to_string();
             assert!(
@@ -1001,7 +1000,7 @@ fn simulation_report_failure_keeps_trees_unchanged_and_prints_a_planned_fallback
         .stderr(predicates::str::contains(
             "Simulation: Planned operations only",
         ))
-        .stderr(predicates::str::contains("ROMs copied: 0"));
+        .stderr(predicates::str::contains("Files copied: 0"));
     assert!(!String::from_utf8_lossy(&assertion.get_output().stdout)
         .contains("Any ROM files already copied"));
     assert_eq!(tree_snapshot(&collection.root), before);

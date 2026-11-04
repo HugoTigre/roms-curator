@@ -9,7 +9,6 @@
 //! on how to use this as a command-line Application or as a Library.
 //!
 
-use crate::core::args::Args;
 use crate::core::roms_service::parse;
 use crate::models::roms::Catalog;
 use crate::utils::{build_progress_bar, ProgressBarEx};
@@ -23,6 +22,8 @@ pub mod core;
 pub mod models;
 pub mod utils;
 
+pub use crate::core::config::ExportConfig;
+
 type RomCategories = HashMap<String, String>;
 
 ///
@@ -32,26 +33,29 @@ type RomCategories = HashMap<String, String>;
 /// with all roms categorized according to the version of the
 /// files provided. This collection can then be used to copy
 /// only the intended roms creating a new curated ROM collection.
-/// See [copy_roms](core::roms_service::RomsExt::copy_roms).
+/// See [`Catalog::copy_roms`].
 ///
 /// # Examples
 ///
 /// ```no_run
 /// # use std::{env, process};
 /// # use log::error;
-/// use roms_curator::core::args::build_args;
+/// use roms_curator::{ExportConfig, run};
 ///
-/// // build args from command line arguments
-/// let args = build_args().unwrap_or_else(|err| {
-///     error!("Application error: {err}");
-///     process::exit(1);
-///  });
+/// let config = ExportConfig {
+///     mame_xml_path: "mame.xml".into(),
+///     catver_path: "catver.ini".into(),
+///     ..ExportConfig::default()
+/// };
 ///
-/// let roms = roms_curator::run(&args).unwrap_or_else(|err| {
+/// let catalog = run(&config).unwrap_or_else(|err| {
 ///     error!("Application error: {err}");
 ///     process::exit(1);
 /// });
 /// ```
+///
+/// Call [`ExportConfig::validate`] before [`Catalog::plan`] or [`Catalog::copy_roms`];
+/// it requires source and destination paths in addition to metadata paths.
 ///
 /// The returned catalog includes the MAME build and the names of machines that
 /// have no CatVer category. Those machines use the category `Unknown`.
@@ -78,8 +82,8 @@ type RomCategories = HashMap<String, String>;
 /// conflicts. `Plan::write` or `--plan-path` saves it. `copy_with_plan` rechecks
 /// the plan it is given, then copies and writes `selected.txt` when every copy succeeds.
 ///
-pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
-    let progress_bar = if args.progress {
+pub fn run(config: &ExportConfig) -> Result<Catalog, Box<dyn Error>> {
+    let progress_bar = if config.progress {
         Some(build_progress_bar())
     } else {
         None
@@ -90,8 +94,8 @@ pub fn run(args: &Args) -> Result<Catalog, Box<dyn Error>> {
         "* Reading mame database and copying files can last a few minutes, please be patient. *",
     );
 
-    let catver_path = Path::new(&args.catver_path);
-    let xml_path = Path::new(&args.mame_xml_path);
+    let catver_path = Path::new(&config.catver_path);
+    let xml_path = Path::new(&config.mame_xml_path);
     progress_bar.println(format!("Reading {} document...", catver_path.display()).as_str());
     let rom_categories = read_categories(catver_path)?;
     progress_bar.inc();

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::core::args::Args;
-use crate::core::roms_service::{missing_chds_for_report, parse, RomsExt};
+use crate::core::export::name_in_subset_excluded;
+use crate::core::roms_service::{copy_all_to_rest, missing_chds_for_report, parse};
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
 use crate::models::disks::DiskKind;
 use crate::models::plan::{Availability, MediaRole, Plan};
@@ -353,25 +354,25 @@ fn should_exclude_subsets() {
     let mut args = Args::new();
     args.subset_start = "r".to_string();
 
-    assert!(Roms::is_excluded(&args, "area51"));
-    assert!(!Roms::is_excluded(&args, "robocop"));
+    assert!(name_in_subset_excluded(&args, "area51"));
+    assert!(!name_in_subset_excluded(&args, "robocop"));
 
     // subset_end only
     let mut args = Args::new();
     args.subset_end = "sv0".to_string();
 
-    assert!(!Roms::is_excluded(&args, "robocop"));
-    assert!(Roms::is_excluded(&args, "sv801"));
+    assert!(!name_in_subset_excluded(&args, "robocop"));
+    assert!(name_in_subset_excluded(&args, "sv801"));
 
     // subset_start and subset_end
     let mut args = Args::new();
     args.subset_start = "az".to_string();
     args.subset_end = "sv0".to_string();
 
-    assert!(Roms::is_excluded(&args, "as_acp"));
-    assert!(!Roms::is_excluded(&args, "elevatora"));
-    assert!(!Roms::is_excluded(&args, "robocop"));
-    assert!(Roms::is_excluded(&args, "sv801"));
+    assert!(name_in_subset_excluded(&args, "as_acp"));
+    assert!(!name_in_subset_excluded(&args, "elevatora"));
+    assert!(!name_in_subset_excluded(&args, "robocop"));
+    assert!(name_in_subset_excluded(&args, "sv801"));
 }
 
 #[test]
@@ -986,6 +987,46 @@ fn resolves_merged_archives_without_demoting_games() {
 }
 
 #[test]
+fn copy_report_selected_games_follows_subset_and_catalog_selection() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="alpha">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="beta">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="omega">
+            <driver status="preliminary" emulation="preliminary"/>
+        </machine>
+        "#,
+    );
+    assert_eq!(catalog.selected.len(), 2);
+
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("alpha.zip"), b"a").unwrap();
+    fs::write(source.join("beta.zip"), b"b").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+    args.subset_start = "b".to_string();
+    args.subset_end = "c".to_string();
+
+    let report = catalog.copy_roms(&args).unwrap();
+    assert_eq!(report.selected_games, 1);
+
+    let mut output = Vec::new();
+    report.write_to(&mut output).unwrap();
+    assert!(String::from_utf8(output)
+        .unwrap()
+        .contains("- Selected games: 1"));
+}
+
+#[test]
 fn subset_keeps_parent_archive_outside_the_range() {
     let catalog = catalog_of(
         r#"
@@ -1013,6 +1054,7 @@ fn subset_keeps_parent_archive_outside_the_range() {
     args.subset_end = "cz".to_string();
 
     let report = catalog.copy_roms(&args).unwrap();
+    assert_eq!(report.selected_games, 1);
     assert!(report.roms_working.iter().any(|entry| {
         entry.rom_name == "parent.zip" && entry.status == OperationStatus::Copied
     }));
@@ -1155,10 +1197,10 @@ fn resolves_shared_delta_and_device_disks_without_changing_category() {
     args.subset_start = "d".to_string();
     args.subset_end = "optional".to_string();
     args.ignore_not_working_chd = true;
-    assert!(Roms::is_excluded(&args, "parent"));
-    assert!(!Roms::is_excluded(&args, "delta"));
-    assert!(!Roms::is_excluded(&args, "nodump"));
-    assert!(!Roms::is_excluded(&args, "hdd"));
+    assert!(name_in_subset_excluded(&args, "parent"));
+    assert!(!name_in_subset_excluded(&args, "delta"));
+    assert!(!name_in_subset_excluded(&args, "nodump"));
+    assert!(!name_in_subset_excluded(&args, "hdd"));
 
     let report = catalog.copy_roms(&args).unwrap();
     assert_eq!(
@@ -1237,7 +1279,7 @@ fn map_copy_keeps_disk_directories_without_a_resolved_disk_set() {
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
-    catalog.roms.copy_roms(&args).unwrap();
+    copy_all_to_rest(catalog.roms, &args).unwrap();
     assert_eq!(
         fs::read(destination.join("rest/game/disk.chd")).unwrap(),
         b"disk"

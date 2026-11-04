@@ -24,13 +24,25 @@ pub enum OperationStatus {
     Ignored,
 }
 
+/// Kind of source entry recorded in the export report.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportMediaKind {
+    /// ROM archive or other non-directory source file (for example `.zip`), in `roms` or `rest`.
+    Archive,
+    /// CHD directory for a machine that has disk metadata in MAME XML.
+    DiskDirectory,
+    /// Other directory source entry (not classified as a CHD directory).
+    #[default]
+    OtherFile,
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct ReportDetailEntry {
     pub rom_name: String,
     /// Defaults to [`OperationStatus::Ignored`]. Failures must set
     /// [`OperationStatus::Failed`].
     pub status: OperationStatus,
-    pub is_chd: bool,
+    pub media_kind: ExportMediaKind,
     /// Operation paths and cause when a copy fails; absent for successful/ignored entries.
     pub error: Option<String>,
 }
@@ -53,10 +65,10 @@ pub struct MissingChdEntry {
 pub struct Report {
     /// True for a read-only simulation; selected entries have status Planned.
     pub simulation: bool,
+    /// Selected games inside the configured name range.
+    pub selected_games: usize,
     pub total_working: i32,
     pub total_other: i32,
-    pub source_dir: String,
-    pub destination_dir: String,
     pub roms_working: Vec<ReportDetailEntry>,
     pub roms_other: Vec<ReportDetailEntry>,
     pub ignored_roms: Vec<ReportDetailEntry>,
@@ -69,26 +81,6 @@ pub struct Report {
     pub all_ok: bool,
 }
 
-// Adds extension to LineWriter<File> to reduce duplicated code
-pub trait LineWriterExt {
-    fn write_all_roms(
-        self,
-        roms: &[ReportDetailEntry],
-        status: OperationStatus,
-    ) -> Result<Box<LineWriter<File>>, Box<dyn Error>>;
-}
-
-impl LineWriterExt for LineWriter<File> {
-    fn write_all_roms(
-        mut self,
-        roms: &[ReportDetailEntry],
-        status: OperationStatus,
-    ) -> Result<Box<LineWriter<File>>, Box<dyn Error>> {
-        write_all_roms(&mut self, roms, status)?;
-        Ok(Box::new(self))
-    }
-}
-
 fn write_all_roms(
     writer: &mut impl Write,
     roms: &[ReportDetailEntry],
@@ -96,8 +88,16 @@ fn write_all_roms(
 ) -> io::Result<()> {
     writer.write_all(b"<details>\n  <summary>roms</summary>\n\n```text\n")?;
     for entry in roms.iter().filter(|entry| entry.status == status) {
-        let is_chd = if entry.is_chd { "(chd)" } else { "" };
-        writeln!(writer, "{} {}", entry.rom_name, is_chd)?;
+        let label = match entry.media_kind {
+            ExportMediaKind::Archive => "(archive)",
+            ExportMediaKind::DiskDirectory => "(disk)",
+            ExportMediaKind::OtherFile => "",
+        };
+        if label.is_empty() {
+            writeln!(writer, "{}", entry.rom_name)?;
+        } else {
+            writeln!(writer, "{} {label}", entry.rom_name)?;
+        }
         if let Some(error) = &entry.error {
             writeln!(writer, "  Error: {error}")?;
         }
@@ -169,17 +169,17 @@ impl Report {
         writer.write_all(b"## Detail\n\n")?;
 
         let (label, status) = self.success_label();
-        writeln!(writer, "### {label} ROMs folder\n")?;
+        writeln!(writer, "### {label} required folder (roms)\n")?;
         write_all_roms(&mut writer, &self.roms_working, status)?;
 
-        writeln!(writer, "### {label} Rest folder\n")?;
+        writeln!(writer, "### {label} rest folder\n")?;
         write_all_roms(&mut writer, &self.roms_other, status)?;
 
         if !self.simulation {
-            writer.write_all(b"### Failed copies to ROMs folder\n\n")?;
+            writer.write_all(b"### Failed copies to required folder (roms)\n\n")?;
             write_all_roms(&mut writer, &self.roms_working, OperationStatus::Failed)?;
 
-            writer.write_all(b"### Failed copies to Rest folder\n\n")?;
+            writer.write_all(b"### Failed copies to rest folder\n\n")?;
             write_all_roms(&mut writer, &self.roms_other, OperationStatus::Failed)?;
         }
 
@@ -231,7 +231,7 @@ impl Report {
         let failures = if self.simulation {
             ""
         } else {
-            "  - [Failed copies to ROMs folder](#failed-copies-to-roms-folder)\n  - [Failed copies to Rest folder](#failed-copies-to-rest-folder)\n"
+            "  - [Failed copies to required folder (roms)](#failed-copies-to-required-folder-roms)\n  - [Failed copies to rest folder](#failed-copies-to-rest-folder)\n"
         };
         let ignored = if self.ignored_roms.is_empty() {
             ""
@@ -244,22 +244,14 @@ impl Report {
             "  - [Missing CHDs](#missing-chds)\n"
         };
         format!(
-            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} ROMs folder](#{anchor}-roms-folder)\n  - [{label} Rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}\n"
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} required folder (roms)](#{anchor}-required-folder-roms)\n  - [{label} rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}\n"
         )
     }
 
     fn build_summary(&self) -> String {
         let (label, status) = self.success_label();
-        let count = |entries: &[ReportDetailEntry]| {
-            entries
-                .iter()
-                .filter(|entry| entry.status == status)
-                .fold((0, 0), |(total, chds), entry| {
-                    (total + 1, chds + usize::from(entry.is_chd))
-                })
-        };
-        let (working, working_chds) = count(&self.roms_working);
-        let (other, other_chds) = count(&self.roms_other);
+        let (working, working_archives, working_disks) = folder_counts(&self.roms_working, status);
+        let (other, other_archives, other_disks) = folder_counts(&self.roms_other, status);
         let copied = self
             .roms_working
             .iter()
@@ -277,47 +269,12 @@ impl Report {
             None => String::new(),
         };
         format!(
-            "## Summary\n\n- All OK: {}\n- {label} ROMs folder: {working} ({working_chds} CHDs)\n- {label} Rest folder: {other} ({other_chds} CHDs)\n- ROMs copied: {copied}\n- Ignored ROMs: {}\n- Failed copies: {failed}\n- Missing CHDs: {}\n{names}\n",
+            "## Summary\n\n- All OK: {}\n- Selected games: {}\n- {label} required folder (roms): {working} ({working_archives} archives, {working_disks} disk directories)\n- {label} rest folder: {other} ({other_archives} archives, {other_disks} disk directories)\n- Files copied: {copied}\n- Ignored source entries: {}\n- Failed copies: {failed}\n- Missing CHDs: {}\n{names}\n",
             self.all_ok,
+            self.selected_games,
             self.ignored_roms.len(),
             self.missing_chds.len()
         )
-    }
-
-    pub fn build(&self) -> Report {
-        Report {
-            simulation: self.simulation,
-            total_working: self.total_working,
-            total_other: self.total_other,
-            source_dir: self.source_dir.to_owned(),
-            destination_dir: self.destination_dir.to_owned(),
-            roms_working: self.roms_working.to_owned(),
-            roms_other: self.roms_other.to_owned(),
-            ignored_roms: self.ignored_roms.to_owned(),
-            names_error: self.names_error.clone(),
-            missing_chds: self.missing_chds.clone(),
-            all_ok: self.all_ok,
-        }
-    }
-
-    pub fn total_working(&mut self, value: i32) -> &mut Report {
-        self.total_working = value;
-        self
-    }
-
-    pub fn total_other(&mut self, value: i32) -> &mut Report {
-        self.total_other = value;
-        self
-    }
-
-    pub fn source_dir(&mut self, value: String) -> &mut Report {
-        self.source_dir = value;
-        self
-    }
-
-    pub fn destination_dir(&mut self, value: String) -> &mut Report {
-        self.destination_dir = value;
-        self
     }
 
     pub fn add_rom_working(&mut self, value: ReportDetailEntry) -> &mut Report {
@@ -339,6 +296,27 @@ impl Report {
         self.all_ok = value;
         self
     }
+
+    pub fn total_working(&mut self, value: i32) -> &mut Report {
+        self.total_working = value;
+        self
+    }
+
+    pub fn total_other(&mut self, value: i32) -> &mut Report {
+        self.total_other = value;
+        self
+    }
+}
+
+fn folder_counts(entries: &[ReportDetailEntry], status: OperationStatus) -> (usize, usize, usize) {
+    entries
+        .iter()
+        .filter(|entry| entry.status == status)
+        .fold((0, 0, 0), |(total, archives, disks), entry| {
+            let archives = archives + usize::from(entry.media_kind == ExportMediaKind::Archive);
+            let disks = disks + usize::from(entry.media_kind == ExportMediaKind::DiskDirectory);
+            (total + 1, archives, disks)
+        })
 }
 
 #[cfg(test)]
@@ -355,27 +333,28 @@ mod tests {
         report.add_rom_working(ReportDetailEntry {
             rom_name: "005.zip".into(),
             status: OperationStatus::Planned,
+            media_kind: ExportMediaKind::Archive,
             ..ReportDetailEntry::default()
         });
         report.add_rom_other(ReportDetailEntry {
             rom_name: "disk".into(),
             status: OperationStatus::Planned,
-            is_chd: true,
+            media_kind: ExportMediaKind::DiskDirectory,
             ..ReportDetailEntry::default()
         });
         let mut output = Vec::new();
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("Simulation: Planned operations only"));
-        assert!(output.contains("Planned for ROMs folder: 1 (0 CHDs)"));
-        assert!(output.contains("Planned for Rest folder: 1 (1 CHDs)"));
-        assert!(output.contains("ROMs copied: 0"));
+        assert!(output.contains("Planned for required folder (roms): 1 (1 archives, 0 disk directories)"));
+        assert!(output.contains("Planned for rest folder: 1 (0 archives, 1 disk directories)"));
+        assert!(output.contains("Files copied: 0"));
         assert!(output.contains("Failed copies: 0"));
-        assert!(output.contains("005.zip"));
-        assert!(output.contains("disk (chd)"));
+        assert!(output.contains("005.zip (archive)"));
+        assert!(output.contains("disk (disk)"));
         assert!(!output.contains("### Copied to"));
         assert!(!output.contains("### Failed copies"));
-        assert!(report.build().simulation);
+        assert!(report.simulation);
     }
 
     #[test]
@@ -387,12 +366,14 @@ mod tests {
         report.add_rom_working(ReportDetailEntry {
             rom_name: "005.zip".into(),
             status: OperationStatus::Failed,
+            media_kind: ExportMediaKind::Archive,
             error: Some("source/005.zip -> output/005.zip: denied".into()),
             ..ReportDetailEntry::default()
         });
         report.add_rom_other(ReportDetailEntry {
             rom_name: "100lions.zip".into(),
             status: OperationStatus::Copied,
+            media_kind: ExportMediaKind::Archive,
             ..ReportDetailEntry::default()
         });
         report.add_ignored_rom(ReportDetailEntry {
@@ -402,26 +383,26 @@ mod tests {
         let mut output = Vec::new();
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("- Copied to ROMs folder: 0 (0 CHDs)"));
-        assert!(output.contains("- Copied to Rest folder: 1 (0 CHDs)"));
-        assert!(output.contains("- ROMs copied: 1"));
-        assert!(output.contains("- Ignored ROMs: 1"));
+        assert!(output.contains("- Copied to required folder (roms): 0 (0 archives, 0 disk directories)"));
+        assert!(output.contains("- Copied to rest folder: 1 (1 archives, 0 disk directories)"));
+        assert!(output.contains("- Files copied: 1"));
+        assert!(output.contains("- Ignored source entries: 1"));
         assert!(output.contains("- Failed copies: 1"));
-        assert!(output.contains("### Copied to ROMs folder"));
-        assert!(output.contains("### Copied to Rest folder"));
-        assert!(output.contains("### Failed copies to ROMs folder"));
-        assert!(output.contains("### Failed copies to Rest folder"));
+        assert!(output.contains("### Copied to required folder (roms)"));
+        assert!(output.contains("### Copied to rest folder"));
+        assert!(output.contains("### Failed copies to required folder (roms)"));
+        assert!(output.contains("### Failed copies to rest folder"));
         assert!(!output.contains("### Planned for"));
 
         let copied_other = section(
             &output,
-            "### Copied to Rest folder",
-            "### Failed copies to ROMs folder",
+            "### Copied to rest folder",
+            "### Failed copies to required folder (roms)",
         );
         let failed_working = section(
             &output,
-            "### Failed copies to ROMs folder",
-            "### Failed copies to Rest folder",
+            "### Failed copies to required folder (roms)",
+            "### Failed copies to rest folder",
         );
         let ignored = section(&output, "### Ignored roms", "");
         assert!(copied_other.contains("100lions.zip"));

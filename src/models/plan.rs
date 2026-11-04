@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tempfile::Builder;
 
-use crate::core::args::Args;
+use crate::core::config::ExportConfig;
 use crate::core::copying::destination_conflicts;
 use crate::core::paths::visit;
 
@@ -203,11 +203,11 @@ impl Plan {
         }
 
         let copies = present_copies(&self.media);
-        let folders = Args {
+        let folders = ExportConfig {
             destination_path: self.destination_path.clone(),
-            ..Args::default()
+            ..ExportConfig::default()
         }
-        .build_destination_folders_path();
+        .destination_folders();
         let directories = [folders.roms.as_path(), folders.rest.as_path()];
         let names = Path::new(&self.selected_names_path);
         let conflicts = destination_conflicts(&copies, &directories, &self.report_path, names)?;
