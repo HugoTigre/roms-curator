@@ -5,20 +5,28 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 mod utils;
 
 fn copy_roms(c: &mut Criterion) {
-    c.bench_function("copy_roms", |b| {
-        utils::set_up("copy_roms_bench");
+    let tag = "copy_roms_bench";
+    utils::set_up(tag);
+    let base_args = utils::build_args(tag, false);
+    let label = utils::bench_metadata_label();
+    let source_files = utils::count_source_files();
+
+    c.bench_function(&format!("copy_roms/{label}/sources={source_files}"), |b| {
         b.iter_batched(
             || {
-                let output = tempfile::tempdir().unwrap();
-                let mut args =
-                    utils::build_args("copy_roms_bench", false, String::new(), String::new());
-                args.destination_path = output.path().join("roms").to_str().unwrap().into();
-                args.report_path.clear();
-                (output, args)
+                let output = tempfile::tempdir().expect("temp export directory");
+                let mut args = base_args.clone();
+                args.destination_path = utils::export_destination(output.path())
+                    .to_string_lossy()
+                    .into_owned();
+                let catalog = utils::load_catalog(&args);
+                let plan = catalog.plan(&args).expect("build plan for benchmark");
+                (output, catalog, plan, args)
             },
-            |(output, args)| {
-                let results = black_box(roms_curator::run(&args).unwrap());
-                let report = results.copy_roms(&args).expect("Error copying roms");
+            |(output, catalog, plan, args)| {
+                let report = catalog
+                    .copy_with_plan(&args, &plan)
+                    .expect("copy roms in benchmark");
                 black_box((output, report))
             },
             BatchSize::PerIteration,

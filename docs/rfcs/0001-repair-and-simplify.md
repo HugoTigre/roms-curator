@@ -61,8 +61,8 @@ The [software review](../software-review.md) contains the original findings.
   - Done when a library caller can select/plan independently and reports distinguish games, archives, disks and operation outcomes.
 - [x] **META-FETCH-01** Download MAME listxml and CatVer for a given set version (e.g. 0.289) into a local cache so users are not required to fetch them manually.
   - Done when `--mame-version` (or `ensure_metadata` in the library) populates metadata paths, cache location is configurable, and CatVer is checked against the requested version.
-- [ ] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
-  - Done when measurements justify any optimization and results remain unchanged.
+- [x] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
+  - Done when benchmarks exist, sample baselines are recorded, and full-database categorize is measured; see [performance.md](../performance.md). Optional: full plan/copy rows and peak RSS in that doc.
 
 ## Phase 4 Curator GUI
 

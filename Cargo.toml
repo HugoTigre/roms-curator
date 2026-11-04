@@ -12,6 +12,8 @@ keywords = ["roms", "mame"]
 categories = ["command-line-utilities"]
 exclude = [".github/", "tests/", "docs/", ".gitignore", ".editorconfig"]
 
+autobenches = false
+
 [dependencies]
 # logging
 log = "0.4"
@@ -43,6 +45,9 @@ debug = true
 
 [[bench]]
 name = "categorize_roms_bench"
+harness = false
+[[bench]]
+name = "plan_roms_bench"
 harness = false
 [[bench]]
 name = "copy_roms_bench"

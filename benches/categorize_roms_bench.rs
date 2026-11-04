@@ -5,15 +5,13 @@ use criterion::{criterion_group, criterion_main, Criterion};
 mod utils;
 
 fn categorize_roms(c: &mut Criterion) {
-    c.bench_function("categorize_roms", |b| {
-        let tag = "categorize_roms_bench";
-        utils::set_up(tag);
+    let tag = "categorize_roms_bench";
+    utils::set_up(tag);
+    let args = utils::build_args(tag, false);
+    let label = utils::bench_metadata_label();
 
-        let args = utils::build_args(tag, false, String::new(), String::new());
-
-        b.iter(|| {
-            black_box(roms_curator::run(&args).unwrap());
-        });
+    c.bench_function(&format!("categorize_roms/{label}"), |b| {
+        b.iter(|| black_box(roms_curator::run(&args).unwrap()));
     });
 }
 

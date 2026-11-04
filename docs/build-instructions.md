@@ -54,6 +54,17 @@ try {
 
 Expensive runs download listxml and CatVer into `target/tests/metadata-cache/` and reuse that cache across tests. The first run can take several minutes because of the listxml size. Use `--test-threads=1` to limit memory use.
 
+## Benchmarks
+
+See [performance measurements](performance.md) for Criterion targets, full-database
+runs (`CARGO_RC_RUN_EXPENSIVE_TESTS`), and peak memory capture.
+
+Quick sample run:
+
+```bash
+cargo bench --locked
+```
+
 ## Build platform specific binary
 
 Example for windows
