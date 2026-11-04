@@ -369,7 +369,6 @@ mod tests {
             status: OperationStatus::Failed,
             media_kind: ExportMediaKind::Archive,
             error: Some("source/005.zip -> output/005.zip: denied".into()),
-            ..ReportDetailEntry::default()
         });
         report.add_rom_other(ReportDetailEntry {
             rom_name: "100lions.zip".into(),
