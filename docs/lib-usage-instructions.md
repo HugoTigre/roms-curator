@@ -52,6 +52,13 @@ let mut config = ExportConfig {
 config.validate().unwrap();
 ```
 
+```rust
+let catalog = roms_curator::run(&config).unwrap_or_else(|err| {
+    error!("Application error: {err}");
+    process::exit(1);
+});
+```
+
 For a command-line program, use `roms_curator::core::args::build_args()` instead.
 That parses flags and runs the same validation. `Args` is a type alias for
 `ExportConfig`.
@@ -89,13 +96,18 @@ devices are `catalog.disks.missing` and do not change `rom.category`.
 `catalog.selected` to machines whose driver and emulation are both good and leaves
 the rest in `catalog.roms`.
 
-For this, `ExportConfig` just needs `mame_xml_path` and `catver_path` paths.
+For this, `ExportConfig` needs `mame_xml_path` and `catver_path`. You can fill
+those paths yourself or call `ensure_metadata` first:
 
 ```rust
-let catalog = roms_curator::run(&config).unwrap_or_else(|err| {
-    error!("Application error: {err}");
-    process::exit(1);
-});
+use roms_curator::{ensure_metadata, default_metadata_cache_dir, ExportConfig};
+
+let paths = ensure_metadata("0.289", &default_metadata_cache_dir(), false)?;
+let mut config = ExportConfig {
+    mame_xml_path: paths.mame_xml.to_string_lossy().into_owned(),
+    catver_path: paths.catver.to_string_lossy().into_owned(),
+    ..ExportConfig::default()
+};
 ```
 
 ## Copy ROMs

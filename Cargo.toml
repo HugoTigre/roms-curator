@@ -31,12 +31,13 @@ sha1 = "0.11.0"
 indicatif = { version = "0.17", features = ["rayon"] } # progress bar
 same-file = "1.0"
 tempfile = "3"
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+zip = "9.1"
 
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
 rand = "0.9"
-zip = "9.1"
 criterion = { version = "0.8.2", features = ["html_reports"] } # benchmarks
 
 [profile.bench]

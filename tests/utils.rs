@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use std::borrow::ToOwned;
-use std::fs::{read_dir, File};
-use std::path::Path;
+use std::fs::read_dir;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
-use std::{env, fs, io};
+use std::sync::OnceLock;
+use std::{env, fs};
 
 use log::{debug, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
@@ -13,15 +13,12 @@ use log4rs::encode::pattern::PatternEncoder;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use roms_curator::core::args::Args;
-
-static RESOURCES_PROD_PATH: &str = "tests/resources/prod_lists_0244.zip";
+use roms_curator::ensure_metadata;
 
 pub static TARGET_FOLDER: &str = "target/tests/";
-pub static MAME_XML_FILE_NAME_FULL_SET: &str = "mame-roms.xml";
-pub static MAME_XML_FILE_NAME_SMALL_SET: &str = "tests/resources/listxml_0244.xml";
-pub static CATEGORY_LIST_FILE_NAME_FULL_SET: &str = "catver.ini";
-pub static CATEGORY_LIST_FILE_NAME_SMALL_SET: &str = "tests/resources/catver_0244.ini";
-pub static WORKING_ARCADE_LIST_PATH: &str = "tests/resources/working_arcade_0244.ini";
+pub static MAME_XML_SAMPLE: &str = "tests/resources/listxml_sample.xml";
+pub static CATVER_SAMPLE: &str = "tests/resources/catver_sample.ini";
+pub static WORKING_ARCADE_SAMPLE: &str = "tests/resources/working_arcade_sample.ini";
 pub static ROMS_SOURCE_PATH: &str = "tests/resources/merged_roms/";
 pub static CHDS_SOURCE_PATH: &str = "tests/resources/chds/";
 pub static CATEGORIZED_ROMS_FOLDER_NAME: &str = "categorized_roms";
@@ -48,18 +45,14 @@ pub fn set_up(tag: &str) {
     let categorized_roms_path = test_folder.join(CATEGORIZED_ROMS_FOLDER_NAME);
     create_test_dir(&categorized_roms_path);
 
-    if run_expensive_tests() {
-        unzip_test_resources_archive(tag);
-    }
-
     INIT.call_once(|| {
         set_up_logging();
-        let small_or_full = if run_expensive_tests() {
-            "full"
+        let label = if run_expensive_tests() {
+            format!("downloaded MAME {}", expensive_mame_version())
         } else {
-            "small"
+            "sample listxml/catver fixtures".into()
         };
-        debug!("Using mame {small_or_full} set in integration tests");
+        debug!("Using {label} in integration tests");
     });
 }
 
@@ -71,47 +64,6 @@ pub fn clean_up(tag: &str) {
     if let Ok(exists) = test_folder.try_exists() {
         if exists {
             fs::remove_dir_all(test_folder).expect("Error deleting folder categorized_roms");
-        }
-    }
-}
-
-fn unzip_test_resources_archive(tag: &str) {
-    let resource_file = File::open(RESOURCES_PROD_PATH).unwrap();
-    let test_folder = Path::new(TARGET_FOLDER).join(tag);
-
-    let mut prod_data = zip::ZipArchive::new(resource_file).unwrap();
-
-    for i in 0..prod_data.len() {
-        let mut file = prod_data.by_index(i).unwrap();
-        let outpath = match file.enclosed_name() {
-            Some(path) => test_folder.join(path).to_owned(),
-            None => continue,
-        };
-
-        if outpath.to_str().unwrap().contains("__MACOS") {
-            continue;
-        }
-
-        if file.is_dir() {
-            fs::create_dir_all(&outpath).unwrap();
-        } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p).unwrap();
-                }
-            }
-            let mut outfile = File::create(&outpath).unwrap();
-            io::copy(&mut file, &mut outfile).unwrap();
-        }
-
-        // Get and Set permissions
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            if let Some(mode) = file.unix_mode() {
-                fs::set_permissions(&outpath, fs::Permissions::from_mode(mode)).unwrap();
-            }
         }
     }
 }
@@ -146,34 +98,42 @@ pub fn get_files_from_folder(path: &str) -> Vec<String> {
     roms
 }
 
+pub fn expensive_mame_version() -> String {
+    env::var("CARGO_RC_MAME_VERSION").unwrap_or_else(|_| "0.244".into())
+}
+
+pub fn expensive_metadata_cache_dir() -> PathBuf {
+    Path::new(TARGET_FOLDER).join("metadata-cache")
+}
+
+fn expensive_metadata_paths() -> (String, String) {
+    static PATHS: OnceLock<(String, String)> = OnceLock::new();
+    PATHS
+        .get_or_init(|| {
+            let version = expensive_mame_version();
+            let cache = expensive_metadata_cache_dir();
+            fs::create_dir_all(&cache).expect("metadata cache directory");
+            let paths = ensure_metadata(&version, &cache, false)
+                .unwrap_or_else(|error| panic!("download MAME {version} metadata: {error}"));
+            (
+                paths.mame_xml.to_string_lossy().into_owned(),
+                paths.catver.to_string_lossy().into_owned(),
+            )
+        })
+        .clone()
+}
+
 pub fn build_args(tag: &str, simulate: bool, subset_start: String, subset_end: String) -> Args {
     let run_expensive_tests = run_expensive_tests();
     let test_folder = Path::new(TARGET_FOLDER).join(tag);
 
-    let mame_xml_path = if run_expensive_tests {
-        test_folder
-            .join(MAME_XML_FILE_NAME_FULL_SET)
-            .to_str()
-            .unwrap()
-            .to_string()
+    let (mame_xml_path, catver_path) = if run_expensive_tests {
+        expensive_metadata_paths()
     } else {
-        Path::new(MAME_XML_FILE_NAME_SMALL_SET)
-            .to_str()
-            .unwrap()
-            .to_string()
-    };
-
-    let catver_path = if run_expensive_tests {
-        test_folder
-            .join(CATEGORY_LIST_FILE_NAME_FULL_SET)
-            .to_str()
-            .unwrap()
-            .to_string()
-    } else {
-        Path::new(CATEGORY_LIST_FILE_NAME_SMALL_SET)
-            .to_str()
-            .unwrap()
-            .to_string()
+        (
+            Path::new(MAME_XML_SAMPLE).to_str().unwrap().to_string(),
+            Path::new(CATVER_SAMPLE).to_str().unwrap().to_string(),
+        )
     };
 
     let destination_path = test_folder

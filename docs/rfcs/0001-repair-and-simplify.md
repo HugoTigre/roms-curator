@@ -30,7 +30,7 @@ The [software review](../software-review.md) contains the original findings.
 ## Phase 2 Metadata and selection
 
 - [x] **META-01** Parse CatVer sections, MAME version, disk defaults/quality/optionality and required fields explicitly. Preserve native paths.
-  - Done when sibling disks cannot inherit status, malformed input returns contextual errors and unknown categories/coverage are visible. Any MAME build string is accepted. Keep the 0.244 files as an older regression sample and cover current listxml and CatVer shape with a small fixture.
+  - Done when sibling disks cannot inherit status, malformed input returns contextual errors and unknown categories/coverage are visible. Any MAME build string is accepted. Keep the sample listxml/catver fixtures as a regression sample and cover current listxml and CatVer shape with a small fixture.
 - [x] **SELECT-01** Separate emulation status from category preferences and overrides. Default to good/imperfect runnable arcade machines; remove the implicit two-feature exclusion.
   - Done when minor sound/graphics issues are accepted, preliminary machines are excluded and every rule/override explains its effect. Decide genre preferences here.
   - Decision: no arcade-genre exclusions. Non-arcade CatVer groups stay out of the selected list, matched as a group rather than a substring, and each states why. The playable policy accepts good or imperfect driver and emulation, including imperfect sound and graphics. Strict (good only) is a library policy. Named system overrides keep a reason and an effect.
@@ -59,6 +59,8 @@ The [software review](../software-review.md) contains the original findings.
   - Done when parent, merged clone, BIOS/device and CHD cases pass and failures identify missing media. Keep optional CHD integrity checks separate; auditing does not prove device performance.
 - [x] **CLEAN-01** Separate CLI parsing from library configuration and filesystem work. Simplify map extensions/builders, remove unused report fields/clones and move test-only dependencies.
   - Done when a library caller can select/plan independently and reports distinguish games, archives, disks and operation outcomes.
+- [x] **META-FETCH-01** Download MAME listxml and CatVer for a given set version (e.g. 0.289) into a local cache so users are not required to fetch them manually.
+  - Done when `--mame-version` (or `ensure_metadata` in the library) populates metadata paths, cache location is configurable, and CatVer is checked against the requested version.
 - [x] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
   - Done when benchmarks exist, sample baselines are recorded, and full-database categorize is measured; see [performance.md](../performance.md). Optional: full plan/copy rows and peak RSS in that doc.
 

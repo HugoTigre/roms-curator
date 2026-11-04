@@ -1,6 +1,6 @@
 use crate::utils::{
-    get_test_tag, set_up, CATEGORIZED_ROMS_FOLDER_NAME, CATEGORY_LIST_FILE_NAME_SMALL_SET,
-    MAME_XML_FILE_NAME_SMALL_SET, ROMS_SOURCE_PATH, TARGET_FOLDER,
+    get_test_tag, set_up, CATEGORIZED_ROMS_FOLDER_NAME, CATVER_SAMPLE, MAME_XML_SAMPLE,
+    ROMS_SOURCE_PATH, TARGET_FOLDER,
 };
 use assert_cmd::Command;
 use predicates::prelude::predicate;
@@ -25,11 +25,8 @@ fn should_run_successfully() {
     let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
 
     let assert = cmd
-        .arg(format!("--mame-xml-path={}", MAME_XML_FILE_NAME_SMALL_SET))
-        .arg(format!(
-            "--catver-path={}",
-            CATEGORY_LIST_FILE_NAME_SMALL_SET
-        ))
+        .arg(format!("--mame-xml-path={}", MAME_XML_SAMPLE))
+        .arg(format!("--catver-path={}", CATVER_SAMPLE))
         .arg(format!("--source-path={}", ROMS_SOURCE_PATH))
         .arg(format!("--destination-path={}", destination_path))
         .arg(format!("--report-path={}", report_path))
@@ -41,6 +38,39 @@ fn should_run_successfully() {
         .success()
         .stdout(predicate::str::contains("Categorizing roms"))
         .stdout(predicate::str::contains("Planning from source"));
+}
+
+#[test]
+fn should_run_with_precached_mame_version() {
+    let tag = get_test_tag();
+    set_up(&tag);
+
+    let test_folder = Path::new(TARGET_FOLDER).join(&tag);
+    let cache_root = test_folder.join("metadata-cache");
+    let cache_dir = cache_root.join("mame-0.244");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    std::fs::copy(MAME_XML_SAMPLE, cache_dir.join("mame0244.xml")).unwrap();
+    std::fs::copy(CATVER_SAMPLE, cache_dir.join("catver.ini")).unwrap();
+
+    let destination_path = test_folder
+        .join(CATEGORIZED_ROMS_FOLDER_NAME)
+        .to_str()
+        .unwrap()
+        .to_string();
+    let report_path = test_folder.join("report.md").to_str().unwrap().to_string();
+
+    Command::cargo_bin("roms-curator")
+        .unwrap()
+        .arg("--mame-version=0.244")
+        .arg(format!("--metadata-cache-dir={}", cache_root.display()))
+        .arg(format!("--source-path={}", ROMS_SOURCE_PATH))
+        .arg(format!("--destination-path={}", destination_path))
+        .arg(format!("--report-path={}", report_path))
+        .arg("--simulation=true")
+        .arg("--progress=false")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Categorizing roms"));
 }
 
 #[test]
@@ -173,11 +203,8 @@ fn simulation_without_a_report_does_not_create_output() {
         .join("simulation-output");
 
     let assert = cmd
-        .arg(format!("--mame-xml-path={}", MAME_XML_FILE_NAME_SMALL_SET))
-        .arg(format!(
-            "--catver-path={}",
-            CATEGORY_LIST_FILE_NAME_SMALL_SET
-        ))
+        .arg(format!("--mame-xml-path={}", MAME_XML_SAMPLE))
+        .arg(format!("--catver-path={}", CATVER_SAMPLE))
         .arg(format!("--source-path={}", ROMS_SOURCE_PATH))
         .arg(format!("--destination-path={}", output.display()))
         .arg("--simulation=true")
