@@ -52,6 +52,17 @@ try {
 
 The full fixture uses MAME 0.244 metadata and runs serially to limit memory use.
 
+## Benchmarks
+
+See [performance measurements](performance.md) for Criterion targets, full-database
+runs (`CARGO_RC_RUN_EXPENSIVE_TESTS`), and peak memory capture.
+
+Quick sample run:
+
+```bash
+cargo bench --locked
+```
+
 ## Build platform specific binary
 
 Example for windows

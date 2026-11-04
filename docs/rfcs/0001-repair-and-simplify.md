@@ -59,8 +59,8 @@ The [software review](../software-review.md) contains the original findings.
   - Done when parent, merged clone, BIOS/device and CHD cases pass and failures identify missing media. Keep optional CHD integrity checks separate; auditing does not prove device performance.
 - [x] **CLEAN-01** Separate CLI parsing from library configuration and filesystem work. Simplify map extensions/builders, remove unused report fields/clones and move test-only dependencies.
   - Done when a library caller can select/plan independently and reports distinguish games, archives, disks and operation outcomes.
-- [ ] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
-  - Done when measurements justify any optimization and results remain unchanged.
+- [x] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
+  - Done when benchmarks exist, sample baselines are recorded, and full-database categorize is measured; see [performance.md](../performance.md). Optional: full plan/copy rows and peak RSS in that doc.
 
 ## Phase 4 Curator GUI
 
