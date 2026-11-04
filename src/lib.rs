@@ -9,10 +9,9 @@
 //! on how to use this as a command-line Application or as a Library.
 //!
 
-use crate::core::roms_service::parse;
+use crate::core::roms_service::parse_mame_xml_file;
 use crate::models::roms::Catalog;
 use crate::utils::{build_progress_bar, ProgressBarEx};
-use roxmltree::Document;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
@@ -104,14 +103,11 @@ pub fn run(config: &ExportConfig) -> Result<Catalog, Box<dyn Error>> {
     progress_bar.inc();
 
     progress_bar.println(format!("Reading {} document...", xml_path.display()).as_str());
-    let contents = fs::read_to_string(xml_path)
-        .map_err(|error| format!("Cannot read MAME XML {}: {error}", xml_path.display()))?;
-    let doc = read_mame_xml(&contents)
-        .map_err(|error| format!("Cannot parse MAME XML {}: {error}", xml_path.display()))?;
+    let parsed = parse_mame_xml_file(xml_path, &rom_categories)?;
     progress_bar.inc();
 
     progress_bar.println("Categorizing roms...");
-    let catalog = parse(&doc, &rom_categories, xml_path)?.categorize()?;
+    let catalog = parsed.categorize()?;
     progress_bar.println(
         format!(
             "MAME build {}: {} machines, {} without a CatVer category.",
@@ -191,13 +187,4 @@ fn section_name(line: &str) -> Option<&str> {
         .and_then(|line| line.strip_suffix(']'))
         .map(str::trim)
         .filter(|section| !section.is_empty())
-}
-
-fn read_mame_xml(contents: &str) -> Result<Document<'_>, Box<dyn Error>> {
-    let opt = roxmltree::ParsingOptions {
-        allow_dtd: true,
-        nodes_limit: u32::MAX,
-    };
-    let doc = Document::parse_with_options(contents, opt)?;
-    Ok(doc)
 }

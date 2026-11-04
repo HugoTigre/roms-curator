@@ -3,7 +3,9 @@ use std::path::Path;
 
 use crate::core::args::Args;
 use crate::core::export::name_in_subset_excluded;
-use crate::core::roms_service::{copy_all_to_rest, missing_chds_for_report, parse};
+use crate::core::roms_service::{
+    copy_all_to_rest, missing_chds_for_report, parse_mame_xml_from_str,
+};
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
 use crate::models::disks::DiskKind;
 use crate::models::plan::{Availability, MediaRole, Plan};
@@ -14,7 +16,7 @@ use crate::models::roms::{
     Chd, Feature, FeatureStatus, RomData, RomFile, RomStatus, Roms, Status, UNKNOWN_CATEGORY,
 };
 use crate::models::selection::EmulationPolicy;
-use crate::{parse_categories, read_categories, read_mame_xml};
+use crate::{parse_categories, read_categories};
 
 #[test]
 fn should_properly_classify_roms() {
@@ -23,8 +25,7 @@ fn should_properly_classify_roms() {
     let source = Path::new("tests/resources/listxml_sample.xml");
     let rom_categories = read_categories(Path::new("tests/resources/catver_sample.ini")).unwrap();
     let contents = fs::read_to_string(source).unwrap();
-    let doc = read_mame_xml(&contents).unwrap();
-    let catalog = parse(&doc, &rom_categories, source)
+    let catalog = parse_mame_xml_from_str(source, &contents, &rom_categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -391,8 +392,7 @@ fn parses_disk_defaults_and_reports_unknown_categories() {
     assert!(!categories.contains_key("RootFolderIcon"));
 
     let contents = fs::read_to_string(source).unwrap();
-    let doc = read_mame_xml(&contents).unwrap();
-    let catalog = parse(&doc, &categories, source)
+    let catalog = parse_mame_xml_from_str(source, &contents, &categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -455,11 +455,11 @@ fn parses_disk_defaults_and_reports_unknown_categories() {
 fn records_any_mame_build_string() {
     let categories =
         parse_categories("[Category]\ngame=Shooter\n", Path::new("catver.ini")).unwrap();
-    let doc = read_mame_xml(
+    let catalog = parse_mame_xml_from_str(
+        Path::new("list.xml"),
         r#"<mame build="0.300 (mame0300)"><machine name="game"><driver status="good" emulation="good"/></machine></mame>"#,
+        &categories,
     )
-    .unwrap();
-    let catalog = parse(&doc, &categories, Path::new("list.xml"))
         .unwrap()
         .categorize()
         .unwrap();
@@ -473,11 +473,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
     let categories =
         parse_categories("[Category]\nparent=Shooter\n", Path::new("fixture.ini")).unwrap();
 
-    let missing_name = read_mame_xml(
-        r#"<mame build="fixture"><machine><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&missing_name, &categories, source)
+    let missing_name = r#"<mame build="fixture"><machine><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, missing_name, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -485,11 +482,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let inherited = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><disk status="baddump"/><disk name="second"/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&inherited, &categories, source)
+    let inherited = r#"<mame build="fixture"><machine name="parent"><disk status="baddump"/><disk name="second"/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, inherited, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -500,11 +494,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let unknown_status = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><disk name="shared" status="weird"/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&unknown_status, &categories, source)
+    let unknown_status = r#"<mame build="fixture"><machine name="parent"><disk name="shared" status="weird"/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, unknown_status, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -512,11 +503,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let missing_driver = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><description>Parent</description></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&missing_driver, &categories, source)
+    let missing_driver = r#"<mame build="fixture"><machine name="parent"><description>Parent</description></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, missing_driver, &categories)
         .unwrap()
         .categorize()
         .unwrap_err()
@@ -528,11 +516,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let good_feature = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><feature type="sound" status="good"/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&good_feature, &categories, source)
+    let good_feature = r#"<mame build="fixture"><machine name="parent"><feature type="sound" status="good"/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, good_feature, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -547,11 +532,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{category_error}"
     );
 
-    let missing_rom = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><rom size="4"/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&missing_rom, &categories, source)
+    let missing_rom = r#"<mame build="fixture"><machine name="parent"><rom size="4"/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, missing_rom, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -562,11 +544,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let bad_size = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><rom name="game.bin" size="nope"/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&bad_size, &categories, source)
+    let bad_size = r#"<mame build="fixture"><machine name="parent"><rom name="game.bin" size="nope"/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, bad_size, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -575,11 +554,8 @@ fn malformed_metadata_names_the_machine_attribute_and_source() {
         "{error}"
     );
 
-    let missing_device = read_mame_xml(
-        r#"<mame build="fixture"><machine name="parent"><device_ref/><driver status="good" emulation="good"/></machine></mame>"#,
-    )
-    .unwrap();
-    let error = parse(&missing_device, &categories, source)
+    let missing_device = r#"<mame build="fixture"><machine name="parent"><device_ref/><driver status="good" emulation="good"/></machine></mame>"#;
+    let error = parse_mame_xml_from_str(source, missing_device, &categories)
         .unwrap_err()
         .to_string();
     assert!(
@@ -614,8 +590,7 @@ fn selects_good_and_imperfect_arcade_machines() {
         Path::new("catver.ini"),
     )
     .unwrap();
-    let doc = read_mame_xml(
-        r#"<mame build="fixture">
+    let xml_contents = r#"<mame build="fixture">
             <machine name="both">
                 <feature type="sound" status="imperfect"/>
                 <feature type="graphics" status="imperfect"/>
@@ -637,11 +612,9 @@ fn selects_good_and_imperfect_arcade_machines() {
             <machine name="sy888b"><driver status="good" emulation="good"/></machine>
             <machine name="home"><driver status="good" emulation="good"/></machine>
             <machine name="labeled"><driver status="good" emulation="good"/></machine>
-        </mame>"#,
-    )
-    .unwrap();
+        </mame>"#;
 
-    let parsed = parse(&doc, &categories, source).unwrap();
+    let parsed = parse_mame_xml_from_str(source, xml_contents, &categories).unwrap();
     let playable = parsed.categorize().unwrap();
     assert!(matches!(playable.roms["both"].category, Working));
     assert!(matches!(playable.roms["unemulated"].category, Working));
@@ -655,7 +628,7 @@ fn selects_good_and_imperfect_arcade_machines() {
     assert!(playable.roms["home"].data.is_system);
     assert!(matches!(playable.roms["home"].category, System));
 
-    let parsed = parse(&doc, &categories, source).unwrap();
+    let parsed = parse_mame_xml_from_str(source, xml_contents, &categories).unwrap();
     let strict = parsed.categorize_with(EmulationPolicy::Strict).unwrap();
     assert!(matches!(strict.roms["both"].category, NotWorking));
     assert!(matches!(strict.roms["unemulated"].category, NotWorking));
@@ -675,8 +648,7 @@ fn keeps_selected_clones_when_support_files_are_not_games() {
     let source = Path::new("tests/resources/listxml_metadata.xml");
     let categories = read_categories(Path::new("tests/resources/catver_sections.ini")).unwrap();
     let contents = fs::read_to_string(source).unwrap();
-    let doc = read_mame_xml(&contents).unwrap();
-    let catalog = parse(&doc, &categories, source)
+    let catalog = parse_mame_xml_from_str(source, &contents, &categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -796,8 +768,7 @@ fn keeps_selected_clones_when_support_files_are_not_games() {
 fn catalog_of(xml: &str) -> crate::models::roms::Catalog {
     let categories = parse_categories("[Category]\n", Path::new("catver.ini")).unwrap();
     let contents = format!(r#"<mame build="deps">{xml}</mame>"#);
-    let doc = read_mame_xml(&contents).unwrap();
-    parse(&doc, &categories, Path::new("deps.xml"))
+    parse_mame_xml_from_str(Path::new("deps.xml"), &contents, &categories)
         .unwrap()
         .categorize()
         .unwrap()
@@ -1498,8 +1469,7 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
     fs::write(source.join("clone.zip"), b"clone").unwrap();
 
     let categories = parse_categories(categories_text, &catver).unwrap();
-    let doc = read_mame_xml(&document).unwrap();
-    let catalog = parse(&doc, &categories, &xml)
+    let catalog = parse_mame_xml_from_str(&xml, &document, &categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -1597,8 +1567,7 @@ fn plan_recheck_catches_metadata_new_files_disks_and_stable_conflicts() {
     fs::write(source.join("clone/base.chd"), b"clone disk").unwrap();
 
     let categories = parse_categories(categories_text, &catver).unwrap();
-    let doc = read_mame_xml(&document).unwrap();
-    let catalog = parse(&doc, &categories, &xml)
+    let catalog = parse_mame_xml_from_str(&xml, &document, &categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -1657,8 +1626,7 @@ fn plan_recheck_catches_metadata_new_files_disks_and_stable_conflicts() {
     let game_xml = root.path().join("game.xml");
     let game_document = r#"<mame build="clash"><machine name="game"><driver status="good" emulation="good"/></machine></mame>"#;
     fs::write(&game_xml, game_document).unwrap();
-    let game_doc = read_mame_xml(game_document).unwrap();
-    let games = parse(&game_doc, &categories, &game_xml)
+    let games = parse_mame_xml_from_str(&game_xml, game_document, &categories)
         .unwrap()
         .categorize()
         .unwrap();
@@ -1697,10 +1665,7 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
     fs::write(source.join("clone.zip"), b"clone").unwrap();
     let categories = parse_categories("[Category]\n", &catver).unwrap();
 
-    let load = || {
-        let doc = read_mame_xml(document).unwrap();
-        parse(&doc, &categories, &xml).unwrap()
-    };
+    let load = || parse_mame_xml_from_str(&xml, document, &categories).unwrap();
     let mut args = Args::new();
     args.mame_xml_path = xml.to_str().unwrap().into();
     args.catver_path = catver.to_str().unwrap().into();
