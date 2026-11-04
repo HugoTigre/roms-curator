@@ -64,11 +64,11 @@ The [software review](../software-review.md) contains the original findings.
 
 ## Phase 4 Curator GUI
 
-Build a local desktop interface for preparing collections; LaunchBox remains the launcher. A native Android curator UI is a separate decision.
+Build a local installable desktop interface for preparing collections; LaunchBox and other emulators remain the launchers. Not an always-on server or a frontend replacement. A native Android curator UI is a separate decision. Collections on network-mounted paths use normal OS folder pickers; a browser-based remote admin UI is out of scope unless that product shape is chosen later.
 
-Proposed stack: **Tauri 2 + React/TypeScript + Vite**, sharing the Rust library with the CLI. Choose at GUI-01. An all-Rust egui/eframe interface is the main alternative; a browser/server UI becomes relevant if NAS/server operation is needed.
+- Decision: **Tauri 2**, **React**, **TypeScript**, and **Vite** for the embedded UI; **Rust** library shared with the CLI owns validation, planning, export, and reports. Vite is dev/build tooling only (bundled static assets in the shipped app, no Node runtime for users). Ship **Windows**, **macOS**, and **Linux** desktop builds. An all-Rust egui/eframe UI was considered and not chosen.
 
-- [ ] **GUI-01** Choose desktop targets and the UI stack after PLAN-01/CLEAN-01. Prototype source selection, plan preview and progress.
+- [ ] **GUI-01** After PLAN-01/CLEAN-01, prototype source selection, plan preview and progress on the chosen stack.
   - Done when Rust owns validation/operations, long work keeps the UI responsive and errors reach the user.
 - [ ] **GUI-02** Add preferences, searchable game/dependency preview, export progress and results after GUI-01/EXPORT-01.
   - Done when exclusions/support files are explained and users review a plan before exporting through the shared core.
