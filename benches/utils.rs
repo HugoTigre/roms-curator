@@ -93,19 +93,14 @@ pub fn shared_metadata_dir() -> Option<PathBuf> {
 fn metadata_paths_from_dir(dir: &Path) -> (String, String) {
     let catver = dir.join("catver.ini");
     if !catver.is_file() {
-        panic!(
-            "metadata directory {}: missing catver.ini",
-            dir.display()
-        );
+        panic!("metadata directory {}: missing catver.ini", dir.display());
     }
     let legacy_xml = dir.join("mame-roms.xml");
     let mame_xml = if legacy_xml.is_file() {
         legacy_xml
     } else {
         read_dir(dir)
-            .unwrap_or_else(|error| {
-                panic!("read metadata directory {}: {error}", dir.display())
-            })
+            .unwrap_or_else(|error| panic!("read metadata directory {}: {error}", dir.display()))
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
             .find(|path| {
