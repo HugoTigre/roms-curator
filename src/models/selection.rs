@@ -273,9 +273,9 @@ fn category_matches(category: &str, pattern: &str) -> bool {
 mod tests {
     use std::path::Path;
 
-    use crate::core::roms_service::parse;
+    use crate::core::roms_service::parse_mame_xml_from_str;
     use crate::models::roms::RomCategory::{Bios, NotWorking, System};
-    use crate::{parse_categories, read_mame_xml};
+    use crate::parse_categories;
 
     use super::*;
 
@@ -312,15 +312,15 @@ mod tests {
             Path::new("catver.ini"),
         )
         .unwrap();
-        let doc = read_mame_xml(
+        let catalog = parse_mame_xml_from_str(
+            Path::new("selection.xml"),
             r#"<mame build="fixture">
                 <machine name="bios" isbios="yes"><driver status="good" emulation="good"/></machine>
                 <machine name="device" isdevice="yes" runnable="no"/>
                 <machine name="mechanical" ismechanical="yes"><driver status="good" emulation="good"/></machine>
             </mame>"#,
+            &categories,
         )
-        .unwrap();
-        let catalog = parse(&doc, &categories, Path::new("selection.xml"))
             .unwrap()
             .categorize()
             .unwrap();

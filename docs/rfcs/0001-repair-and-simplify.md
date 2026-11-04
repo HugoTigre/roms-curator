@@ -63,6 +63,8 @@ The [software review](../software-review.md) contains the original findings.
   - Done when `--mame-version` (or `ensure_metadata` in the library) populates metadata paths, cache location is configurable, and CatVer is checked against the requested version.
 - [x] **PERF-01** Measure full-database time/memory and representative copying before adding streaming or concurrency.
   - Done when benchmarks exist, sample baselines are recorded, and full-database categorize is measured; see [performance.md](../performance.md). Optional: full plan/copy rows and peak RSS in that doc.
+- [x] **PERF-02** Stream MAME listxml parsing without loading a full DOM.
+  - Done when `run()` reads listxml incrementally (one `<machine>` at a time), tests pass, and full-metadata **categorize** time is updated in [performance.md](../performance.md). Re-benchmark plan/full and peak RSS there when you need fresh rows (optional follow-up).
 
 ## Phase 4 Curator GUI
 

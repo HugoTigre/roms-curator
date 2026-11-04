@@ -63,6 +63,12 @@ For a command-line program, use `roms_curator::core::args::build_args()` instead
 That parses flags and runs the same validation. `Args` is a type alias for
 `ExportConfig`.
 
+Lower-level listxml parsing (without `run`): use
+`roms_curator::core::roms_service::parse_mame_xml_file` or
+`parse_mame_xml_from_str`, then `ParsedMachines::categorize()`. The previous
+`parse` helper that took a `roxmltree::Document` was removed in favor of
+streaming parse (PERF-02).
+
 ## Categorize ROMs
 
 `run` returns a [Catalog](/src/models/roms.rs). `catalog.roms` is the
