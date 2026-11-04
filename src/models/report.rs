@@ -309,14 +309,14 @@ impl Report {
 }
 
 fn folder_counts(entries: &[ReportDetailEntry], status: OperationStatus) -> (usize, usize, usize) {
-    entries
-        .iter()
-        .filter(|entry| entry.status == status)
-        .fold((0, 0, 0), |(total, archives, disks), entry| {
+    entries.iter().filter(|entry| entry.status == status).fold(
+        (0, 0, 0),
+        |(total, archives, disks), entry| {
             let archives = archives + usize::from(entry.media_kind == ExportMediaKind::Archive);
             let disks = disks + usize::from(entry.media_kind == ExportMediaKind::DiskDirectory);
             (total + 1, archives, disks)
-        })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -346,7 +346,8 @@ mod tests {
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("Simulation: Planned operations only"));
-        assert!(output.contains("Planned for required folder (roms): 1 (1 archives, 0 disk directories)"));
+        assert!(output
+            .contains("Planned for required folder (roms): 1 (1 archives, 0 disk directories)"));
         assert!(output.contains("Planned for rest folder: 1 (0 archives, 1 disk directories)"));
         assert!(output.contains("Files copied: 0"));
         assert!(output.contains("Failed copies: 0"));
@@ -383,7 +384,8 @@ mod tests {
         let mut output = Vec::new();
         report.write_to(&mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("- Copied to required folder (roms): 0 (0 archives, 0 disk directories)"));
+        assert!(output
+            .contains("- Copied to required folder (roms): 0 (0 archives, 0 disk directories)"));
         assert!(output.contains("- Copied to rest folder: 1 (1 archives, 0 disk directories)"));
         assert!(output.contains("- Files copied: 1"));
         assert!(output.contains("- Ignored source entries: 1"));

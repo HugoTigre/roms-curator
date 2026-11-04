@@ -9,12 +9,12 @@ use roxmltree::{Document, Node};
 
 use crate::core::config::{DestinationFolders, ExportConfig};
 use crate::core::export::{check_export_paths, copy_source_entry, name_in_subset_excluded};
+use crate::models::dependencies::{DependencyKind, DependencySet};
 use crate::models::disks::{DiskKind, DiskSet};
 use crate::models::plan::{
     chd_pairs_in_sources, content_bytes, file_sha1, present_copies, source_has_chd, Availability,
     MediaRole, MetadataIdentity, Plan, PlannedGame, PlannedMedia, UnresolvedMedia, PLAN_VERSION,
 };
-use crate::models::dependencies::{DependencyKind, DependencySet};
 use crate::models::report::{
     ExportMediaKind, MissingChdEntry, OperationStatus, Report, ReportDetailEntry,
 };
@@ -222,7 +222,11 @@ fn categorize_machines(
     Ok(roms)
 }
 
-fn require_same_run(catalog: &Catalog, config: &ExportConfig, plan: &Plan) -> Result<(), Box<dyn Error>> {
+fn require_same_run(
+    catalog: &Catalog,
+    config: &ExportConfig,
+    plan: &Plan,
+) -> Result<(), Box<dyn Error>> {
     let mut problems = Vec::new();
     let policy = match catalog.policy {
         EmulationPolicy::Playable => "playable",
@@ -480,7 +484,12 @@ fn required_archive_names(dependencies: &DependencySet, args: &ExportConfig) -> 
     names
 }
 
-fn media_reasons(machine: &str, role: MediaRole, catalog: &Catalog, args: &ExportConfig) -> Vec<String> {
+fn media_reasons(
+    machine: &str,
+    role: MediaRole,
+    catalog: &Catalog,
+    args: &ExportConfig,
+) -> Vec<String> {
     let mut reasons = Vec::new();
     if role == MediaRole::Archive
         && catalog
@@ -492,7 +501,9 @@ fn media_reasons(machine: &str, role: MediaRole, catalog: &Catalog, args: &Expor
     }
     if role == MediaRole::Archive {
         for edge in &catalog.dependencies.edges {
-            if edge.archive.eq_ignore_ascii_case(machine) && !name_in_subset_excluded(args, &edge.game) {
+            if edge.archive.eq_ignore_ascii_case(machine)
+                && !name_in_subset_excluded(args, &edge.game)
+            {
                 let why = match edge.kind {
                     DependencyKind::Own => "Own archive",
                     DependencyKind::Parent => "Parent archive",
@@ -505,7 +516,9 @@ fn media_reasons(machine: &str, role: MediaRole, catalog: &Catalog, args: &Expor
     }
     if role == MediaRole::Disk {
         for edge in &catalog.disks.edges {
-            if edge.machine.eq_ignore_ascii_case(machine) && !name_in_subset_excluded(args, &edge.game) {
+            if edge.machine.eq_ignore_ascii_case(machine)
+                && !name_in_subset_excluded(args, &edge.game)
+            {
                 let why = match edge.kind {
                     DiskKind::Own => "Own disk",
                     DiskKind::Shared => "Shared disk",
@@ -890,7 +903,11 @@ fn export_destination(
     Ok(export_directory(required, folders).join(file_name))
 }
 
-fn write_selected_names(roms: &Roms, args: &ExportConfig, path: &Path) -> Result<(), Box<dyn Error>> {
+fn write_selected_names(
+    roms: &Roms,
+    args: &ExportConfig,
+    path: &Path,
+) -> Result<(), Box<dyn Error>> {
     let mut names: Vec<&str> = roms
         .iter()
         .filter(|(name, rom)| rom.selected && !name_in_subset_excluded(args, name))
@@ -938,7 +955,10 @@ fn is_disk_media(path: &Path, machine_has_disks: bool) -> bool {
 /// still copies these archives when the archive name falls outside the range.
 /// With no range, this is every archive the full selected list needs; other
 /// source files go to `rest`.
-pub(crate) fn retained_archives(dependencies: &DependencySet, args: &ExportConfig) -> HashSet<String> {
+pub(crate) fn retained_archives(
+    dependencies: &DependencySet,
+    args: &ExportConfig,
+) -> HashSet<String> {
     dependencies
         .edges
         .iter()
@@ -947,8 +967,13 @@ pub(crate) fn retained_archives(dependencies: &DependencySet, args: &ExportConfi
         .collect()
 }
 
-pub(crate) fn subset_excludes(config: &ExportConfig, file_prefix: &str, retain: &HashSet<String>) -> bool {
-    name_in_subset_excluded(config, file_prefix) && !retain.contains(&file_prefix.to_ascii_lowercase())
+pub(crate) fn subset_excludes(
+    config: &ExportConfig,
+    file_prefix: &str,
+    retain: &HashSet<String>,
+) -> bool {
+    name_in_subset_excluded(config, file_prefix)
+        && !retain.contains(&file_prefix.to_ascii_lowercase())
 }
 
 /// Records the XML `build` attribute. The value is not checked against a supported version.

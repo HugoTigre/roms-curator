@@ -1531,11 +1531,9 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
             && media.role == MediaRole::Archive
             && media.availability == Availability::Present
             && media.bytes == Some(5)
-            && media
-                .destination
-                .as_deref()
-                .unwrap()
-                .ends_with("rest/clone.zip")
+            && media.destination.as_deref().is_some_and(|destination| {
+                Path::new(destination).ends_with(Path::new("rest").join("clone.zip"))
+            })
             && media.reasons == vec!["Not required by a selected game".to_string()]
     }));
     assert!(plan.selected_names_path.ends_with("selected.txt"));
