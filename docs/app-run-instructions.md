@@ -19,16 +19,42 @@ roms-curator --help
 
 ## Mandatory arguments
 
-These arguments are mandatory the rest are all optional.
+Every run needs collection paths. Metadata is either downloaded automatically or
+given as file paths.
 
 ```
---mame-xml-path
---catver-path
 --source-path
 --destination-path
 ```
 
+Metadata (one of):
+
+```
+--mame-version=0.289
+```
+
+or both:
+
+```
+--mame-xml-path
+--catver-path
+```
+
+Optional with `--mame-version`: `--metadata-cache-dir`, `--metadata-refresh=true`.
+
 ## Categorize and create a new rom collection
+
+With cached metadata for MAME 0.289:
+
+```bash
+roms-curator \
+--mame-version=0.289 \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--report-path=/mame/report/report.md
+```
+
+Or with files you downloaded yourself:
 
 ```bash
 roms-curator \

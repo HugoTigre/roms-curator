@@ -34,8 +34,8 @@ impl Collection {
             source_path: vec![source.to_str().unwrap().into()],
             destination_path: root.join("output").to_str().unwrap().into(),
             report_path: root.join("report.md").to_str().unwrap().into(),
-            mame_xml_path: fixtures.join("listxml_0244.xml").to_str().unwrap().into(),
-            catver_path: fixtures.join("catver_0244.ini").to_str().unwrap().into(),
+            mame_xml_path: fixtures.join("listxml_sample.xml").to_str().unwrap().into(),
+            catver_path: fixtures.join("catver_sample.ini").to_str().unwrap().into(),
             ..Args::default()
         };
         Self { root, args }

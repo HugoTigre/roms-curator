@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fs::metadata;
 use std::path::Path;
 
-use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, Command};
+use clap::{crate_authors, crate_description, crate_name, crate_version, Arg, ArgGroup, Command};
 
 pub use crate::core::config::ExportConfig;
 
@@ -19,25 +19,62 @@ pub fn command() -> Command {
         .about(crate_description!())
         .arg_required_else_help(true)
         .after_help("Examples:
+    roms-curator --mame-version=0.289 --source-path=/roms --destination-path=/roms-new/
     roms-curator --mame-xml-path=/mame/mame.xml --catver-path=/mame/catver.ini --source-path=/roms --destination-path=/roms-new/
     roms-curator -m /mame/mame.xml -c /mame/catver.ini -s /roms -d /roms-new/")
         .arg(
+            Arg::new("mame_version")
+                .help("MAME ROM set version (e.g. 0.289). Downloads listxml and CatVer into the metadata cache. Cannot be combined with --mame-xml-path or --catver-path.")
+                .long("mame-version")
+                .num_args(1)
+                .required(false)
+                .conflicts_with_all(["mame_xml_path", "catver_path"])
+                .value_parser(validate_mame_version),
+        )
+        .arg(
+            Arg::new("metadata_cache_dir")
+                .help("Directory for cached MAME listxml and CatVer files used with --mame-version. Defaults to a platform cache folder; override with ROMS_CURATOR_CACHE (full cache root, same as this flag).")
+                .long("metadata-cache-dir")
+                .num_args(1)
+                .required(false)
+                .requires("mame_version")
+                .value_parser(validate_metadata_cache_dir),
+        )
+        .arg(
+            Arg::new("metadata_refresh")
+                .help("When using --mame-version, re-download metadata even if cached files exist. (true|false)")
+                .long("metadata-refresh")
+                .num_args(1)
+                .required(false)
+                .default_value("false")
+                .value_parser(validate_metadata_refresh),
+        )
+        .arg(
             Arg::new("mame_xml_path")
-                .help("File path of Mame xml file. Extract with 'mame.exe -listxml > mame.xml'")
+                .help("File path of Mame xml file. Requires --catver-path when --mame-version is omitted.")
                 .long("mame-xml-path")
                 .short('m')
                 .num_args(1)
-                .required(true)
+                .required(false)
+                .requires("catver_path")
+                .conflicts_with("mame_version")
                 .value_parser(validate_mame_xml_file)
         )
         .arg(
             Arg::new("catver_path")
-                .help("File path of roms category file. Download pack from here [https://www.progettosnaps.net/support/]")
+                .help("File path of roms category file. Requires --mame-xml-path when --mame-version is omitted.")
                 .long("catver-path")
                 .short('c')
                 .num_args(1)
-                .required(true)
+                .required(false)
+                .requires("mame_xml_path")
+                .conflicts_with("mame_version")
                 .value_parser(validate_catver_ini_file),
+        )
+        .group(
+            ArgGroup::new("metadata")
+                .args(["mame_version", "mame_xml_path"])
+                .required(true),
         )
         .arg(
             Arg::new("source_path")
@@ -129,13 +166,7 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
     let command = command();
     let matches = command.get_matches();
 
-    let mame_xml_path: &String = matches
-        .get_one("mame_xml_path")
-        .expect("validated in args parser");
-
-    let catver_path: &String = matches
-        .get_one("catver_path")
-        .expect("validated in args parser");
+    let (mame_xml_path, catver_path) = resolve_metadata_paths(&matches)?;
 
     let source_path: &Vec<String> = matches
         .get_one("source_path")
@@ -184,6 +215,79 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
 
     crate::core::paths::validate(&args)?;
     Ok(args)
+}
+
+fn resolve_metadata_paths(matches: &clap::ArgMatches) -> Result<(String, String), Box<dyn Error>> {
+    let has_version = matches.contains_id("mame_version");
+
+    if !has_version {
+        let refresh = *matches
+            .get_one::<bool>("metadata_refresh")
+            .expect("validated in args parser");
+        if refresh {
+            return Err("--metadata-refresh requires --mame-version.".into());
+        }
+    }
+
+    if has_version {
+        let version = matches
+            .get_one::<String>("mame_version")
+            .expect("validated in args parser");
+        let refresh = *matches
+            .get_one::<bool>("metadata_refresh")
+            .expect("validated in args parser");
+        let cache_dir = matches
+            .get_one::<String>("metadata_cache_dir")
+            .map(Path::new)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(crate::core::metadata_fetch::default_metadata_cache_dir);
+        let paths = crate::core::metadata_fetch::ensure_metadata(version, &cache_dir, refresh)?;
+        log::info!(
+            "Using MAME {} metadata from {}",
+            version,
+            cache_dir.display()
+        );
+        return Ok((
+            paths.mame_xml.to_string_lossy().into_owned(),
+            paths.catver.to_string_lossy().into_owned(),
+        ));
+    }
+
+    let mame_xml_path = matches
+        .get_one::<String>("mame_xml_path")
+        .ok_or("Provide both --mame-xml-path and --catver-path when --mame-version is omitted.")?;
+    let catver_path = matches
+        .get_one::<String>("catver_path")
+        .ok_or("Provide both --mame-xml-path and --catver-path when --mame-version is omitted.")?;
+    Ok((mame_xml_path.clone(), catver_path.clone()))
+}
+
+fn validate_mame_version(value: &str) -> Result<String, String> {
+    crate::core::metadata_fetch::parse_mame_version(value)
+        .map(|version| version.display())
+        .map_err(|error| error.to_string())
+}
+
+fn validate_metadata_cache_dir(value: &str) -> Result<String, String> {
+    let path = sanitize_path(value);
+    match metadata(&path) {
+        Ok(metadata) if metadata.is_file() => {
+            Err("Metadata cache path needs to be a directory.".into())
+        }
+        Ok(_) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+        Err(error) => Err(format!("Metadata cache path is not usable: {error}")),
+    }
+}
+
+fn validate_metadata_refresh(value: &str) -> Result<bool, String> {
+    if value.eq_ignore_ascii_case("true") {
+        Ok(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Ok(false)
+    } else {
+        Err("Invalid value for metadata_refresh. (true|false)".into())
+    }
 }
 
 fn validate_mame_xml_file(path: &str) -> Result<String, String> {

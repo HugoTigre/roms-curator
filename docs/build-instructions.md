@@ -33,24 +33,26 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 
 CI also builds all targets on Linux, Windows and macOS.
 
-Also run the full metadata fixture tests (macOS/Linux):
+Also run live metadata and full-database tests (macOS/Linux; needs network):
 
 ```bash
-CARGO_RC_RUN_EXPENSIVE_TESTS=true cargo test --locked --test lib_it -- --test-threads=1
+CARGO_RC_RUN_EXPENSIVE_TESTS=true cargo test --locked --test lib_it --test metadata_fetch_it -- --test-threads=1
 ```
+
+Optional: set `CARGO_RC_MAME_VERSION=0.289` (default is `0.244`) to download a different release.
 
 In Windows PowerShell:
 
 ```powershell
 $env:CARGO_RC_RUN_EXPENSIVE_TESTS = "true"
 try {
-    cargo test --locked --test lib_it -- --test-threads=1
+    cargo test --locked --test lib_it --test metadata_fetch_it -- --test-threads=1
 } finally {
     Remove-Item Env:CARGO_RC_RUN_EXPENSIVE_TESTS
 }
 ```
 
-The full fixture uses MAME 0.244 metadata and runs serially to limit memory use.
+Expensive runs download listxml and CatVer into `target/tests/metadata-cache/` and reuse that cache across tests. The first run can take several minutes because of the listxml size. Use `--test-threads=1` to limit memory use.
 
 ## Build platform specific binary
 
