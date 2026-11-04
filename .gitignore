@@ -16,4 +16,3 @@ log/
 .DS_STORE
 mame-roms.xml
 catver.ini
-/tests/resources/prod_lists**

@@ -12,7 +12,7 @@ use roms_curator::models::roms::Roms;
 use crate::utils::{
     clean_up, get_files_from_folder, get_test_tag, run_expensive_tests, set_up,
     CATEGORIZED_OTHER_FOLDER_NAME, CATEGORIZED_ROMS_FOLDER_NAME, CATEGORIZED_WORKING_FOLDER_NAME,
-    TARGET_FOLDER, WORKING_ARCADE_LIST_PATH,
+    TARGET_FOLDER, WORKING_ARCADE_SAMPLE,
 };
 
 mod utils;
@@ -42,10 +42,8 @@ fn should_build_set_with_no_errors() {
 #[test]
 fn should_separate_all_working_roms() {
     if run_expensive_tests() {
-        // The old full-set diffs (9 extra, 1621 omitted) mixed category and
-        // mechanical exclusions with the sound/graphics rule. The playable-policy
-        // counts are not known, and the 0.244 archive is not in this tree.
-        // Skip until those counts are measured; do not treat a printout as a pass.
+        // Full-set golden counts for working_arcade_sample.ini are not maintained
+        // for downloaded metadata; skip until measured.
         eprintln!(
             "skipping full-set working_arcade.ini diff; extra and omitted counts are not known"
         );
@@ -69,7 +67,7 @@ fn should_separate_all_working_roms() {
 
     // get working from mame ini files
     let working_arcade: HashSet<String> =
-        BufReader::new(File::open(WORKING_ARCADE_LIST_PATH).expect("File not found"))
+        BufReader::new(File::open(WORKING_ARCADE_SAMPLE).expect("File not found"))
             .lines()
             .skip(8)
             .map(|line| line.expect("Could not parse line"))

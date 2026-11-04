@@ -23,6 +23,9 @@ pub mod models;
 pub mod utils;
 
 pub use crate::core::config::ExportConfig;
+pub use crate::core::metadata_fetch::{
+    default_metadata_cache_dir, ensure_metadata, parse_mame_version, MameMetadataPaths, MameVersion,
+};
 
 type RomCategories = HashMap<String, String>;
 

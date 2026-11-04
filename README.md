@@ -34,8 +34,11 @@ __Index__
 
 ## Requirement / Dependencies
 
-This program has 2 external dependencies that are not included here,
-but are easy to get:
+This program needs MAME listxml and CatVer for the same ROM set version. You can
+point the CLI at files you already have, or pass **`--mame-version`** (for example
+`0.289`) and let the tool download and cache them.
+
+Manual download (optional):
 
 - MAME ROM database (xml file)
   - download MAME from [here](https://www.mamedev.org/release.html).
@@ -50,6 +53,18 @@ but are easy to get:
     be downloaded [here](https://www.progettosnaps.net/support/).
   - download the package for your ROMs Set version and extract the
     `catver.ini` file.
+
+Automatic download:
+
+```bash
+roms-curator --mame-version=0.289 --source-path=/roms --destination-path=/roms-new/
+```
+
+Files are stored under a cache directory. The default root is
+`~/.cache/roms-curator/metadata` on Linux and macOS, or
+`%LOCALAPPDATA%\\roms-curator\\metadata` on Windows. Set the **full cache root**
+(not the XDG base alone) with `--metadata-cache-dir` or `ROMS_CURATOR_CACHE`.
+Use `--metadata-refresh=true` to replace cached files.
 
 ## How this works
 
@@ -103,5 +118,4 @@ Please feel free to open an [Issue](https://github.com/HugoTigre/roms-curator/is
 
 ## Planned for the future (maybe)
 
-- Add option to automatically download dependencies (mame xml and catver.ini).
 - Verify ROM Set integrity.

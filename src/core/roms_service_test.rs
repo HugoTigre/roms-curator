@@ -20,8 +20,8 @@ use crate::{parse_categories, read_categories, read_mame_xml};
 fn should_properly_classify_roms() {
     // Older listxml/CatVer sample from when this repository was created.
     // The expected build is the attribute in that file, not a supported version.
-    let source = Path::new("tests/resources/listxml_0244.xml");
-    let rom_categories = read_categories(Path::new("tests/resources/catver_0244.ini")).unwrap();
+    let source = Path::new("tests/resources/listxml_sample.xml");
+    let rom_categories = read_categories(Path::new("tests/resources/catver_sample.ini")).unwrap();
     let contents = fs::read_to_string(source).unwrap();
     let doc = read_mame_xml(&contents).unwrap();
     let catalog = parse(&doc, &rom_categories, source)
