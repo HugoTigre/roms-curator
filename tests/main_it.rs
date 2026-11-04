@@ -47,10 +47,18 @@ fn should_run_with_precached_mame_version() {
 
     let test_folder = Path::new(TARGET_FOLDER).join(&tag);
     let cache_root = test_folder.join("metadata-cache");
-    let cache_dir = cache_root.join("mame-0.244");
+    let cache_dir = cache_root.join("mame-0.289");
     std::fs::create_dir_all(&cache_dir).unwrap();
-    std::fs::copy(MAME_XML_SAMPLE, cache_dir.join("mame0244.xml")).unwrap();
-    std::fs::copy(CATVER_SAMPLE, cache_dir.join("catver.ini")).unwrap();
+    std::fs::write(
+        cache_dir.join("mame0289.xml"),
+        r#"<?xml version="1.0"?><mame build="0.289 (mame0289)"><machine name="game"><driver status="good" emulation="good"/></machine></mame>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cache_dir.join("catver.ini"),
+        ";; catver.ini 0.289 / test / MAME 0.289 ;;\n[Category]\ngame=Shooter\n",
+    )
+    .unwrap();
 
     let destination_path = test_folder
         .join(CATEGORIZED_ROMS_FOLDER_NAME)
@@ -61,7 +69,7 @@ fn should_run_with_precached_mame_version() {
 
     Command::cargo_bin("roms-curator")
         .unwrap()
-        .arg("--mame-version=0.244")
+        .arg("--mame-version=0.289")
         .arg(format!("--metadata-cache-dir={}", cache_root.display()))
         .arg(format!("--source-path={}", ROMS_SOURCE_PATH))
         .arg(format!("--destination-path={}", destination_path))

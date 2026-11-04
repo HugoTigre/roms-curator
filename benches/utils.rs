@@ -80,7 +80,7 @@ fn create_test_dir(path: &Path) {
 }
 
 pub fn expensive_mame_version() -> String {
-    env::var("CARGO_RC_MAME_VERSION").unwrap_or_else(|_| "0.244".into())
+    env::var("CARGO_RC_MAME_VERSION").unwrap_or_else(|_| "0.289".into())
 }
 
 /// Override directory for full listxml + CatVer (`catver.ini` plus `mame-roms.xml` or `mame*.xml`).

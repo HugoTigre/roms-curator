@@ -19,8 +19,8 @@ Progress bars are disabled in benchmarks (`progress: false`).
 
 ### Metadata fixtures
 
-- **sample** (default): `tests/resources/listxml_sample.xml` and `catver_sample.ini` with `tests/resources/merged_roms/` (12 files). Fast; suitable for CI compile checks and regression timing on a laptop.
-- **full**: set `CARGO_RC_RUN_EXPENSIVE_TESTS=true`. Benchmarks call `ensure_metadata` once into `target/benches/metadata-cache/` (same pattern as integration tests; needs network on first run). Override the version with `CARGO_RC_MAME_VERSION` (default `0.244`). Point at an existing tree with `CARGO_RC_BENCH_METADATA_DIR` (`catver.ini` plus `mame-roms.xml` or `mame*.xml`). Needs several GB RAM for categorize/plan on full listxml.
+- **sample** (default): `tests/resources/listxml_sample.xml` and `catver_sample.ini` (older 0.244-era regression slice, **11 machines**) with `tests/resources/merged_roms/` (12 files). Fast; suitable for CI and regression timing.
+- **full**: set `CARGO_RC_RUN_EXPENSIVE_TESTS=true`. Benchmarks and expensive integration tests call `ensure_metadata` once into `target/benches/metadata-cache/` or `target/tests/metadata-cache/` (network on first run). Default MAME set is **`0.289`** (`CARGO_RC_MAME_VERSION` overrides). Optional `CARGO_RC_BENCH_METADATA_DIR` must contain `catver.ini` and `mame*.xml` for that set. Full listxml needs several GB RAM for categorize/plan.
 
 Copy/plan benchmarks always use the **sample** ROM tree; only listxml/CatVer size changes between sample and full. With **full** metadata, the **copy** bench still parses the full listxml on every iteration in setup (only the timed slice is `copy_with_plan`); expect long total runtime if you run many samples.
 
@@ -68,9 +68,11 @@ Criterion times wall clock only. For peak RSS, wrap one bench executable with th
 system `time` utility (outside Criterion’s loop):
 
 ```bash
-cargo bench --locked --bench categorize_roms_bench -- --test
-/usr/bin/time -l target/release/deps/categorize_roms_bench-* 2>&1 | tail -5
+cargo build --release --bench categorize_roms_bench
+CARGO_RC_RUN_EXPENSIVE_TESTS=true /usr/bin/time -l target/release/deps/categorize_roms_bench-* --test 2>&1 | rg 'maximum resident|real '
 ```
+
+Use the bench binary path only (not `*.o` artifacts). `--test` runs sample then full; peak RSS reflects the full-metadata `run()`.
 
 On Linux, use `/usr/bin/time -v` and read `Maximum resident set size`.
 
@@ -86,23 +88,21 @@ Criterion medians unless noted. Re-run on your machine before comparing optimiza
 
 | Step | Median time | Notes |
 |------|-------------|--------|
-| `categorize_roms/sample` | ~0.64 ms | ~40 machines; streaming parser adds a little overhead vs the old DOM path (~0.49 ms pre–PERF-02) |
+| `categorize_roms/sample` | ~0.64 ms | 11 machines in sample XML; streaming parser adds a little overhead vs the old DOM path (~0.49 ms pre–PERF-02) |
 | `plan_export/sample` | ~0.94 ms | Same catalog, tiny ROM tree |
 | `copy_roms/sample/sources=12` | ~10 ms | `copy_with_plan` timed; catalog/plan rebuilt in setup each iteration |
 
 Sample rows measured on Apple Silicon macOS.
 
-### Full metadata (0.244 listxml + CatVer via `ensure_metadata` or `CARGO_RC_BENCH_METADATA_DIR`)
+### Full metadata (MAME **0.289** listxml + CatVer via `ensure_metadata`)
 
 | Step | Median time | Notes |
 |------|-------------|--------|
-| `categorize_roms/full` | ~1.35 s | ~45k machines; `--sample-size 10`, `--measurement-time 25`; ~45% faster than pre–PERF-02 (~2.4 s) on same hardware |
-| `plan_export/full` | ~252 ms | Pre–PERF-02 row; re-run after metadata cache is warm |
-| Peak RSS (`categorize_roms/full`) | TBD | Re-run `/usr/bin/time -l` on `--test` with full metadata; expect lower than pre–PERF-02 (~2.5 GiB) now that listxml is streamed |
+| `categorize_roms/full` | ~1.58 s | Full 0.289 drop; `--sample-size 10`, `--measurement-time 25`; cache under `target/benches/metadata-cache/` |
+| `plan_export/full` | ~377 ms | Same env; catalog loaded once outside the timed loop; sample ROM tree |
+| Peak RSS (`categorize_roms/full`) | ~2.5 GiB | `CARGO_RC_RUN_EXPENSIVE_TESTS=true` + `/usr/bin/time -l` on release bench `--test`; in-memory `Catalog` still dominates (streaming removed the XML DOM, not the machine map) |
 
-Full-metadata categorize re-measured on Apple Silicon macOS, 2026-11-04, with
-`CARGO_RC_BENCH_METADATA_DIR` pointing at extracted 0.244 listxml + CatVer.
-Re-record plan/full RSS after you refresh local numbers.
+Full-metadata rows measured on Apple Silicon macOS, 2026-11-04, after `ensure_metadata("0.289", …)` populated the bench cache. Pre–PERF-02 on a 0.244 corpus was ~2.4 s categorize / ~2.5 GiB RSS with a DOM parse; post–PERF-02 streaming cut wall time on a similar-sized corpus to ~1.35 s before switching the default set to 0.289.
 
 ### Profiling full categorize (PERF-02)
 

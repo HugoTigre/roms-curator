@@ -99,7 +99,7 @@ pub fn get_files_from_folder(path: &str) -> Vec<String> {
 }
 
 pub fn expensive_mame_version() -> String {
-    env::var("CARGO_RC_MAME_VERSION").unwrap_or_else(|_| "0.244".into())
+    env::var("CARGO_RC_MAME_VERSION").unwrap_or_else(|_| "0.289".into())
 }
 
 pub fn expensive_metadata_cache_dir() -> PathBuf {

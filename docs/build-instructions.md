@@ -39,7 +39,7 @@ Also run live metadata and full-database tests (macOS/Linux; needs network):
 CARGO_RC_RUN_EXPENSIVE_TESTS=true cargo test --locked --test lib_it --test metadata_fetch_it -- --test-threads=1
 ```
 
-Optional: set `CARGO_RC_MAME_VERSION=0.289` (default is `0.244`) to download a different release.
+Optional: set `CARGO_RC_MAME_VERSION` to another release (default `0.289`) when downloading metadata.
 
 In Windows PowerShell:
 
