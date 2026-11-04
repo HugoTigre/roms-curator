@@ -172,8 +172,8 @@ fn simulation_should_generate_a_planned_report_without_creating_category_folders
     assert!(!output.join("selected.txt").exists());
     assert!(report.to_file(&args.report_path).unwrap());
     let contents = std::fs::read_to_string(&args.report_path).unwrap();
-    assert!(contents.contains("Planned for ROMs folder"));
-    assert!(contents.contains("- ROMs copied: 0"));
+    assert!(contents.contains("Planned for required folder (roms)"));
+    assert!(contents.contains("- Files copied: 0"));
     assert!(contents.contains("- Failed copies: 0"));
     assert!(!contents.contains("### Copied to"));
     clean_up(&tag);

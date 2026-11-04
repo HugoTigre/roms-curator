@@ -1,5 +1,7 @@
 pub mod args;
+pub mod config;
 pub(crate) mod copying;
+pub(crate) mod export;
 pub(crate) mod paths;
 pub mod roms_service;
 
