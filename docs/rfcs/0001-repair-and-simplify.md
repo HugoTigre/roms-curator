@@ -57,6 +57,7 @@ The [software review](../software-review.md) contains the original findings.
   - Decision: a missing CHD does not remove the game or skip its ROM archive. The Markdown report adds a `Missing CHDs` section when the list is not empty, plus a summary count. Each row names the selected game, the machine folder, the disk, and why it is required. Rows come from `catalog.disks.missing` and from required disk edges whose CHD file is not in the source. The section is omitted when nothing is missing. Selection is unchanged.
 - [ ] **VERIFY-01** Verify selected names using MAME 0.289 against output paths only. Test reduced merged import/launching in LaunchBox and the intended Android setup.
   - Done when parent, merged clone, BIOS/device and CHD cases pass and failures identify missing media. Keep optional CHD integrity checks separate; auditing does not prove device performance.
+  - Sequencing: may follow Phase 4 GUI work. Real collection export and frontend/device checks stay required before the first intentional release (see [Remaining validation](#remaining-validation)).
 - [x] **CLEAN-01** Separate CLI parsing from library configuration and filesystem work. Simplify map extensions/builders, remove unused report fields/clones and move test-only dependencies.
   - Done when a library caller can select/plan independently and reports distinguish games, archives, disks and operation outcomes.
 - [x] **META-FETCH-01** Download MAME listxml and CatVer for a given set version (e.g. 0.289) into a local cache so users are not required to fetch them manually.
@@ -70,10 +71,13 @@ The [software review](../software-review.md) contains the original findings.
 
 Build a local installable desktop interface for preparing collections; LaunchBox and other emulators remain the launchers. Not an always-on server or a frontend replacement. A native Android curator UI is a separate decision. Collections on network-mounted paths use normal OS folder pickers; a browser-based remote admin UI is out of scope unless that product shape is chosen later.
 
+Phase 4 may start before **VERIFY-01**. MAME and frontend verification remain on the release checklist below; the GUI uses the same Rust library as the CLI for path validation, planning, export, and reports.
+
 - Decision: **Tauri 2**, **React**, **TypeScript**, and **Vite** for the embedded UI; **Rust** library shared with the CLI owns validation, planning, export, and reports. Vite is dev/build tooling only (bundled static assets in the shipped app, no Node runtime for users). Ship **Windows**, **macOS**, and **Linux** desktop builds. An all-Rust egui/eframe UI was considered and not chosen.
 
-- [ ] **GUI-01** After PLAN-01/CLEAN-01, prototype source selection, plan preview and progress on the chosen stack.
+- [x] **GUI-01** After PLAN-01/CLEAN-01, prototype source selection, plan preview and progress on the chosen stack.
   - Done when Rust owns validation/operations, long work keeps the UI responsive and errors reach the user.
+  - Decision: Tauri app under `src-tauri/` with the React UI in `gui/`. Commands run `ExportConfig::validate`, then `run_with_progress` and `Catalog::plan_with_progress` on a background thread and emit `plan-progress` events. Folder pickers use the dialog plugin. Linux CI has a dedicated `gui` job (fmt, Clippy, check, tests on `src-tauri/`); npm frontend checks and desktop bundles remain **GUI-02** / **GUI-03**.
 - [ ] **GUI-02** Add preferences, searchable game/dependency preview, export progress and results after GUI-01/EXPORT-01.
   - Done when exclusions/support files are explained and users review a plan before exporting through the shared core.
 - [ ] **GUI-03** Define cancellation, incomplete-export recovery and desktop distribution after GUI-02/SAFE-02.
