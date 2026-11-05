@@ -81,8 +81,9 @@ Phase 4 may start before **VERIFY-01**. MAME and frontend verification remain on
 - [x] **GUI-02** Add preferences, searchable game/dependency preview, export progress and results after GUI-01/EXPORT-01.
   - Done when exclusions/support files are explained and users review a plan before exporting through the shared core.
   - Decision: `review_export_plan` returns games, filtered support media, unresolved rows, and the full `Plan` JSON. `execute_export` reloads the catalog and runs `Catalog::copy_with_plan` after the user confirms. Preferences cover strict emulation, subset range, optional report path, and metadata refresh. Linux CI also runs `npm ci` and `npm run build`.
-- [ ] **GUI-03** Define cancellation, incomplete-export recovery and desktop distribution after GUI-02/SAFE-02.
+- [x] **GUI-03** Define cancellation, incomplete-export recovery and desktop distribution after GUI-02/SAFE-02.
   - Done when cancellation preserves source/completed output and recovery is tested. Decide signing, updates and GUI release assets here.
+  - Decision: cooperative `CancelFlag` in the library (catalog load, plan scan, per-file copy). The GUI exposes **Cancel** via `cancel_background_work`. Completed copies stay; `selected.txt` is not published when cancelled. Recovery is documented in [gui-export-recovery.md](../gui-export-recovery.md) with a regression test for mid-copy cancel. Linux CI runs `npm run tauri build`. Signing, auto-update, and attaching GUI installers to CD are documented in [releasing.md](../releasing.md#gui-release-delivery) and deferred for the first GUI release.
 
 ## Remaining validation
 

@@ -18,10 +18,12 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+pub mod cancel;
 pub mod core;
 pub mod models;
 pub mod utils;
 
+pub use crate::cancel::CancelFlag;
 pub use crate::core::config::ExportConfig;
 pub use crate::core::metadata_fetch::{
     default_metadata_cache_dir, ensure_metadata, parse_mame_version, MameMetadataPaths, MameVersion,
@@ -87,15 +89,21 @@ type RomCategories = HashMap<String, String>;
 /// the plan it is given, then copies and writes `selected.txt` when every copy succeeds.
 ///
 pub fn run(config: &ExportConfig) -> Result<Catalog, Box<dyn Error>> {
-    run_with_progress(config, None::<&mut dyn FnMut(&str)>)
+    run_with_progress(config, None::<&mut dyn FnMut(&str)>, None)
 }
 
 /// Same as [`run`], but invokes `on_status` with human-readable step labels when
 /// provided (for example a GUI status line while `progress` is false).
+///
+/// `cancel` is polled after the opening status line, after the CatVer file is
+/// read, and after the MAME XML is parsed, before categorization. Metadata
+/// download is not part of this function.
 pub fn run_with_progress(
     config: &ExportConfig,
     mut on_status: Option<&mut dyn FnMut(&str)>,
+    cancel: Option<&CancelFlag>,
 ) -> Result<Catalog, Box<dyn Error>> {
+    use crate::cancel::check_cancelled;
     let progress_bar = if config.progress {
         Some(build_progress_bar())
     } else {
@@ -117,16 +125,19 @@ pub fn run_with_progress(
     };
 
     status(catalog_load_message);
+    check_cancelled(cancel)?;
 
     let catver_path = Path::new(&config.catver_path);
     let xml_path = Path::new(&config.mame_xml_path);
     status(&format!("Reading {} document...", catver_path.display()));
     let rom_categories = read_categories(catver_path)?;
     progress_bar.inc();
+    check_cancelled(cancel)?;
 
     status(&format!("Reading {} document...", xml_path.display()));
     let parsed = parse_mame_xml_file(xml_path, &rom_categories)?;
     progress_bar.inc();
+    check_cancelled(cancel)?;
 
     status("Categorizing roms...");
     let catalog = if config.strict_emulation {

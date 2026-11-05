@@ -4,7 +4,9 @@ use roms_curator::models::plan::{Availability, Plan};
 use roms_curator::models::report::{OperationStatus, Report};
 use roms_curator::{default_metadata_cache_dir, ensure_metadata, run_with_progress, ExportConfig};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
+
+use crate::job::JobState;
 
 pub const SELECTION_HELP: &str = "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games. Computers, consoles, and similar CatVer groups are not launch-list games. Parent, BIOS, device, and disk files listed below are copied into the roms folder when a selected game needs them.";
 
@@ -65,26 +67,48 @@ pub struct ExportResult {
 #[tauri::command]
 pub async fn review_export_plan(
     app: AppHandle,
+    state: State<'_, JobState>,
     input: ExportInput,
+    run_id: u64,
 ) -> Result<PlanReviewResult, String> {
-    tauri::async_runtime::spawn_blocking(move || review_export_plan_blocking(&app, input))
-        .await
-        .map_err(|error| format!("Plan task failed: {error}"))?
+    let cancel = state.start(run_id);
+    let app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        review_export_plan_blocking(&app, input, Some(&cancel))
+    })
+    .await
+    .map_err(|error| format!("Plan task failed: {error}"))?;
+    state.clear(run_id);
+    result
 }
 
 #[tauri::command]
 pub async fn execute_export(
     app: AppHandle,
+    state: State<'_, JobState>,
     request: ExecuteExportRequest,
+    run_id: u64,
 ) -> Result<ExportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || execute_export_blocking(&app, request))
-        .await
-        .map_err(|error| format!("Export task failed: {error}"))?
+    let cancel = state.start(run_id);
+    let app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        execute_export_blocking(&app, request, Some(&cancel))
+    })
+    .await
+    .map_err(|error| format!("Export task failed: {error}"))?;
+    state.clear(run_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_background_work(state: State<'_, JobState>, run_id: u64) {
+    state.request_cancel(run_id);
 }
 
 fn review_export_plan_blocking(
     app: &AppHandle,
     input: ExportInput,
+    cancel: Option<&roms_curator::CancelFlag>,
 ) -> Result<PlanReviewResult, String> {
     let config = prepare_config(&input)?;
     validate_metadata_override(&input)?;
@@ -107,10 +131,10 @@ fn review_export_plan_blocking(
 
     let mut status = |message: &str| emit(app, message);
     let catalog =
-        run_with_progress(&config, Some(&mut status)).map_err(|error| error.to_string())?;
+        run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
     let plan = catalog
-        .plan_with_progress(&config, Some(&mut status))
+        .plan_with_progress(&config, Some(&mut status), cancel)
         .map_err(|error| error.to_string())?;
 
     Ok(plan_review(&plan))
@@ -119,6 +143,7 @@ fn review_export_plan_blocking(
 fn execute_export_blocking(
     app: &AppHandle,
     request: ExecuteExportRequest,
+    cancel: Option<&roms_curator::CancelFlag>,
 ) -> Result<ExportResult, String> {
     let config = prepare_config(&request.input)?;
     validate_metadata_override(&request.input)?;
@@ -154,11 +179,11 @@ fn execute_export_blocking(
     emit(app, "Loading catalog for export…");
     let mut status = |message: &str| emit(app, message);
     let catalog =
-        run_with_progress(&config, Some(&mut status)).map_err(|error| error.to_string())?;
+        run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
     emit(app, "Copying into roms and rest…");
     let report = catalog
-        .copy_with_plan(&config, &request.plan)
+        .copy_with_plan(&config, &request.plan, cancel)
         .map_err(|error| error.to_string())?;
 
     let report_path = config.report_path.clone();

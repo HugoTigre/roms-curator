@@ -25,7 +25,7 @@ fn copy_roms(c: &mut Criterion) {
             },
             |(output, catalog, plan, args)| {
                 let report = catalog
-                    .copy_with_plan(&args, &plan)
+                    .copy_with_plan(&args, &plan, None)
                     .expect("copy roms in benchmark");
                 black_box((output, report))
             },

@@ -34,7 +34,7 @@ fn main() -> ExitCode {
             error!("{err}");
             process::exit(1);
         });
-        roms.copy_with_plan(&args, &plan)
+        roms.copy_with_plan(&args, &plan, None)
     } else {
         let plan = roms.plan(&args).unwrap_or_else(|err| {
             error!("Failed to build plan: {err}");
@@ -44,7 +44,7 @@ fn main() -> ExitCode {
             error!("{err}");
             process::exit(1);
         });
-        roms.copy_with_plan(&args, &plan)
+        roms.copy_with_plan(&args, &plan, None)
     }
     .unwrap_or_else(|err| {
         error!("Failed to copy roms: {err}");

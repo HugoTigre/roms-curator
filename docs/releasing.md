@@ -22,6 +22,16 @@ Before publication:
 
 The workflow publishes the crate to crates.io and creates a GitHub release with `roms-curator-linux`, `roms-curator.exe` and LICENSE. Only the publishing job has repository write permission. CI has no registry credentials.
 
+### GUI release delivery
+
+**Decision (GUI-03):**
+
+- **CI** builds an unsigned Linux desktop bundle on every master/PR GUI job (`npm run tauri build`). Artifacts are validated in CI but not uploaded automatically yet.
+- **Signing** (Windows Authenticode, Apple notarization) and **in-app updates** are deferred until the first GUI release ships; document any manual signing steps when attaching GUI installers to a tag.
+- **GitHub release assets** for the curator app (`.deb` / AppImage / `.msi` / `.dmg`) will be added to CD in the same tag as the CLI binaries when GUI is included in an intentional release. Until then, build installers locally with `npm run tauri build` and attach them manually if needed.
+
+See [gui-export-recovery.md](gui-export-recovery.md) for cancellation and partial-export behavior.
+
 The release workflow uses Cargo and a small inline Bash check for the version. It has no Python setup, custom packaging scripts or checksum-generation helpers. The Linux download may need `chmod +x roms-curator-linux` before running.
 
 ## Publish intentionally

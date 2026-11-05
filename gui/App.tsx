@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -100,6 +100,10 @@ function formatEmulationPolicy(policy: string): string {
   }
 }
 
+function isCancelled(message: string): boolean {
+  return message.toLowerCase().includes("cancelled");
+}
+
 function App() {
   const [sourcePath, setSourcePath] = useState("");
   const [destinationPath, setDestinationPath] = useState("");
@@ -116,6 +120,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<PlanReviewResult | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const acceptProgress = useRef(false);
+  const runId = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -123,7 +129,7 @@ function App() {
 
     void (async () => {
       const unlistenFn = await listen<string>("plan-progress", (event) => {
-        if (active) {
+        if (active && acceptProgress.current) {
           setProgress(event.payload);
         }
       });
@@ -227,21 +233,44 @@ function App() {
     }
   }
 
+  async function cancelWork() {
+    await invoke("cancel_background_work", { runId: runId.current });
+  }
+
+  function beginRun(): number {
+    runId.current += 1;
+    acceptProgress.current = true;
+    return runId.current;
+  }
+
+  function endRun() {
+    acceptProgress.current = false;
+  }
+
   async function reviewPlan() {
     setBusy(true);
     setError(null);
     setReview(null);
     setExportResult(null);
     setProgress("Starting…");
+    const id = beginRun();
     try {
       const result = await invoke<PlanReviewResult>("review_export_plan", {
         input: exportInput(),
+        runId: id,
       });
+      endRun();
       setReview(result);
       setProgress("Plan ready — review the lists below before exporting.");
     } catch (err) {
-      setError(String(err));
-      setProgress("");
+      endRun();
+      const message = String(err);
+      if (isCancelled(message)) {
+        setProgress("Cancelled.");
+      } else {
+        setError(message);
+        setProgress("");
+      }
     } finally {
       setBusy(false);
     }
@@ -255,18 +284,30 @@ function App() {
     setError(null);
     setExportResult(null);
     setProgress("Starting export…");
+    const id = beginRun();
     try {
       const result = await invoke<ExportResult>("execute_export", {
+        runId: id,
         request: {
           input: exportInput(),
           plan: review.plan,
         },
       });
+      endRun();
       setExportResult(result);
       setProgress(result.all_ok ? "Export finished." : "Export finished with errors.");
     } catch (err) {
-      setError(String(err));
-      setProgress("");
+      endRun();
+      const message = String(err);
+      if (isCancelled(message)) {
+        setReview(null);
+        setProgress(
+          "Cancelled. Files already copied stay in the destination. Preview again before exporting to this folder.",
+        );
+      } else {
+        setError(message);
+        setProgress("");
+      }
     } finally {
       setBusy(false);
     }
@@ -408,6 +449,11 @@ function App() {
         <button type="button" onClick={runExport} disabled={!canExport}>
           {busy && review ? "Exporting…" : "Export"}
         </button>
+        {busy && (
+          <button type="button" onClick={cancelWork}>
+            Cancel
+          </button>
+        )}
         {exportSkipsMissing && (
           <p className="hint actions-hint">
             Some files are missing or unresolved in the plan. Export still runs;
