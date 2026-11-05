@@ -85,6 +85,29 @@ interface ExportResult {
   names_error?: string | null;
 }
 
+interface FormIssues {
+  mame_version: string | null;
+  source_path: string | null;
+  destination_path: string | null;
+  report_path: string | null;
+  subset_start: string | null;
+  subset_end: string | null;
+}
+
+function shownIssue(
+  issue: string | null | undefined,
+  value: string,
+  touched: boolean,
+): string | null {
+  if (!issue) {
+    return null;
+  }
+  if (!value.trim() && !touched) {
+    return null;
+  }
+  return issue;
+}
+
 function matchesQuery(text: string, query: string): boolean {
   return text.toLowerCase().includes(query.trim().toLowerCase());
 }
@@ -120,8 +143,16 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<PlanReviewResult | null>(null);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [issues, setIssues] = useState<FormIssues | null>(null);
+  const [formCheckError, setFormCheckError] = useState<string | null>(null);
+  const [touchedPaths, setTouchedPaths] = useState({
+    source: false,
+    destination: false,
+    report: false,
+  });
   const acceptProgress = useRef(false);
   const runId = useRef(0);
+  const formCheck = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -160,13 +191,42 @@ function App() {
     metadataRefresh,
   ]);
 
+  useEffect(() => {
+    const request = ++formCheck.current;
+    const handle = window.setTimeout(() => {
+      void invoke<FormIssues>("validate_export_form", {
+        input: {
+          source_path: sourcePath,
+          destination_path: destinationPath,
+          mame_version: mameVersion,
+          subset_start: subsetStart.trim() || undefined,
+          subset_end: subsetEnd.trim() || undefined,
+          report_path: reportPath.trim() || undefined,
+        },
+      })
+        .then((next) => {
+          if (formCheck.current === request) {
+            setFormCheckError(null);
+            setIssues(next);
+          }
+        })
+        .catch(() => {
+          if (formCheck.current === request) {
+            setIssues(null);
+            setFormCheckError("Could not check these fields. Try editing one and checking again.");
+          }
+        });
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [sourcePath, destinationPath, mameVersion, subsetStart, subsetEnd, reportPath]);
+
   const exportInput = (): ExportInput => ({
     source_path: sourcePath,
     destination_path: destinationPath,
     mame_version: mameVersion,
     strict_emulation: strictEmulation,
-    subset_start: subsetStart.trim() || undefined,
-    subset_end: subsetEnd.trim() || undefined,
+    subset_start: subsetStart.trim().toLowerCase() || undefined,
+    subset_end: subsetEnd.trim().toLowerCase() || undefined,
     report_path: reportPath.trim() || undefined,
     metadata_refresh: metadataRefresh,
   });
@@ -209,6 +269,7 @@ function App() {
     });
     if (typeof selected === "string") {
       setSourcePath(selected);
+      setTouchedPaths((current) => ({ ...current, source: true }));
     }
   }
 
@@ -220,6 +281,7 @@ function App() {
     });
     if (typeof selected === "string") {
       setDestinationPath(selected);
+      setTouchedPaths((current) => ({ ...current, destination: true }));
     }
   }
 
@@ -230,6 +292,7 @@ function App() {
     });
     if (typeof selected === "string") {
       setReportPath(selected);
+      setTouchedPaths((current) => ({ ...current, report: true }));
     }
   }
 
@@ -313,8 +376,26 @@ function App() {
     }
   }
 
-  const canReview =
-    !busy && sourcePath && destinationPath && mameVersion.trim().length > 0;
+  const versionIssue = issues?.mame_version ?? null;
+  const sourceIssue = shownIssue(issues?.source_path, sourcePath, touchedPaths.source);
+  const destinationIssue = shownIssue(
+    issues?.destination_path,
+    destinationPath,
+    touchedPaths.destination,
+  );
+  const reportIssue = shownIssue(issues?.report_path, reportPath, touchedPaths.report);
+  const subsetStartIssue = issues?.subset_start ?? null;
+  const subsetEndIssue = issues?.subset_end ?? null;
+  const formReady =
+    !!issues &&
+    !issues.mame_version &&
+    !issues.source_path &&
+    !issues.destination_path &&
+    !issues.report_path &&
+    !issues.subset_start &&
+    !issues.subset_end;
+
+  const canReview = !busy && formReady;
   const canExport =
     !!review &&
     !busy &&
@@ -345,7 +426,14 @@ function App() {
             onChange={(e) => setMameVersion(e.currentTarget.value)}
             placeholder="0.289"
             disabled={busy}
+            aria-invalid={versionIssue ? true : undefined}
+            className={versionIssue ? "invalid" : undefined}
           />
+          {versionIssue ? (
+            <p className="field-error">{versionIssue}</p>
+          ) : (
+            <p className="hint">Version of your ROM set, such as 0.289.</p>
+          )}
         </label>
 
         <label>
@@ -354,13 +442,17 @@ function App() {
             <input
               value={sourcePath}
               onChange={(e) => setSourcePath(e.currentTarget.value)}
+              onBlur={() => setTouchedPaths((current) => ({ ...current, source: true }))}
               placeholder="/path/to/merged/roms"
               disabled={busy}
+              aria-invalid={sourceIssue ? true : undefined}
+              className={sourceIssue ? "invalid" : undefined}
             />
             <button type="button" onClick={pickSource} disabled={busy}>
               Browse…
             </button>
           </div>
+          {sourceIssue && <p className="field-error">{sourceIssue}</p>}
         </label>
 
         <label>
@@ -369,13 +461,19 @@ function App() {
             <input
               value={destinationPath}
               onChange={(e) => setDestinationPath(e.currentTarget.value)}
+              onBlur={() =>
+                setTouchedPaths((current) => ({ ...current, destination: true }))
+              }
               placeholder="/path/to/export"
               disabled={busy}
+              aria-invalid={destinationIssue ? true : undefined}
+              className={destinationIssue ? "invalid" : undefined}
             />
             <button type="button" onClick={pickDestination} disabled={busy}>
               Browse…
             </button>
           </div>
+          {destinationIssue && <p className="field-error">{destinationIssue}</p>}
         </label>
       </section>
 
@@ -401,35 +499,54 @@ function App() {
         </label>
         <div className="two-col">
           <label>
-            Subset start (optional)
+            From (optional)
             <input
               value={subsetStart}
               onChange={(e) => setSubsetStart(e.currentTarget.value)}
+              placeholder="0"
               disabled={busy}
+              aria-invalid={subsetStartIssue ? true : undefined}
+              className={subsetStartIssue ? "invalid" : undefined}
             />
+            {subsetStartIssue && <p className="field-error">{subsetStartIssue}</p>}
           </label>
           <label>
-            Subset end (optional)
+            Through (optional)
             <input
               value={subsetEnd}
               onChange={(e) => setSubsetEnd(e.currentTarget.value)}
+              placeholder="zzzzzzzzzzzzzzzz"
               disabled={busy}
+              aria-invalid={subsetEndIssue ? true : undefined}
+              className={subsetEndIssue ? "invalid" : undefined}
             />
+            {subsetEndIssue && <p className="field-error">{subsetEndIssue}</p>}
           </label>
         </div>
+        <p className="hint">
+          Leave both empty to include every name. The gray 0 and z's are examples, not a filter.
+          A value is a point in alphabetical order, and a full name is allowed.
+          From `galaga` keeps `galaga` and later names such as `gblaga`, and skips earlier
+          names such as 1942. Through those z's includes `zaxxon` and the rest of the list.
+          Parent, BIOS, and disk files that a working game needs are still copied.
+        </p>
         <label>
           Report path (optional, must be outside source and export folders)
           <div className="path-row">
             <input
               value={reportPath}
               onChange={(e) => setReportPath(e.currentTarget.value)}
+              onBlur={() => setTouchedPaths((current) => ({ ...current, report: true }))}
               placeholder="/path/to/export-report.md"
               disabled={busy}
+              aria-invalid={reportIssue ? true : undefined}
+              className={reportIssue ? "invalid" : undefined}
             />
             <button type="button" onClick={pickReportPath} disabled={busy}>
               Browse…
             </button>
           </div>
+          {reportIssue && <p className="field-error">{reportIssue}</p>}
         </label>
         <p className="hint">
           {review?.selection_help ??
@@ -464,6 +581,7 @@ function App() {
       </section>
 
       {progress && <p className="progress">{progress}</p>}
+      {formCheckError && <p className="error">{formCheckError}</p>}
       {error && <p className="error">{error}</p>}
 
       {review && (

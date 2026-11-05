@@ -72,6 +72,16 @@ header h1 {
   gap: 0.75rem;
 }
 
+.field-error {
+  margin: 0;
+  color: #f0a8a8;
+  font-size: 0.8rem;
+}
+
+input.invalid {
+  border-color: #a85a5a;
+}
+
 .hint {
   margin: 0;
   color: #8b939e;
@@ -139,6 +149,10 @@ input {
   border: 1px solid #3a4354;
   background: #0f1116;
   color: inherit;
+}
+
+input::placeholder {
+  color: #6d7582;
 }
 
 .path-row {

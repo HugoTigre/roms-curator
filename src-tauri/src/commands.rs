@@ -2,7 +2,10 @@ use std::path::Path;
 
 use roms_curator::models::plan::{Availability, Plan};
 use roms_curator::models::report::{OperationStatus, Report};
-use roms_curator::{default_metadata_cache_dir, ensure_metadata, run_with_progress, ExportConfig};
+use roms_curator::{
+    check_export_form, default_metadata_cache_dir, ensure_metadata, run_with_progress,
+    ExportConfig, ExportFormIssues,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -62,6 +65,28 @@ pub struct ExportResult {
     pub report_path: String,
     pub report_written: bool,
     pub names_error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FormCheckInput {
+    pub source_path: String,
+    pub destination_path: String,
+    pub mame_version: String,
+    pub subset_start: Option<String>,
+    pub subset_end: Option<String>,
+    pub report_path: Option<String>,
+}
+
+#[tauri::command]
+pub fn validate_export_form(input: FormCheckInput) -> ExportFormIssues {
+    check_export_form(
+        &input.mame_version,
+        &input.source_path,
+        &input.destination_path,
+        input.report_path.as_deref().unwrap_or(""),
+        input.subset_start.as_deref().unwrap_or(""),
+        input.subset_end.as_deref().unwrap_or(""),
+    )
 }
 
 #[tauri::command]
