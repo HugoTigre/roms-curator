@@ -71,7 +71,9 @@ Use `--metadata-refresh=true` to replace cached files.
 `roms-curator` reads `mame.xml` and `catver.ini`, then categorizes each machine.
 A runnable arcade machine is selected when its driver status and emulation are
 both good or imperfect. Imperfect sound or graphics does not change that.
-Preliminary, mechanical, BIOS, device, and non-arcade CatVer groups (computers,
+Pass **`--strict-emulation=true`** to keep only machines where both values are
+**good** (imperfect or preliminary machines drop out). Preliminary, mechanical,
+BIOS, device, and non-arcade CatVer groups (computers,
 consoles, handhelds, and similar) are not selected. Arcade genres such as
 shooter, puzzle, and slots stay eligible. From here it copies your files into
 two folders under `destination_dir`.

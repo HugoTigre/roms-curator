@@ -61,6 +61,18 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup show
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
       - name: Install Tauri Linux dependencies
         run: |
           sudo apt-get update

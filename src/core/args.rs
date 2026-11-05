@@ -151,6 +151,15 @@ pub fn command() -> Command {
                 .value_parser(validate_subset),
         )
         .arg(
+            Arg::new("strict_emulation")
+                .help("Select only machines whose driver and emulation are both good. Default is false (playable policy). (true|false).")
+                .long("strict-emulation")
+                .num_args(1)
+                .required(false)
+                .default_value("false")
+                .value_parser(validate_strict_emulation),
+        )
+        .arg(
             Arg::new("progress")
                 .help("If true, shows a progress bar. Default is true. (true|false).")
                 .long("progress")
@@ -198,6 +207,9 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
     let progress: &bool = matches
         .get_one("progress")
         .expect("validated in args parser");
+    let strict_emulation: &bool = matches
+        .get_one("strict_emulation")
+        .expect("validated in args parser");
 
     let args = ExportConfig {
         mame_xml_path: mame_xml_path.clone(),
@@ -210,6 +222,7 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
         simulation: *simulation,
         subset_start: subset_start.clone(),
         subset_end: subset_end.clone(),
+        strict_emulation: *strict_emulation,
         progress: *progress,
     };
 
@@ -379,6 +392,16 @@ fn validate_simulation(value: &str) -> Result<bool, String> {
         Ok(false)
     } else {
         Err("Invalid value for simulation. (true|false)".into())
+    }
+}
+
+fn validate_strict_emulation(value: &str) -> Result<bool, String> {
+    if value.eq_ignore_ascii_case("true") {
+        Ok(true)
+    } else if value.eq_ignore_ascii_case("false") {
+        Ok(false)
+    } else {
+        Err("Invalid value for strict_emulation. (true|false)".into())
     }
 }
 

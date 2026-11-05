@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
-export interface PlanPreviewResult {
+interface PlanPreviewSummary {
   mame_build: string;
   emulation_policy: string;
   selected_games: number;
@@ -14,14 +14,108 @@ export interface PlanPreviewResult {
   conflicts: string[];
 }
 
+interface PlannedGame {
+  machine: string;
+  category: string;
+  folder: string;
+  reason: string;
+}
+
+interface PlannedMedia {
+  machine: string;
+  role: "archive" | "disk";
+  availability: "present" | "missing";
+  source?: string | null;
+  destination?: string | null;
+  bytes?: number | null;
+  reasons: string[];
+}
+
+interface UnresolvedMedia {
+  game: string;
+  kind: string;
+  name: string;
+}
+
+interface PlanDocument {
+  version: number;
+  metadata: Record<string, string>;
+  games: PlannedGame[];
+  media: PlannedMedia[];
+  unresolved: UnresolvedMedia[];
+  conflicts: string[];
+  [key: string]: unknown;
+}
+
+interface PlanReviewResult {
+  summary: PlanPreviewSummary;
+  selection_help: string;
+  plan: PlanDocument;
+}
+
+/** Must stay in sync with `roms_curator::REST_MEDIA_REASON`. */
+const REST_MEDIA_REASON = "Not required by a selected game";
+
+function supportMediaFromPlan(media: PlannedMedia[]): PlannedMedia[] {
+  return media.filter((entry) =>
+    entry.reasons.some((reason) => reason !== REST_MEDIA_REASON),
+  );
+}
+
+interface ExportInput {
+  source_path: string;
+  destination_path: string;
+  mame_version: string;
+  strict_emulation: boolean;
+  subset_start?: string;
+  subset_end?: string;
+  report_path?: string;
+  metadata_refresh: boolean;
+}
+
+interface ExportResult {
+  all_ok: boolean;
+  selected_games: number;
+  roms_entries: number;
+  rest_entries: number;
+  failed_copies: number;
+  missing_chds: number;
+  report_path: string;
+  report_written: boolean;
+  names_error?: string | null;
+}
+
+function matchesQuery(text: string, query: string): boolean {
+  return text.toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function formatEmulationPolicy(policy: string): string {
+  switch (policy) {
+    case "playable":
+      return "Standard";
+    case "strict":
+      return "Strict";
+    default:
+      return policy;
+  }
+}
+
 function App() {
   const [sourcePath, setSourcePath] = useState("");
   const [destinationPath, setDestinationPath] = useState("");
   const [mameVersion, setMameVersion] = useState("0.289");
+  const [strictEmulation, setStrictEmulation] = useState(false);
+  const [subsetStart, setSubsetStart] = useState("");
+  const [subsetEnd, setSubsetEnd] = useState("");
+  const [reportPath, setReportPath] = useState("");
+  const [metadataRefresh, setMetadataRefresh] = useState(false);
+  const [gameQuery, setGameQuery] = useState("");
+  const [supportQuery, setSupportQuery] = useState("");
   const [progress, setProgress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<PlanPreviewResult | null>(null);
+  const [review, setReview] = useState<PlanReviewResult | null>(null);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -46,6 +140,61 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setReview(null);
+    setExportResult(null);
+  }, [
+    sourcePath,
+    destinationPath,
+    mameVersion,
+    strictEmulation,
+    subsetStart,
+    subsetEnd,
+    reportPath,
+    metadataRefresh,
+  ]);
+
+  const exportInput = (): ExportInput => ({
+    source_path: sourcePath,
+    destination_path: destinationPath,
+    mame_version: mameVersion,
+    strict_emulation: strictEmulation,
+    subset_start: subsetStart.trim() || undefined,
+    subset_end: subsetEnd.trim() || undefined,
+    report_path: reportPath.trim() || undefined,
+    metadata_refresh: metadataRefresh,
+  });
+
+  const filteredGames = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const games = review.plan.games;
+    if (!gameQuery.trim()) {
+      return games;
+    }
+    return games.filter(
+      (game) =>
+        matchesQuery(game.machine, gameQuery) ||
+        matchesQuery(game.category, gameQuery),
+    );
+  }, [review, gameQuery]);
+
+  const filteredSupport = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const support = supportMediaFromPlan(review.plan.media);
+    if (!supportQuery.trim()) {
+      return support;
+    }
+    return support.filter(
+      (entry) =>
+        matchesQuery(entry.machine, supportQuery) ||
+        entry.reasons.some((reason) => matchesQuery(reason, supportQuery)),
+    );
+  }, [review, supportQuery]);
+
   async function pickSource() {
     const selected = await open({
       directory: true,
@@ -68,21 +217,28 @@ function App() {
     }
   }
 
-  async function buildPlanPreview() {
+  async function pickReportPath() {
+    const selected = await save({
+      title: "Export report (Markdown)",
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (typeof selected === "string") {
+      setReportPath(selected);
+    }
+  }
+
+  async function reviewPlan() {
     setBusy(true);
     setError(null);
-    setPreview(null);
+    setReview(null);
+    setExportResult(null);
     setProgress("Starting…");
     try {
-      const result = await invoke<PlanPreviewResult>("build_plan_preview", {
-        input: {
-          source_path: sourcePath,
-          destination_path: destinationPath,
-          mame_version: mameVersion,
-        },
+      const result = await invoke<PlanReviewResult>("review_export_plan", {
+        input: exportInput(),
       });
-      setPreview(result);
-      setProgress("Plan ready.");
+      setReview(result);
+      setProgress("Plan ready — review the lists below before exporting.");
     } catch (err) {
       setError(String(err));
       setProgress("");
@@ -91,17 +247,56 @@ function App() {
     }
   }
 
+  async function runExport() {
+    if (!review) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setExportResult(null);
+    setProgress("Starting export…");
+    try {
+      const result = await invoke<ExportResult>("execute_export", {
+        request: {
+          input: exportInput(),
+          plan: review.plan,
+        },
+      });
+      setExportResult(result);
+      setProgress(result.all_ok ? "Export finished." : "Export finished with errors.");
+    } catch (err) {
+      setError(String(err));
+      setProgress("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canReview =
+    !busy && sourcePath && destinationPath && mameVersion.trim().length > 0;
+  const canExport =
+    !!review &&
+    !busy &&
+    review.summary.conflicts.length === 0 &&
+    review.summary.selected_games > 0;
+  const exportSkipsMissing =
+    !!review &&
+    review.summary.conflicts.length === 0 &&
+    review.summary.selected_games > 0 &&
+    (review.summary.missing_media > 0 || review.summary.unresolved > 0);
+
   return (
     <main className="app">
       <header>
         <h1>Roms Curator</h1>
         <p className="lede">
-          Choose a merged source folder and export destination, then preview the
-          copy plan before exporting.
+          Pick your ROM folder and where to save a working set, preview what will
+          be kept, then export for your emulator or frontend.
         </p>
       </header>
 
       <section className="panel">
+        <h2 className="panel-title">Paths</h2>
         <label>
           MAME set version
           <input
@@ -141,63 +336,232 @@ function App() {
             </button>
           </div>
         </label>
+      </section>
 
+      <section className="panel">
+        <h2 className="panel-title">Preferences</h2>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={strictEmulation}
+            onChange={(e) => setStrictEmulation(e.currentTarget.checked)}
+            disabled={busy}
+          />
+          Strict selection (only fully working games)
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={metadataRefresh}
+            onChange={(e) => setMetadataRefresh(e.currentTarget.checked)}
+            disabled={busy}
+          />
+          Re-download listxml and CatVer for this MAME version
+        </label>
+        <div className="two-col">
+          <label>
+            Subset start (optional)
+            <input
+              value={subsetStart}
+              onChange={(e) => setSubsetStart(e.currentTarget.value)}
+              disabled={busy}
+            />
+          </label>
+          <label>
+            Subset end (optional)
+            <input
+              value={subsetEnd}
+              onChange={(e) => setSubsetEnd(e.currentTarget.value)}
+              disabled={busy}
+            />
+          </label>
+        </div>
+        <label>
+          Report path (optional, must be outside source and export folders)
+          <div className="path-row">
+            <input
+              value={reportPath}
+              onChange={(e) => setReportPath(e.currentTarget.value)}
+              placeholder="/path/to/export-report.md"
+              disabled={busy}
+            />
+            <button type="button" onClick={pickReportPath} disabled={busy}>
+              Browse…
+            </button>
+          </div>
+        </label>
+        <p className="hint">
+          {review?.selection_help ??
+            "Arcade games with minor MAME issues stay in the list by default. Support files needed by your selection are copied into the roms folder."}
+        </p>
+      </section>
+
+      <section className="panel actions">
         <button
           type="button"
           className="primary"
-          onClick={buildPlanPreview}
-          disabled={
-            busy ||
-            !sourcePath ||
-            !destinationPath ||
-            !mameVersion.trim()
-          }
+          onClick={reviewPlan}
+          disabled={!canReview}
         >
-          {busy ? "Building plan…" : "Preview plan"}
+          {busy && !review ? "Building plan…" : "Preview plan"}
         </button>
+        <button type="button" onClick={runExport} disabled={!canExport}>
+          {busy && review ? "Exporting…" : "Export"}
+        </button>
+        {exportSkipsMissing && (
+          <p className="hint actions-hint">
+            Some files are missing or unresolved in the plan. Export still runs;
+            those files are skipped and listed in the report if you set a report
+            path.
+          </p>
+        )}
       </section>
 
       {progress && <p className="progress">{progress}</p>}
       {error && <p className="error">{error}</p>}
 
-      {preview && (
-        <section className="panel results">
-          <h2>Plan preview</h2>
+      {review && (
+        <>
+          <section className="panel results">
+            <h2>Plan summary</h2>
+            <dl>
+              <div>
+                <dt>MAME build</dt>
+                <dd>{review.summary.mame_build}</dd>
+              </div>
+              <div>
+                <dt>Selection</dt>
+                <dd>{formatEmulationPolicy(review.summary.emulation_policy)}</dd>
+              </div>
+              <div>
+                <dt>Selected games</dt>
+                <dd>{review.summary.selected_games}</dd>
+              </div>
+              <div>
+                <dt>Media present</dt>
+                <dd>{review.summary.present_media}</dd>
+              </div>
+              <div>
+                <dt>Media missing</dt>
+                <dd>{review.summary.missing_media}</dd>
+              </div>
+              <div>
+                <dt>Unresolved references</dt>
+                <dd>{review.summary.unresolved}</dd>
+              </div>
+            </dl>
+            {review.summary.missing_media > 0 && (
+              <p className="hint">
+                {review.summary.missing_media} planned file
+                {review.summary.missing_media === 1 ? "" : "s"} not found in your
+                source; export skips them.
+              </p>
+            )}
+            {review.summary.conflicts.length > 0 && (
+              <div className="conflicts">
+                <h3>Destination conflicts</h3>
+                <p>Resolve these before export.</p>
+                <ul>
+                  {review.summary.conflicts.map((line, index) => (
+                    <li key={`${index}:${line}`}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2>Selected games</h2>
+            <input
+              className="search"
+              value={gameQuery}
+              onChange={(e) => setGameQuery(e.currentTarget.value)}
+              placeholder="Filter by name or category…"
+            />
+            <ul className="scroll-list">
+              {filteredGames.map((game) => (
+                <li key={game.machine}>
+                  <strong>{game.machine}</strong>
+                  <span>{game.category}</span>
+                  <p>{game.reason}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="panel">
+            <h2>Support files for roms</h2>
+            <input
+              className="search"
+              value={supportQuery}
+              onChange={(e) => setSupportQuery(e.currentTarget.value)}
+              placeholder="Filter by machine or reason…"
+            />
+            <ul className="scroll-list">
+              {filteredSupport.map((entry, index) => (
+                <li key={`${index}:${entry.machine}:${entry.role}`}>
+                  <strong>{entry.machine}</strong>
+                  <span>
+                    {entry.role} · {entry.availability}
+                  </span>
+                  <p>{entry.reasons.join("; ")}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {review.plan.unresolved.length > 0 && (
+            <section className="panel">
+              <h2>Unresolved references</h2>
+              <ul className="scroll-list">
+                {review.plan.unresolved.map((entry, index) => (
+                  <li key={`${index}:${entry.game}:${entry.name}`}>
+                    <strong>{entry.name}</strong>
+                    <span>
+                      {entry.kind} · game {entry.game || "(cycle)"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+
+      {exportResult && (
+        <section className={`panel results ${exportResult.all_ok ? "ok" : "warn"}`}>
+          <h2>Export result</h2>
           <dl>
             <div>
-              <dt>MAME build</dt>
-              <dd>{preview.mame_build}</dd>
-            </div>
-            <div>
-              <dt>Policy</dt>
-              <dd>{preview.emulation_policy}</dd>
+              <dt>Status</dt>
+              <dd>{exportResult.all_ok ? "All OK" : "Completed with errors"}</dd>
             </div>
             <div>
               <dt>Selected games</dt>
-              <dd>{preview.selected_games}</dd>
+              <dd>{exportResult.selected_games}</dd>
             </div>
             <div>
-              <dt>Media present</dt>
-              <dd>{preview.present_media}</dd>
+              <dt>Roms folder entries</dt>
+              <dd>{exportResult.roms_entries}</dd>
             </div>
             <div>
-              <dt>Media missing</dt>
-              <dd>{preview.missing_media}</dd>
+              <dt>Rest folder entries</dt>
+              <dd>{exportResult.rest_entries}</dd>
             </div>
             <div>
-              <dt>Unresolved references</dt>
-              <dd>{preview.unresolved}</dd>
+              <dt>Failed copies</dt>
+              <dd>{exportResult.failed_copies}</dd>
+            </div>
+            <div>
+              <dt>Missing CHDs</dt>
+              <dd>{exportResult.missing_chds}</dd>
             </div>
           </dl>
-          {preview.conflicts.length > 0 && (
-            <div className="conflicts">
-              <h3>Destination conflicts</h3>
-              <ul>
-                {preview.conflicts.map((line, index) => (
-                  <li key={`${index}:${line}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
+          {exportResult.report_written && (
+            <p className="hint">Report written to {exportResult.report_path}</p>
+          )}
+          {exportResult.names_error && (
+            <p className="error">{exportResult.names_error}</p>
           )}
         </section>
       )}

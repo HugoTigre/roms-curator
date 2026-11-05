@@ -65,6 +65,18 @@ roms-curator \
 --report-path=/mame/report/report.md
 ```
 
+By default, arcade games are kept when MAME marks driver status and emulation
+each as good or imperfect. Use **`--strict-emulation=true`** to keep only games
+where both are good.
+
+```bash
+roms-curator \
+--mame-version=0.289 \
+--source-path=/roms,/chd-roms \
+--destination-path=/roms-new/ \
+--strict-emulation=true
+```
+
 ## Simulate operation
 
 Use `--simulation=true` to check the selected operations without copying ROMs or

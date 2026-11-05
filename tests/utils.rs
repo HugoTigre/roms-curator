@@ -157,6 +157,7 @@ pub fn build_args(tag: &str, simulate: bool, subset_start: String, subset_end: S
         simulation,
         subset_start,
         subset_end,
+        strict_emulation: false,
         progress,
     }
 }

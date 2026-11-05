@@ -27,3 +27,7 @@ Use metadata matching your ROM collection and MAME version. Games that require C
 ### Why use both mame.xml and catver.ini?
 
 MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. The visible list is good or imperfect arcade games. A clone stays on that list when its parent does not, and the parent's archive stays required. BIOS, devices, and other support machines stay in the catalog outside that list. CatVer groups such as computers and consoles are classified as systems, not dropped as genres.
+
+### What does strict emulation mean?
+
+The default keeps arcade games when MAME marks both driver status and emulation as good or imperfect. **`--strict-emulation=true`** (or the same option in the desktop app) keeps only games where both are good. It does not look at individual sound or graphics feature flags.
