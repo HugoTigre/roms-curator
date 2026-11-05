@@ -11,6 +11,7 @@
 
 use crate::core::roms_service::parse_mame_xml_file;
 use crate::models::roms::Catalog;
+use crate::models::selection::EmulationPolicy;
 use crate::utils::{build_progress_bar, ProgressBarEx};
 use std::collections::HashMap;
 use std::error::Error;
@@ -25,6 +26,7 @@ pub use crate::core::config::ExportConfig;
 pub use crate::core::metadata_fetch::{
     default_metadata_cache_dir, ensure_metadata, parse_mame_version, MameMetadataPaths, MameVersion,
 };
+pub use crate::core::roms_service::{planned_media_for_roms, REST_MEDIA_REASON};
 
 type RomCategories = HashMap<String, String>;
 
@@ -127,7 +129,11 @@ pub fn run_with_progress(
     progress_bar.inc();
 
     status("Categorizing roms...");
-    let catalog = parsed.categorize()?;
+    let catalog = if config.strict_emulation {
+        parsed.categorize_with(EmulationPolicy::Strict)?
+    } else {
+        parsed.categorize()?
+    };
     status(&format!(
         "MAME build {}: {} machines, {} without a CatVer category.",
         catalog.mame_build,

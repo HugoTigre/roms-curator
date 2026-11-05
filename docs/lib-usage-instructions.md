@@ -110,9 +110,10 @@ recorded metadata hashes, sizes, and conflicts with the disk.
 `Catalog::copy_with_plan` runs that recheck on the plan you pass in.
 `Catalog::copy_roms` validates, builds one plan, and rechecks that value.
 `Catalog::copy_roms` copies required archives and CHD directories into `roms`, and every other source file this run keeps into `rest`. It writes `selected.txt` beside those folders when every copy succeeds. A failure to publish that file stays on the returned report (`names_error`, `all_ok` false) so a requested report is still written. The report path must not be that file. When a selected game needs a CHD that is not in the source, the report lists it under **Missing CHDs** with the game, machine folder, disk name, and reason. A name-range subset skips stems outside the range, then still copies required archives and disk directories of selected games inside the range. `--ignore-not-working-chd` does not move a required disk out of `roms`. A missing CHD leaves the game selected and its ROM archive copied.
-`ParsedMachines::categorize_with(EmulationPolicy::Strict)` narrows
-`catalog.selected` to machines whose driver and emulation are both good and leaves
-the rest in `catalog.roms`.
+Set **`ExportConfig.strict_emulation`** to `true` (or pass **`--strict-emulation=true`**
+on the CLI) to load the catalog with `EmulationPolicy::Strict` instead of the
+default playable policy. `ParsedMachines::categorize_with(EmulationPolicy::Strict)`
+does the same when building a catalog yourself.
 
 For this, `ExportConfig` needs `mame_xml_path` and `catver_path`. You can fill
 those paths yourself or call `ensure_metadata` first:

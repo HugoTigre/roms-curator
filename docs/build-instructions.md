@@ -19,7 +19,7 @@ cargo build --locked
 
 ## Curator GUI (Tauri)
 
-Install Node.js (LTS) and npm, then from the repository root:
+Install Node.js 26 or newer (`package.json` `engines`; CI uses major 26). Then from the repository root:
 
 ```bash
 npm install
@@ -29,9 +29,8 @@ npm run tauri dev
 The React UI lives in `gui/`. Rust commands in `src-tauri/` call the same
 `roms-curator` library as the CLI. The GUI crate keeps its own `src-tauri/Cargo.lock`;
 build it with `cargo build --manifest-path src-tauri/Cargo.toml --locked` after
-`npm install`. CI on Linux runs `cargo fmt`, Clippy, check, and tests for
-`src-tauri/`; it does not run `npm run build` or ship desktop bundles yet.
-See RFC **GUI-03** for release automation and **GUI-02** for frontend CI.
+`npm install`. CI on Linux runs `npm ci`, `npm run build`, and `cargo fmt`, Clippy, check, and tests for
+`src-tauri/`; it does not ship desktop bundles yet. See RFC **GUI-03** for release automation.
 
 ## Run tests
 

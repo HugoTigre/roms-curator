@@ -31,6 +31,8 @@ pub struct ExportConfig {
     pub subset_start: String,
     /// If set, skip names that sort after this. Required archives and disk directories of selected games inside the range are still copied into `roms`.
     pub subset_end: String,
+    /// When true, select only machines whose driver and emulation are both good.
+    pub strict_emulation: bool,
     /// If true, show progress bar.
     pub progress: bool,
 }

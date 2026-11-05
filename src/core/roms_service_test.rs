@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::core::args::Args;
 use crate::core::export::name_in_subset_excluded;
 use crate::core::roms_service::{
-    copy_all_to_rest, missing_chds_for_report, parse_mame_xml_from_str,
+    copy_all_to_rest, missing_chds_for_report, parse_mame_xml_from_str, REST_MEDIA_REASON,
 };
 use crate::models::dependencies::DependencyKind::{Device, Own, Parent, RomParent};
 use crate::models::disks::DiskKind;
@@ -1504,7 +1504,7 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
             && media.destination.as_deref().is_some_and(|destination| {
                 Path::new(destination).ends_with(Path::new("rest").join("clone.zip"))
             })
-            && media.reasons == vec!["Not required by a selected game".to_string()]
+            && media.reasons == vec![REST_MEDIA_REASON.to_string()]
     }));
     assert!(plan.selected_names_path.ends_with("selected.txt"));
     assert!(plan.media.iter().any(|media| {

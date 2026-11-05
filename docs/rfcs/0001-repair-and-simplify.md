@@ -78,8 +78,9 @@ Phase 4 may start before **VERIFY-01**. MAME and frontend verification remain on
 - [x] **GUI-01** After PLAN-01/CLEAN-01, prototype source selection, plan preview and progress on the chosen stack.
   - Done when Rust owns validation/operations, long work keeps the UI responsive and errors reach the user.
   - Decision: Tauri app under `src-tauri/` with the React UI in `gui/`. Commands run `ExportConfig::validate`, then `run_with_progress` and `Catalog::plan_with_progress` on a background thread and emit `plan-progress` events. Folder pickers use the dialog plugin. Linux CI has a dedicated `gui` job (fmt, Clippy, check, tests on `src-tauri/`); npm frontend checks and desktop bundles remain **GUI-02** / **GUI-03**.
-- [ ] **GUI-02** Add preferences, searchable game/dependency preview, export progress and results after GUI-01/EXPORT-01.
+- [x] **GUI-02** Add preferences, searchable game/dependency preview, export progress and results after GUI-01/EXPORT-01.
   - Done when exclusions/support files are explained and users review a plan before exporting through the shared core.
+  - Decision: `review_export_plan` returns games, filtered support media, unresolved rows, and the full `Plan` JSON. `execute_export` reloads the catalog and runs `Catalog::copy_with_plan` after the user confirms. Preferences cover strict emulation, subset range, optional report path, and metadata refresh. Linux CI also runs `npm ci` and `npm run build`.
 - [ ] **GUI-03** Define cancellation, incomplete-export recovery and desktop distribution after GUI-02/SAFE-02.
   - Done when cancellation preserves source/completed output and recovery is tested. Decide signing, updates and GUI release assets here.
 

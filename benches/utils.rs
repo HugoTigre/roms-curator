@@ -169,6 +169,7 @@ pub fn build_args(tag: &str, simulation: bool) -> Args {
         simulation,
         subset_start: String::new(),
         subset_end: String::new(),
+        strict_emulation: false,
         progress: false,
     }
 }

@@ -22,6 +22,17 @@ use crate::models::selection::EmulationPolicy;
 use crate::utils::{build_progress_bar, ProgressBarEx};
 use crate::RomCategories;
 
+/// Plan reason for media routed to `rest` rather than required in `roms`.
+pub const REST_MEDIA_REASON: &str = "Not required by a selected game";
+
+/// True when a planned media row belongs in the `roms` support set for selected games.
+pub fn planned_media_for_roms(media: &PlannedMedia) -> bool {
+    media
+        .reasons
+        .iter()
+        .any(|reason| reason != REST_MEDIA_REASON)
+}
+
 #[derive(Debug)]
 pub struct ParsedMachines {
     pub mame_build: String,
@@ -377,7 +388,7 @@ fn build_plan(
                 reasons: if required {
                     media_reasons(&key, role, catalog, args)
                 } else {
-                    vec!["Not required by a selected game".to_string()]
+                    vec![REST_MEDIA_REASON.to_string()]
                 },
             });
         }

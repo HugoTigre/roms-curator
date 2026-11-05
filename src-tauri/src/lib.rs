@@ -4,7 +4,10 @@ mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![commands::build_plan_preview])
+        .invoke_handler(tauri::generate_handler![
+            commands::review_export_plan,
+            commands::execute_export,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running roms-curator GUI");
 }
