@@ -1643,7 +1643,7 @@ fn plan_recheck_catches_metadata_new_files_disks_and_stable_conflicts() {
         .any(|conflict| conflict.contains("Conflicting destination")));
     clash.recheck().unwrap();
     let error = games
-        .copy_with_plan(&clash_args, &clash)
+        .copy_with_plan(&clash_args, &clash, None)
         .unwrap_err()
         .to_string();
     assert!(error.contains("Conflicting destination"), "{error}");
@@ -1677,13 +1677,16 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
     let plan = catalog.plan(&args).unwrap();
     assert!(plan.games.is_empty());
     let strict = load().categorize_with(EmulationPolicy::Strict).unwrap();
-    let error = strict.copy_with_plan(&args, &plan).unwrap_err().to_string();
+    let error = strict
+        .copy_with_plan(&args, &plan, None)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("emulation policy"), "{error}");
 
     let mut wider = args.clone();
     wider.subset_start.clear();
     let error = catalog
-        .copy_with_plan(&wider, &plan)
+        .copy_with_plan(&wider, &plan, None)
         .unwrap_err()
         .to_string();
     assert!(error.contains("subset"), "{error}");
@@ -1701,9 +1704,134 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
         .to_str()
         .unwrap()
         .into();
-    catalog.copy_with_plan(&alias, &plan).unwrap();
+    catalog.copy_with_plan(&alias, &plan, None).unwrap();
     assert_eq!(
         fs::read(destination.join("roms/clone.zip")).unwrap(),
         b"clone"
     );
+}
+
+#[test]
+fn copy_cancelled_after_first_file_keeps_that_file_and_skips_selected_txt() {
+    use crate::CancelFlag;
+
+    let catalog = catalog_of(
+        r#"
+        <machine name="alpha">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="beta">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("alpha.zip"), b"alpha").unwrap();
+    fs::write(source.join("beta.zip"), b"beta").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    let plan = catalog.plan(&args).unwrap();
+    let cancel = CancelFlag::new();
+    let gate = cancel.clone();
+    let copied = destination.join("roms/alpha.zip");
+    cancel.on_each_poll(move || {
+        if copied.exists() {
+            gate.cancel();
+        }
+    });
+
+    let error = catalog
+        .copy_with_plan(&args, &plan, Some(&cancel))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("cancelled"), "{error}");
+    assert_eq!(
+        fs::read(destination.join("roms/alpha.zip")).unwrap(),
+        b"alpha"
+    );
+    assert!(!destination.join("roms/beta.zip").exists());
+    assert!(!destination.join("selected.txt").exists());
+}
+
+#[test]
+fn copy_cancelled_during_the_last_file_does_not_publish_selected_txt() {
+    use crate::CancelFlag;
+
+    let catalog = catalog_of(
+        r#"
+        <machine name="alpha">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("alpha.zip"), b"alpha").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    let plan = catalog.plan(&args).unwrap();
+    let cancel = CancelFlag::new();
+    let gate = cancel.clone();
+    let copied = destination.join("roms/alpha.zip");
+    cancel.on_each_poll(move || {
+        if copied.exists() {
+            gate.cancel();
+        }
+    });
+
+    let error = catalog
+        .copy_with_plan(&args, &plan, Some(&cancel))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("cancelled"), "{error}");
+    assert_eq!(
+        fs::read(destination.join("roms/alpha.zip")).unwrap(),
+        b"alpha"
+    );
+    assert!(!destination.join("selected.txt").exists());
+}
+
+#[test]
+fn plan_cancelled_leaves_the_destination_unchanged() {
+    use crate::CancelFlag;
+
+    let catalog = catalog_of(
+        r#"
+        <machine name="alpha">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("alpha.zip"), b"alpha").unwrap();
+
+    let mut args = Args::new();
+    args.source_path = vec![source.to_str().unwrap().to_string()];
+    args.destination_path = destination.to_str().unwrap().to_string();
+
+    let cancel = CancelFlag::new();
+    cancel.cancel();
+    let error = catalog
+        .plan_with_progress(&args, None, Some(&cancel))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("cancelled"), "{error}");
+    assert!(!destination.join("roms").exists());
+    assert!(!destination.join("rest").exists());
+    assert!(!destination.join("selected.txt").exists());
+    assert_eq!(fs::read(source.join("alpha.zip")).unwrap(), b"alpha");
 }

@@ -93,3 +93,8 @@ jobs:
 
       - name: Test GUI crate
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build Linux desktop bundle
+        env:
+          CI: true
+        run: npm run tauri build

@@ -4,6 +4,7 @@ use std::fs::{read_dir, File};
 use std::io::{BufRead, BufReader, Cursor};
 use std::path::{Path, PathBuf};
 
+use crate::cancel::{check_cancelled, CancelFlag};
 use log::error;
 
 use crate::core::config::{DestinationFolders, ExportConfig};
@@ -120,16 +121,21 @@ impl Catalog {
     ///
     /// Call [`ExportConfig::validate`] before this; path checks are not repeated here.
     pub fn plan(&self, args: &ExportConfig) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
-        build_plan(self, args, None)
+        build_plan(self, args, None, None)
     }
 
     /// Same as [`plan`], but reports coarse steps through `on_status` while scanning sources.
+    ///
+    /// `cancel` is polled before the scan, before each source directory, before the
+    /// destination-conflict check, and again after the MAME XML and CatVer hashes,
+    /// immediately before the plan is returned.
     pub fn plan_with_progress(
         &self,
         args: &ExportConfig,
         on_status: Option<&mut dyn FnMut(&str)>,
+        cancel: Option<&CancelFlag>,
     ) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
-        build_plan(self, args, on_status)
+        build_plan(self, args, on_status, cancel)
     }
 
     /// Copies the source into `roms` and `rest`, and writes `selected.txt` when every copy succeeds.
@@ -146,7 +152,7 @@ impl Catalog {
     pub fn copy_roms(self, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
         config.validate()?;
         let plan = self.plan(config)?;
-        self.copy_with_plan(config, &plan)
+        self.copy_with_plan(config, &plan, None)
     }
 
     /// Rechecks `plan` and copies. Use this for a plan just written or loaded
@@ -155,10 +161,14 @@ impl Catalog {
     /// The plan's sources, destination, subset, report path, metadata paths,
     /// and emulation policy must match this catalog and these arguments.
     /// Paths are compared after resolution. The copy still follows `config`.
+    ///
+    /// When `cancel` is set and becomes cancelled, copying stops. Files already
+    /// copied stay on disk; `selected.txt` is not published.
     pub fn copy_with_plan(
         self,
         config: &ExportConfig,
         plan: &crate::models::plan::Plan,
+        cancel: Option<&CancelFlag>,
     ) -> Result<Report, Box<dyn Error>> {
         require_same_run(&self, config, plan)?;
         plan.recheck()?;
@@ -168,7 +178,14 @@ impl Catalog {
         let retain = retained_archives(&self.dependencies, config);
         let disks = required_disk_machines(&self.disks, config);
         let missing_chds = missing_chds_for_report(&self, config)?;
-        copy_retaining(self.roms, config, &retain, Some(&disks), missing_chds)
+        copy_retaining(
+            self.roms,
+            config,
+            &retain,
+            Some(&disks),
+            missing_chds,
+            cancel,
+        )
     }
 }
 
@@ -177,7 +194,7 @@ impl Catalog {
 /// [`Catalog::copy_roms`] places required archives and CHD directories in `roms`
 /// and everything else this run keeps in `rest`.
 pub fn copy_all_to_rest(roms: Roms, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
-    copy_retaining(roms, config, &HashSet::new(), None, Vec::new())
+    copy_retaining(roms, config, &HashSet::new(), None, Vec::new(), None)
 }
 
 fn categorize_machines(
@@ -317,6 +334,7 @@ fn build_plan(
     catalog: &Catalog,
     args: &ExportConfig,
     mut on_status: Option<&mut dyn FnMut(&str)>,
+    cancel: Option<&CancelFlag>,
 ) -> Result<Plan, Box<dyn Error>> {
     let mut status = |message: &str| {
         if let Some(callback) = on_status.as_deref_mut() {
@@ -325,6 +343,7 @@ fn build_plan(
     };
 
     status("Scanning source collection for export plan…");
+    check_cancelled(cancel)?;
     let retain = retained_archives(&catalog.dependencies, args);
     let disk_machines = required_disk_machines(&catalog.disks, args);
     let folders = args.destination_folders();
@@ -334,6 +353,7 @@ fn build_plan(
 
     for source in &args.source_path {
         status(&format!("Scanning {} for media…", source));
+        check_cancelled(cancel)?;
         let mut entries = read_dir(source)
             .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
             .map(|entry| entry.map(|entry| entry.path()))
@@ -427,6 +447,7 @@ fn build_plan(
     media.sort();
 
     status("Checking destination conflicts…");
+    check_cancelled(cancel)?;
     let directories = [folders.roms.as_path(), folders.rest.as_path()];
     let names_path = args.selected_names_path();
     let conflicts = crate::core::copying::destination_conflicts(
@@ -450,6 +471,10 @@ fn build_plan(
         });
     }
 
+    let mame_xml_sha1 = file_sha1(&args.mame_xml_path)?;
+    let catver_sha1 = file_sha1(&args.catver_path)?;
+    check_cancelled(cancel)?;
+
     Ok(Plan {
         version: PLAN_VERSION,
         metadata: MetadataIdentity {
@@ -460,9 +485,9 @@ fn build_plan(
             }
             .to_string(),
             mame_xml_path: args.mame_xml_path.clone(),
-            mame_xml_sha1: file_sha1(&args.mame_xml_path)?,
+            mame_xml_sha1,
             catver_path: args.catver_path.clone(),
-            catver_sha1: file_sha1(&args.catver_path)?,
+            catver_sha1,
         },
         source_paths: args.source_path.clone(),
         destination_path: args.destination_path.clone(),
@@ -657,6 +682,7 @@ fn copy_retaining(
     retain: &HashSet<String>,
     disk_machines: Option<&HashSet<String>>,
     missing_chds: Vec<MissingChdEntry>,
+    cancel: Option<&CancelFlag>,
 ) -> Result<Report, Box<dyn Error>> {
     check_export_paths(config)?;
     crate::core::paths::validate(config)?;
@@ -738,6 +764,7 @@ fn copy_retaining(
         }
 
         for path in entries {
+            check_cancelled(cancel)?;
             let (file_prefix, file_name) = (
                 path.file_stem().unwrap().to_str().unwrap(),
                 path.file_name().unwrap(),
@@ -801,6 +828,8 @@ fn copy_retaining(
             pb.finish();
         }
     }
+
+    check_cancelled(cancel)?;
 
     if !config.simulation && !something_failed {
         if let Err(error) = write_selected_names(&roms, config, &names_path) {

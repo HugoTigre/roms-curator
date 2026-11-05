@@ -29,8 +29,15 @@ npm run tauri dev
 The React UI lives in `gui/`. Rust commands in `src-tauri/` call the same
 `roms-curator` library as the CLI. The GUI crate keeps its own `src-tauri/Cargo.lock`;
 build it with `cargo build --manifest-path src-tauri/Cargo.toml --locked` after
-`npm install`. CI on Linux runs `npm ci`, `npm run build`, and `cargo fmt`, Clippy, check, and tests for
-`src-tauri/`; it does not ship desktop bundles yet. See RFC **GUI-03** for release automation.
+`npm install`. Linux CI also runs `npm run tauri build`. Partial exports and
+cancellation: [gui-export-recovery.md](gui-export-recovery.md). Release policy:
+[releasing.md](releasing.md#gui-release-delivery).
+
+```bash
+npm run tauri build
+```
+
+Installers appear under `src-tauri/target/release/bundle/`.
 
 ## Run tests
 
