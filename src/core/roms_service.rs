@@ -106,8 +106,19 @@ impl Catalog {
     /// The plan lists selected games and their reasons, the files the copy would
     /// place in `roms` and `rest`, sizes, and destination conflicts. It does not
     /// create output directories, write `selected.txt`, or copy files.
+    ///
+    /// Call [`ExportConfig::validate`] before this; path checks are not repeated here.
     pub fn plan(&self, args: &ExportConfig) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
-        build_plan(self, args)
+        build_plan(self, args, None)
+    }
+
+    /// Same as [`plan`], but reports coarse steps through `on_status` while scanning sources.
+    pub fn plan_with_progress(
+        &self,
+        args: &ExportConfig,
+        on_status: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<crate::models::plan::Plan, Box<dyn Error>> {
+        build_plan(self, args, on_status)
     }
 
     /// Copies the source into `roms` and `rest`, and writes `selected.txt` when every copy succeeds.
@@ -122,6 +133,7 @@ impl Catalog {
     /// outside the range in the source, except required archives and disk directories.
     /// [`copy_all_to_rest`] applies the range only and places every copied file in `rest`.
     pub fn copy_roms(self, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
+        config.validate()?;
         let plan = self.plan(config)?;
         self.copy_with_plan(config, &plan)
     }
@@ -290,8 +302,18 @@ fn same_path(
     Ok(())
 }
 
-fn build_plan(catalog: &Catalog, args: &ExportConfig) -> Result<Plan, Box<dyn Error>> {
-    crate::core::paths::validate(args)?;
+fn build_plan(
+    catalog: &Catalog,
+    args: &ExportConfig,
+    mut on_status: Option<&mut dyn FnMut(&str)>,
+) -> Result<Plan, Box<dyn Error>> {
+    let mut status = |message: &str| {
+        if let Some(callback) = on_status.as_deref_mut() {
+            callback(message);
+        }
+    };
+
+    status("Scanning source collection for export plan…");
     let retain = retained_archives(&catalog.dependencies, args);
     let disk_machines = required_disk_machines(&catalog.disks, args);
     let folders = args.destination_folders();
@@ -300,6 +322,7 @@ fn build_plan(catalog: &Catalog, args: &ExportConfig) -> Result<Plan, Box<dyn Er
     let mut seen_disks = HashSet::new();
 
     for source in &args.source_path {
+        status(&format!("Scanning {} for media…", source));
         let mut entries = read_dir(source)
             .map_err(|error| format!("Cannot read source directory {source}: {error}"))?
             .map(|entry| entry.map(|entry| entry.path()))
@@ -392,6 +415,7 @@ fn build_plan(catalog: &Catalog, args: &ExportConfig) -> Result<Plan, Box<dyn Er
     }
     media.sort();
 
+    status("Checking destination conflicts…");
     let directories = [folders.roms.as_path(), folders.rest.as_path()];
     let names_path = args.selected_names_path();
     let conflicts = crate::core::copying::destination_conflicts(

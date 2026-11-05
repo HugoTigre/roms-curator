@@ -85,6 +85,15 @@ type RomCategories = HashMap<String, String>;
 /// the plan it is given, then copies and writes `selected.txt` when every copy succeeds.
 ///
 pub fn run(config: &ExportConfig) -> Result<Catalog, Box<dyn Error>> {
+    run_with_progress(config, None::<&mut dyn FnMut(&str)>)
+}
+
+/// Same as [`run`], but invokes `on_status` with human-readable step labels when
+/// provided (for example a GUI status line while `progress` is false).
+pub fn run_with_progress(
+    config: &ExportConfig,
+    mut on_status: Option<&mut dyn FnMut(&str)>,
+) -> Result<Catalog, Box<dyn Error>> {
     let progress_bar = if config.progress {
         Some(build_progress_bar())
     } else {
@@ -92,31 +101,39 @@ pub fn run(config: &ExportConfig) -> Result<Catalog, Box<dyn Error>> {
     };
     progress_bar.set_length(3);
 
-    progress_bar.println(
-        "* Reading mame database and copying files can last a few minutes, please be patient. *",
-    );
+    let catalog_load_message = if on_status.is_some() {
+        "Loading MAME catalog…"
+    } else {
+        "* Reading mame database and copying files can last a few minutes, please be patient. *"
+    };
+
+    let mut status = |message: &str| {
+        progress_bar.println(message);
+        if let Some(callback) = on_status.as_deref_mut() {
+            callback(message);
+        }
+    };
+
+    status(catalog_load_message);
 
     let catver_path = Path::new(&config.catver_path);
     let xml_path = Path::new(&config.mame_xml_path);
-    progress_bar.println(format!("Reading {} document...", catver_path.display()).as_str());
+    status(&format!("Reading {} document...", catver_path.display()));
     let rom_categories = read_categories(catver_path)?;
     progress_bar.inc();
 
-    progress_bar.println(format!("Reading {} document...", xml_path.display()).as_str());
+    status(&format!("Reading {} document...", xml_path.display()));
     let parsed = parse_mame_xml_file(xml_path, &rom_categories)?;
     progress_bar.inc();
 
-    progress_bar.println("Categorizing roms...");
+    status("Categorizing roms...");
     let catalog = parsed.categorize()?;
-    progress_bar.println(
-        format!(
-            "MAME build {}: {} machines, {} without a CatVer category.",
-            catalog.mame_build,
-            catalog.roms.len(),
-            catalog.unknown_categories.len()
-        )
-        .as_str(),
-    );
+    status(&format!(
+        "MAME build {}: {} machines, {} without a CatVer category.",
+        catalog.mame_build,
+        catalog.roms.len(),
+        catalog.unknown_categories.len()
+    ));
     progress_bar.inc();
 
     if let Some(pb) = progress_bar {

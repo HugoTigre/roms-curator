@@ -3,6 +3,7 @@
 __Index__
 
 - [Build for current platform](#build-for-current-platform)
+- [Curator GUI (Tauri)](#curator-gui-tauri)
 - [Run tests](#run-tests)
 - [Build platform specific binary](#build-platform-specific-binary)
 
@@ -16,12 +17,37 @@ committed so local builds and CI use the same dependency versions.
 cargo build --locked
 ```
 
+## Curator GUI (Tauri)
+
+Install Node.js (LTS) and npm, then from the repository root:
+
+```bash
+npm install
+npm run tauri dev
+```
+
+The React UI lives in `gui/`. Rust commands in `src-tauri/` call the same
+`roms-curator` library as the CLI. The GUI crate keeps its own `src-tauri/Cargo.lock`;
+build it with `cargo build --manifest-path src-tauri/Cargo.toml --locked` after
+`npm install`. CI on Linux runs `cargo fmt`, Clippy, check, and tests for
+`src-tauri/`; it does not run `npm run build` or ship desktop bundles yet.
+See RFC **GUI-03** for release automation and **GUI-02** for frontend CI.
+
 ## Run tests
 
 Run all normal tests, including documentation tests:
 
 ```bash
 cargo test --locked --all-features
+```
+
+When you change the Tauri shell or `src-tauri/src/commands.rs`, also run the GUI
+crate checks that Linux CI runs:
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 ```
 
 Run the formatting and lint checks used by CI:
