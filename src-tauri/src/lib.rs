@@ -1,5 +1,6 @@
 mod commands;
 mod job;
+mod progress;
 
 use job::JobState;
 

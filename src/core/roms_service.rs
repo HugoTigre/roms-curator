@@ -20,7 +20,7 @@ use crate::models::report::{
 };
 use crate::models::roms::{Catalog, Roms, UnfilteredRoms};
 use crate::models::selection::EmulationPolicy;
-use crate::utils::{build_progress_bar, ProgressBarEx};
+use crate::utils::{build_progress_bar, ProgressBarEx, ThrottledProgress};
 use crate::RomCategories;
 
 /// Plan reason for media routed to `rest` rather than required in `roms`.
@@ -152,7 +152,7 @@ impl Catalog {
     pub fn copy_roms(self, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
         config.validate()?;
         let plan = self.plan(config)?;
-        self.copy_with_plan(config, &plan, None)
+        self.copy_with_plan_progress(config, &plan, None, None)
     }
 
     /// Rechecks `plan` and copies. Use this for a plan just written or loaded
@@ -170,6 +170,18 @@ impl Catalog {
         plan: &crate::models::plan::Plan,
         cancel: Option<&CancelFlag>,
     ) -> Result<Report, Box<dyn Error>> {
+        self.copy_with_plan_progress(config, plan, cancel, None)
+    }
+
+    /// Like [`copy_with_plan`], but reports coarse copy progress through `on_copy_progress`
+    /// when provided (`pos` and `len` count source directory entries, including skips).
+    pub fn copy_with_plan_progress(
+        self,
+        config: &ExportConfig,
+        plan: &crate::models::plan::Plan,
+        cancel: Option<&CancelFlag>,
+        mut on_copy_progress: Option<&mut dyn FnMut(u64, u64)>,
+    ) -> Result<Report, Box<dyn Error>> {
         require_same_run(&self, config, plan)?;
         plan.recheck()?;
         if let Some(conflict) = plan.conflicts.first() {
@@ -185,6 +197,7 @@ impl Catalog {
             Some(&disks),
             missing_chds,
             cancel,
+            on_copy_progress,
         )
     }
 }
@@ -194,7 +207,7 @@ impl Catalog {
 /// [`Catalog::copy_roms`] places required archives and CHD directories in `roms`
 /// and everything else this run keeps in `rest`.
 pub fn copy_all_to_rest(roms: Roms, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
-    copy_retaining(roms, config, &HashSet::new(), None, Vec::new(), None)
+    copy_retaining(roms, config, &HashSet::new(), None, Vec::new(), None, None)
 }
 
 fn categorize_machines(
@@ -683,6 +696,7 @@ fn copy_retaining(
     disk_machines: Option<&HashSet<String>>,
     missing_chds: Vec<MissingChdEntry>,
     cancel: Option<&CancelFlag>,
+    mut on_copy_progress: Option<&mut dyn FnMut(u64, u64)>,
 ) -> Result<Report, Box<dyn Error>> {
     check_export_paths(config)?;
     crate::core::paths::validate(config)?;
@@ -723,6 +737,8 @@ fn copy_retaining(
         }
         sources.push((source, entries));
     }
+    let total_entries: u64 = sources.iter().map(|(_, entries)| entries.len() as u64).sum();
+    let mut copy_progress = ThrottledProgress::new();
     crate::core::copying::check_targets(&copies, &directories, &config.report_path, &names_path)?;
     if !config.simulation {
         for directory in directories {
@@ -743,6 +759,8 @@ fn copy_retaining(
         missing_chds,
         ..Report::default()
     };
+
+    let mut entries_seen: u64 = 0;
 
     for (source_path, entries) in sources {
         let progress_bar = if config.progress {
@@ -765,6 +783,10 @@ fn copy_retaining(
 
         for path in entries {
             check_cancelled(cancel)?;
+            entries_seen += 1;
+            if let Some(callback) = on_copy_progress.as_deref_mut() {
+                copy_progress.maybe_emit(entries_seen, total_entries, callback);
+            }
             let (file_prefix, file_name) = (
                 path.file_stem().unwrap().to_str().unwrap(),
                 path.file_name().unwrap(),
