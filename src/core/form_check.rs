@@ -114,8 +114,7 @@ fn subset_issues(start: &str, end: &str) -> ExportFormIssues {
         let start = start.trim().to_ascii_lowercase();
         let end = end.trim().to_ascii_lowercase();
         if !start.is_empty() && !end.is_empty() && start > end {
-            subset_end =
-                Some("This name sorts before the start. For example, ac then az.".into());
+            subset_end = Some("This name sorts before the start. For example, ac then az.".into());
         }
     }
     ExportFormIssues {
