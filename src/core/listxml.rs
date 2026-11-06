@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 
 use crate::models::roms::{
     Chd, ChdStatus, Feature, FeatureStatus, RomData, RomFile, RomStatus, UnfilteredRoms,
@@ -39,10 +40,10 @@ pub fn parse<R: BufRead>(
     loop {
         buf.clear();
         match xml.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) if is_tag(&e, b"mame") => {
+            Ok(Event::Start(e)) if is_tag(&e, "mame") => {
                 mame_build = Some(required_attr_on(&e, &mut xml, source, "mame", "build")?);
             }
-            Ok(Event::Start(e)) if is_tag(&e, b"machine") => {
+            Ok(Event::Start(e)) if is_tag(&e, "machine") => {
                 let machine =
                     parse_machine(&mut xml, &e, source, categories, &mut unknown_categories)?;
                 if machines.contains_key(&machine.0) {
@@ -55,7 +56,7 @@ pub fn parse<R: BufRead>(
                 }
                 machines.insert(machine.0, machine.1);
             }
-            Ok(Event::Empty(e)) if is_tag(&e, b"machine") => {
+            Ok(Event::Empty(e)) if is_tag(&e, "machine") => {
                 let machine =
                     parse_machine_leaf(&e, &mut xml, source, categories, &mut unknown_categories)?;
                 if machines.contains_key(&machine.0) {
@@ -108,12 +109,12 @@ fn parse_machine<R: BufRead>(
         buf.clear();
         let event = reader.read_event_into(&mut buf);
         match event {
-            Ok(Event::Start(e)) => match e.name().local_name().as_ref() {
-                b"driver" => data.status = Some(parse_driver(&e, reader, source, &name)?),
-                b"feature" => data
+            Ok(Event::Start(e)) => match e.name().local_name().into_inner() {
+                "driver" => data.status = Some(parse_driver(&e, reader, source, &name)?),
+                "feature" => data
                     .features
                     .push(parse_feature(&e, reader, source, &name)?),
-                b"device_ref" => data.devices.push(required_machine_attr(
+                "device_ref" => data.devices.push(required_machine_attr(
                     &e,
                     reader,
                     source,
@@ -121,16 +122,16 @@ fn parse_machine<R: BufRead>(
                     "device_ref",
                     "name",
                 )?),
-                b"rom" => data.roms.push(parse_rom(&e, reader, source, &name)?),
-                b"disk" => data.chd.push(parse_disk(&e, reader, source, &name)?),
+                "rom" => data.roms.push(parse_rom(&e, reader, source, &name)?),
+                "disk" => data.chd.push(parse_disk(&e, reader, source, &name)?),
                 _ => skip_subtree(reader)?,
             },
-            Ok(Event::Empty(e)) => match e.name().local_name().as_ref() {
-                b"driver" => data.status = Some(parse_driver(&e, reader, source, &name)?),
-                b"feature" => data
+            Ok(Event::Empty(e)) => match e.name().local_name().into_inner() {
+                "driver" => data.status = Some(parse_driver(&e, reader, source, &name)?),
+                "feature" => data
                     .features
                     .push(parse_feature(&e, reader, source, &name)?),
-                b"device_ref" => data.devices.push(required_machine_attr(
+                "device_ref" => data.devices.push(required_machine_attr(
                     &e,
                     reader,
                     source,
@@ -138,11 +139,11 @@ fn parse_machine<R: BufRead>(
                     "device_ref",
                     "name",
                 )?),
-                b"rom" => data.roms.push(parse_rom(&e, reader, source, &name)?),
-                b"disk" => data.chd.push(parse_disk(&e, reader, source, &name)?),
+                "rom" => data.roms.push(parse_rom(&e, reader, source, &name)?),
+                "disk" => data.chd.push(parse_disk(&e, reader, source, &name)?),
                 _ => {}
             },
-            Ok(Event::End(e)) if e.name().local_name().as_ref() == b"machine" => break,
+            Ok(Event::End(e)) if e.name().local_name().into_inner() == "machine" => break,
             Ok(Event::Eof) => {
                 return Err(format!(
                     "Machine '{name}' in {}: unclosed machine element",
@@ -326,8 +327,8 @@ fn parse_rom<R: BufRead>(
     })
 }
 
-fn is_tag(element: &BytesStart, name: &[u8]) -> bool {
-    element.name().local_name().as_ref() == name
+fn is_tag(element: &BytesStart, name: &str) -> bool {
+    element.name().local_name().into_inner() == name
 }
 
 fn required_attr_on<R: BufRead>(
@@ -367,15 +368,15 @@ fn required_machine_attr<R: BufRead>(
 
 fn optional_attr<R: BufRead>(
     element: &BytesStart,
-    reader: &mut Reader<R>,
+    _reader: &mut Reader<R>,
     name: &str,
 ) -> Result<Option<String>, Box<dyn Error>> {
     for attr in element.attributes() {
         let attr = attr.map_err(|error| error.to_string())?;
-        if attr.key.local_name().as_ref() != name.as_bytes() {
+        if attr.key.local_name().into_inner() != name {
             continue;
         }
-        let decoded = attr.decode_and_unescape_value(reader.decoder())?;
+        let decoded = attr.normalized_value(XmlVersion::Implicit1_0)?;
         let text = decoded.trim();
         if text.is_empty() {
             return Ok(None);
@@ -386,9 +387,10 @@ fn optional_attr<R: BufRead>(
 }
 
 fn flag_attr(element: &BytesStart, name: &str) -> bool {
-    element.attributes().flatten().any(|attr| {
-        attr.key.local_name().as_ref() == name.as_bytes() && attr.value.as_ref() == b"yes"
-    })
+    element
+        .attributes()
+        .flatten()
+        .any(|attr| attr.key.local_name().into_inner() == name && attr.value.as_ref() == "yes")
 }
 
 fn dump_status<R: BufRead>(

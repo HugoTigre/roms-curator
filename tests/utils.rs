@@ -11,7 +11,7 @@ use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use rand::distr::Alphanumeric;
-use rand::Rng;
+use rand::RngExt;
 use roms_curator::core::args::Args;
 use roms_curator::ensure_metadata;
 
