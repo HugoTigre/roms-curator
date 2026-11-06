@@ -4,7 +4,7 @@ CI validates ordinary changes. CD publishes only when you deliberately push a ma
 
 ## CI
 
-`.github/workflows/ci.yml` runs for PRs targeting master, pushes to master, manual runs and calls from CD. A path filter skips Rust and GUI jobs when unrelated files change (for example docs-only). Rust checks cover formatting and Clippy on Linux and build/tests on Linux, Windows and macOS. The GUI job runs when the app stack or shared library changes; PRs run fmt, Clippy, check, and tests, while **`npm run tauri build`** runs on master pushes, manual CI, and CD (release) only. Cargo and npm dependencies are cached on repeat runs. Rust is selected by `rust-toolchain.toml`; Cargo.lock keeps dependency resolution consistent.
+`.github/workflows/ci.yml` runs for PRs targeting master, pushes to master, manual runs and calls from CD. A path filter skips Rust and GUI jobs when unrelated files change (for example docs-only); edits to `ci.yml` or `cd.yml` still run the affected jobs. Rust checks cover formatting and Clippy on Linux and build/tests on Linux, Windows and macOS. The GUI job runs when the app stack or shared library changes. On GUI PRs, CI runs fmt, Clippy, check, test, and a release **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on master pushes, manual CI, and CD only when the GUI job runs (GUI-related paths changed). Cargo and npm dependencies are cached on repeat runs. Rust is selected by `rust-toolchain.toml`; Cargo.lock keeps dependency resolution consistent.
 
 Actions use readable major-version references, such as `actions/checkout@v7`. Dependabot checks GitHub Actions and Cargo updates weekly. Full commit pins are optional extra protection against an action tag changing; this project uses major tags for simpler maintenance.
 
@@ -26,7 +26,7 @@ The workflow publishes the crate to crates.io and creates a GitHub release with 
 
 **Decision (GUI-03):**
 
-- **CI** runs the Linux GUI checks on relevant changes; **`npm run tauri build`** runs on master, manual CI, and release (CD), not on every PR. Artifacts are validated in CI but not uploaded automatically yet.
+- **CI** runs the Linux GUI checks when GUI-related paths change. PRs use **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on master, manual CI, and release (CD) when that job runs. Artifacts are validated in CI but not uploaded automatically yet.
 - **Signing** (Windows Authenticode, Apple notarization) and **in-app updates** are deferred until the first GUI release ships; document any manual signing steps when attaching GUI installers to a tag.
 - **GitHub release assets** for the curator app (`.deb` / AppImage / `.msi` / `.dmg`) will be added to CD in the same tag as the CLI binaries when GUI is included in an intentional release. Until then, build installers locally with `npm run tauri build` and attach them manually if needed.
 

@@ -22,6 +22,9 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       gui: ${{ steps.filter.outputs.gui }}
@@ -33,6 +36,7 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          base: ${{ github.ref }}
           filters: |
             rust:
               - 'src/**'
@@ -43,6 +47,8 @@ jobs:
               - 'rust-toolchain.toml'
               - 'logging.yaml'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/cd.yml'
+              - '.github/dependabot.yml'
             gui:
               - 'gui/**'
               - 'src-tauri/**'
@@ -56,6 +62,8 @@ jobs:
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/cd.yml'
+              - '.github/dependabot.yml'
 
   check:
     name: Check (${{ matrix.os }})
@@ -100,6 +108,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.gui == 'true'
     runs-on: ubuntu-latest
+    # Release tauri build on PRs; raise if apt/cache cold runs hit the limit.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -151,7 +160,12 @@ jobs:
       - name: Test GUI crate
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
-      # Full bundle is slow (apt + release link); PRs rely on check/test above.
+      - name: Build Tauri app (release, no installers)
+        if: github.event_name == 'pull_request'
+        env:
+          CI: true
+        run: npm run tauri build -- --no-bundle
+
       - name: Build Linux desktop bundle
         if: github.event_name == 'push' || github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
         env:
