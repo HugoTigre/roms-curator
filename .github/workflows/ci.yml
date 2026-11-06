@@ -19,8 +19,48 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      gui: ${{ steps.filter.outputs.gui }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**'
+              - 'tests/**'
+              - 'benches/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'logging.yaml'
+              - '.github/workflows/ci.yml'
+            gui:
+              - 'gui/**'
+              - 'src-tauri/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - 'tsconfig.node.json'
+              - 'src/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
+
   check:
     name: Check (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -34,6 +74,12 @@ jobs:
 
       - name: Install the pinned Rust toolchain
         run: rustup show
+
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check-${{ matrix.os }}
+          cache-on-failure: true
 
       - name: Check formatting
         if: runner.os == 'Linux'
@@ -51,6 +97,8 @@ jobs:
 
   gui:
     name: GUI crate (Linux)
+    needs: changes
+    if: needs.changes.outputs.gui == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -60,6 +108,15 @@ jobs:
 
       - name: Install the pinned Rust toolchain
         run: rustup show
+
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            src-tauri
+          shared-key: gui-linux
+          cache-on-failure: true
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -94,7 +151,9 @@ jobs:
       - name: Test GUI crate
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
 
+      # Full bundle is slow (apt + release link); PRs rely on check/test above.
       - name: Build Linux desktop bundle
+        if: github.event_name == 'push' || github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
         env:
           CI: true
         run: npm run tauri build

@@ -46,6 +46,12 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup show
 
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          cache-on-failure: true
+
       - name: Build the native release binary
         env:
           BUILD_TARGET: ${{ matrix.target }}
