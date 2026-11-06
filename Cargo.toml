@@ -51,7 +51,7 @@ zip = "9.1"
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
-rand = "0.9"
+rand = "0.10"
 criterion = { version = "0.8.2", features = ["html_reports"] } # benchmarks
 
 [profile.bench]
