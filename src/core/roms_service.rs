@@ -737,7 +737,10 @@ fn copy_retaining(
         }
         sources.push((source, entries));
     }
-    let total_entries: u64 = sources.iter().map(|(_, entries)| entries.len() as u64).sum();
+    let total_entries: u64 = sources
+        .iter()
+        .map(|(_, entries)| entries.len() as u64)
+        .sum();
     let mut copy_progress = ThrottledProgress::new();
     crate::core::copying::check_targets(&copies, &directories, &config.report_path, &names_path)?;
     if !config.simulation {

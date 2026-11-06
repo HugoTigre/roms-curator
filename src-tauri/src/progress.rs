@@ -77,10 +77,7 @@ impl PhaseCounter {
         emit_phase(app, self.step, self.total, message);
     }
 
-    pub fn status_callback<'a>(
-        &'a mut self,
-        app: &'a AppHandle,
-    ) -> impl FnMut(&str) + 'a {
+    pub fn status_callback<'a>(&'a mut self, app: &'a AppHandle) -> impl FnMut(&str) + 'a {
         move |message| {
             self.step += 1;
             emit_phase(app, self.step, self.total, message.to_string());
@@ -122,13 +119,16 @@ mod tests {
         assert!(phase_json.get("pos").is_none());
 
         let files_json: Value = serde_json::to_value(&files).unwrap();
-        assert_eq!(files_json, json!({
-            "kind": "files",
-            "step": 8,
-            "total": 9,
-            "pos": 120,
-            "len": 5000,
-            "message": "Copying…",
-        }));
+        assert_eq!(
+            files_json,
+            json!({
+                "kind": "files",
+                "step": 8,
+                "total": 9,
+                "pos": 120,
+                "len": 5000,
+                "message": "Copying…",
+            })
+        );
     }
 }

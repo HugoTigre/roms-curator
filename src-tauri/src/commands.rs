@@ -11,8 +11,7 @@ use tauri::{AppHandle, State};
 
 use crate::job::JobState;
 use crate::progress::{
-    emit_files, emit_phase, preview_phase_total, PhaseCounter, EXPORT_COPY_STEP,
-    EXPORT_PHASE_TOTAL,
+    emit_files, emit_phase, preview_phase_total, PhaseCounter, EXPORT_COPY_STEP, EXPORT_PHASE_TOTAL,
 };
 
 pub const SELECTION_HELP: &str = "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games. Computers, consoles, and similar CatVer groups are not launch-list games. Parent, BIOS, device, and disk files listed below are copied into the roms folder when a selected game needs them.";
@@ -160,8 +159,8 @@ fn review_export_plan_blocking(
     config.validate().map_err(|error| error.to_string())?;
 
     let mut status = phases.status_callback(app);
-    let catalog = run_with_progress(&config, Some(&mut status), cancel)
-        .map_err(|error| error.to_string())?;
+    let catalog =
+        run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
     let plan = catalog
         .plan_with_progress(&config, Some(&mut status), cancel)
@@ -208,8 +207,8 @@ fn execute_export_blocking(
     }
 
     let mut status = phases.status_callback(app);
-    let catalog = run_with_progress(&config, Some(&mut status), cancel)
-        .map_err(|error| error.to_string())?;
+    let catalog =
+        run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
     let copy_message = "Copying into roms and rest…";
     let mut copy_progress = |pos: u64, len: u64| {
@@ -223,20 +222,25 @@ fn execute_export_blocking(
         );
     };
     let report = catalog
-        .copy_with_plan_progress(
-            &config,
-            &request.plan,
-            cancel,
-            Some(&mut copy_progress),
-        )
+        .copy_with_plan_progress(&config, &request.plan, cancel, Some(&mut copy_progress))
         .map_err(|error| error.to_string())?;
 
     let report_path = config.report_path.clone();
     let report_written = if report_path.is_empty() {
-        emit_phase(app, EXPORT_PHASE_TOTAL, EXPORT_PHASE_TOTAL, "Export finished.");
+        emit_phase(
+            app,
+            EXPORT_PHASE_TOTAL,
+            EXPORT_PHASE_TOTAL,
+            "Export finished.",
+        );
         false
     } else {
-        emit_phase(app, EXPORT_PHASE_TOTAL, EXPORT_PHASE_TOTAL, "Writing report…");
+        emit_phase(
+            app,
+            EXPORT_PHASE_TOTAL,
+            EXPORT_PHASE_TOTAL,
+            "Writing report…",
+        );
         report
             .to_file(&report_path)
             .map_err(|error| error.to_string())?;
