@@ -180,7 +180,7 @@ impl Catalog {
         config: &ExportConfig,
         plan: &crate::models::plan::Plan,
         cancel: Option<&CancelFlag>,
-        mut on_copy_progress: Option<&mut dyn FnMut(u64, u64)>,
+        on_copy_progress: Option<&mut dyn FnMut(u64, u64)>,
     ) -> Result<Report, Box<dyn Error>> {
         require_same_run(&self, config, plan)?;
         plan.recheck()?;
