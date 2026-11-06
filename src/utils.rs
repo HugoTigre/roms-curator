@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, fs, io};
 
 use log::{info, LevelFilter};
@@ -105,6 +105,38 @@ pub trait ProgressBarEx {
     fn set_length(&self, length: u64);
 }
 
+/// Limits how often a copy-progress callback runs so GUI updates stay cheap.
+pub struct ThrottledProgress {
+    last_emit: Option<Instant>,
+}
+
+impl ThrottledProgress {
+    pub fn new() -> Self {
+        Self { last_emit: None }
+    }
+
+    pub fn maybe_emit(&mut self, pos: u64, len: u64, report: &mut dyn FnMut(u64, u64)) {
+        if len == 0 {
+            return;
+        }
+        let on_boundary = pos == 1 || pos >= len || pos.is_multiple_of(200);
+        let on_interval = self
+            .last_emit
+            .map(|t| t.elapsed() >= Duration::from_millis(250))
+            .unwrap_or(true);
+        if on_boundary || on_interval {
+            report(pos, len);
+            self.last_emit = Some(Instant::now());
+        }
+    }
+}
+
+impl Default for ThrottledProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressBarEx for Option<ProgressBar> {
     fn println(&self, message: &str) {
         if self.is_none() {
@@ -122,5 +154,21 @@ impl ProgressBarEx for Option<ProgressBar> {
         if self.is_some() {
             self.as_ref().unwrap().set_length(length);
         }
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::ThrottledProgress;
+
+    #[test]
+    fn throttled_progress_emits_first_and_last() {
+        let mut throttle = ThrottledProgress::new();
+        let mut seen = Vec::new();
+        let mut report = |pos: u64, len: u64| seen.push((pos, len));
+        throttle.maybe_emit(1, 500, &mut report);
+        throttle.maybe_emit(2, 500, &mut report);
+        throttle.maybe_emit(500, 500, &mut report);
+        assert_eq!(seen, vec![(1, 500), (500, 500)]);
     }
 }

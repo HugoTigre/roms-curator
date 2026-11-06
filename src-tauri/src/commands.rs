@@ -7,9 +7,12 @@ use roms_curator::{
     ExportConfig, ExportFormIssues,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use crate::job::JobState;
+use crate::progress::{
+    emit_files, emit_phase, preview_phase_total, PhaseCounter, EXPORT_COPY_STEP, EXPORT_PHASE_TOTAL,
+};
 
 pub const SELECTION_HELP: &str = "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games. Computers, consoles, and similar CatVer groups are not launch-list games. Parent, BIOS, device, and disk files listed below are copied into the roms folder when a selected game needs them.";
 
@@ -138,7 +141,8 @@ fn review_export_plan_blocking(
     let config = prepare_config(&input)?;
     validate_metadata_override(&input)?;
 
-    emit(app, "Fetching metadata if needed…");
+    let mut phases = PhaseCounter::new(preview_phase_total(config.source_path.len()));
+    phases.advance(app, "Fetching metadata if needed…");
     let cache_root = default_metadata_cache_dir();
     let paths = ensure_metadata(&input.mame_version, &cache_root, input.metadata_refresh)
         .map_err(|error| error.to_string())?;
@@ -151,10 +155,10 @@ fn review_export_plan_blocking(
         .catver_path
         .unwrap_or_else(|| paths.catver.display().to_string());
 
-    emit(app, "Validating paths…");
+    phases.advance(app, "Validating paths…");
     config.validate().map_err(|error| error.to_string())?;
 
-    let mut status = |message: &str| emit(app, message);
+    let mut status = phases.status_callback(app);
     let catalog =
         run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
@@ -173,7 +177,8 @@ fn execute_export_blocking(
     let config = prepare_config(&request.input)?;
     validate_metadata_override(&request.input)?;
 
-    emit(app, "Fetching metadata if needed…");
+    let mut phases = PhaseCounter::new(EXPORT_PHASE_TOTAL);
+    phases.advance(app, "Fetching metadata if needed…");
     let cache_root = default_metadata_cache_dir();
     let paths = ensure_metadata(
         &request.input.mame_version,
@@ -192,7 +197,7 @@ fn execute_export_blocking(
         .catver_path
         .unwrap_or_else(|| paths.catver.display().to_string());
 
-    emit(app, "Validating paths…");
+    phases.advance(app, "Validating paths…");
     config.validate().map_err(|error| error.to_string())?;
 
     if !request.plan.conflicts.is_empty() {
@@ -201,20 +206,41 @@ fn execute_export_blocking(
         );
     }
 
-    emit(app, "Loading catalog for export…");
-    let mut status = |message: &str| emit(app, message);
+    let mut status = phases.status_callback(app);
     let catalog =
         run_with_progress(&config, Some(&mut status), cancel).map_err(|error| error.to_string())?;
 
-    emit(app, "Copying into roms and rest…");
+    let copy_message = "Copying into roms and rest…";
+    let mut copy_progress = |pos: u64, len: u64| {
+        emit_files(
+            app,
+            EXPORT_COPY_STEP,
+            EXPORT_PHASE_TOTAL,
+            pos,
+            len,
+            copy_message,
+        );
+    };
     let report = catalog
-        .copy_with_plan(&config, &request.plan, cancel)
+        .copy_with_plan_progress(&config, &request.plan, cancel, Some(&mut copy_progress))
         .map_err(|error| error.to_string())?;
 
     let report_path = config.report_path.clone();
     let report_written = if report_path.is_empty() {
+        emit_phase(
+            app,
+            EXPORT_PHASE_TOTAL,
+            EXPORT_PHASE_TOTAL,
+            "Export finished.",
+        );
         false
     } else {
+        emit_phase(
+            app,
+            EXPORT_PHASE_TOTAL,
+            EXPORT_PHASE_TOTAL,
+            "Writing report…",
+        );
         report
             .to_file(&report_path)
             .map_err(|error| error.to_string())?;
@@ -304,10 +330,6 @@ fn validate_metadata_override(input: &ExportInput) -> Result<(), String> {
         return Err(format!("CatVer file not found: {catver}"));
     }
     Ok(())
-}
-
-fn emit(app: &AppHandle, message: &str) {
-    let _ = app.emit("plan-progress", message);
 }
 
 #[cfg(test)]

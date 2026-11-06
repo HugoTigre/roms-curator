@@ -123,6 +123,68 @@ function formatEmulationPolicy(policy: string): string {
   }
 }
 
+interface ProgressPayload {
+  kind: "phase";
+  step: number;
+  total: number;
+  message: string;
+}
+
+interface FileProgressPayload {
+  kind: "files";
+  step: number;
+  total: number;
+  pos: number;
+  len: number;
+  message: string;
+}
+
+type PlanProgressEvent = ProgressPayload | FileProgressPayload;
+
+interface ProgressView {
+  step: number;
+  total: number;
+  message: string;
+  filePos?: number;
+  fileLen?: number;
+}
+
+function progressFromEvent(event: PlanProgressEvent): ProgressView {
+  if (event.kind === "files") {
+    return {
+      step: event.step,
+      total: event.total,
+      message: event.message,
+      filePos: event.pos,
+      fileLen: event.len,
+    };
+  }
+  return {
+    step: event.step,
+    total: event.total,
+    message: event.message,
+  };
+}
+
+function progressPercent(view: ProgressView): number | null {
+  if (view.total <= 0) {
+    return null;
+  }
+  if (
+    view.fileLen !== undefined &&
+    view.filePos !== undefined &&
+    view.fileLen > 0
+  ) {
+    const completedPhases = Math.max(0, view.step - 1);
+    const inStep = view.filePos / view.fileLen;
+    return Math.min(
+      100,
+      Math.round(((completedPhases + inStep) / view.total) * 100),
+    );
+  }
+  return Math.min(100, Math.round((view.step / view.total) * 100));
+}
+
 function isCancelled(message: string): boolean {
   return message.toLowerCase().includes("cancelled");
 }
@@ -138,7 +200,7 @@ function App() {
   const [metadataRefresh, setMetadataRefresh] = useState(false);
   const [gameQuery, setGameQuery] = useState("");
   const [supportQuery, setSupportQuery] = useState("");
-  const [progress, setProgress] = useState("");
+  const [progress, setProgress] = useState<ProgressView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<PlanReviewResult | null>(null);
@@ -159,9 +221,9 @@ function App() {
     let unlisten: (() => void) | undefined;
 
     void (async () => {
-      const unlistenFn = await listen<string>("plan-progress", (event) => {
+      const unlistenFn = await listen<PlanProgressEvent>("plan-progress", (event) => {
         if (active && acceptProgress.current) {
-          setProgress(event.payload);
+          setProgress(progressFromEvent(event.payload));
         }
       });
       if (!active) {
@@ -315,7 +377,7 @@ function App() {
     setError(null);
     setReview(null);
     setExportResult(null);
-    setProgress("Starting…");
+    setProgress({ step: 0, total: 10, message: "Starting…" });
     const id = beginRun();
     try {
       const result = await invoke<PlanReviewResult>("review_export_plan", {
@@ -324,15 +386,19 @@ function App() {
       });
       endRun();
       setReview(result);
-      setProgress("Plan ready — review the lists below before exporting.");
+      setProgress({
+        step: 10,
+        total: 10,
+        message: "Plan ready — review the lists below before exporting.",
+      });
     } catch (err) {
       endRun();
       const message = String(err);
       if (isCancelled(message)) {
-        setProgress("Cancelled.");
+        setProgress({ step: 0, total: 10, message: "Cancelled." });
       } else {
         setError(message);
-        setProgress("");
+        setProgress(null);
       }
     } finally {
       setBusy(false);
@@ -346,7 +412,7 @@ function App() {
     setBusy(true);
     setError(null);
     setExportResult(null);
-    setProgress("Starting export…");
+    setProgress({ step: 0, total: 9, message: "Starting export…" });
     const id = beginRun();
     try {
       const result = await invoke<ExportResult>("execute_export", {
@@ -358,18 +424,25 @@ function App() {
       });
       endRun();
       setExportResult(result);
-      setProgress(result.all_ok ? "Export finished." : "Export finished with errors.");
+      setProgress({
+        step: 9,
+        total: 9,
+        message: result.all_ok ? "Export finished." : "Export finished with errors.",
+      });
     } catch (err) {
       endRun();
       const message = String(err);
       if (isCancelled(message)) {
         setReview(null);
-        setProgress(
-          "Cancelled. Files already copied stay in the destination. Preview again before exporting to this folder.",
-        );
+        setProgress({
+          step: 0,
+          total: 9,
+          message:
+            "Cancelled. Files already copied stay in the destination. Preview again before exporting to this folder.",
+        });
       } else {
         setError(message);
-        setProgress("");
+        setProgress(null);
       }
     } finally {
       setBusy(false);
@@ -580,7 +653,36 @@ function App() {
         )}
       </section>
 
-      {progress && <p className="progress">{progress}</p>}
+      {progress && (
+        <div className="progress-panel" aria-live="polite">
+          <p className="progress">
+            Step {progress.step}/{progress.total} — {progress.message}
+            {progress.fileLen !== undefined &&
+              progress.filePos !== undefined &&
+              progress.fileLen > 0 && (
+                <span className="progress-files">
+                  {" "}
+                  ({progress.filePos.toLocaleString()}/
+                  {progress.fileLen.toLocaleString()} source entries)
+                </span>
+              )}
+          </p>
+          {progressPercent(progress) !== null && (
+            <div
+              className="progress-bar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPercent(progress) ?? 0}
+            >
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${progressPercent(progress)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
       {formCheckError && <p className="error">{formCheckError}</p>}
       {error && <p className="error">{error}</p>}
 

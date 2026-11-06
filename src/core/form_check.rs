@@ -108,19 +108,20 @@ fn report_issue(value: &str) -> Option<String> {
 }
 
 fn subset_issues(start: &str, end: &str) -> ExportFormIssues {
-    let mut issues = ExportFormIssues::default();
-    issues.subset_start = subset_name_issue(start);
-    issues.subset_end = subset_name_issue(end);
-    if issues.subset_start.is_none() && issues.subset_end.is_none() {
+    let subset_start = subset_name_issue(start);
+    let mut subset_end = subset_name_issue(end);
+    if subset_start.is_none() && subset_end.is_none() {
         let start = start.trim().to_ascii_lowercase();
         let end = end.trim().to_ascii_lowercase();
         if !start.is_empty() && !end.is_empty() && start > end {
-            issues.subset_end = Some(
-                "This name sorts before the start. For example, ac then az.".into(),
-            );
+            subset_end = Some("This name sorts before the start. For example, ac then az.".into());
         }
     }
-    issues
+    ExportFormIssues {
+        subset_start,
+        subset_end,
+        ..Default::default()
+    }
 }
 
 fn subset_name_issue(value: &str) -> Option<String> {

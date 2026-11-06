@@ -185,9 +185,33 @@ button.primary {
   font-weight: 600;
 }
 
+.progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .progress {
   color: #9fb0ff;
   font-size: 0.95rem;
+  margin: 0;
+}
+
+.progress-files {
+  color: #b8c4ff;
+}
+
+.progress-bar {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #2a3148;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3d6cf0, #5a82f5);
+  transition: width 0.15s ease-out;
 }
 
 .error {
