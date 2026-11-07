@@ -859,6 +859,7 @@ fn missing_disk_kind(kind: DiskKind) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn copy_retaining(
     roms: Roms,
     config: &ExportConfig,

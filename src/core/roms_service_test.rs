@@ -1295,8 +1295,10 @@ fn chd_pairs_include_second_source_root() {
     fs::create_dir_all(chds.join("area51mx")).unwrap();
     fs::write(chds.join("area51mx").join("area51mx.chd"), b"chd").unwrap();
 
-    let mut args = ExportConfig::default();
-    args.source_path = vec![roms.to_str().unwrap().into(), chds.to_str().unwrap().into()];
+    let args = ExportConfig {
+        source_path: vec![roms.to_str().unwrap().into(), chds.to_str().unwrap().into()],
+        ..ExportConfig::default()
+    };
 
     assert_eq!(
         crate::core::roms_service::indexed_chd_file_count(&args).unwrap(),
@@ -1323,9 +1325,11 @@ fn missing_bios_for_report_lists_absent_bios_zip() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("play.zip"), b"rom").unwrap();
 
-    let mut args = ExportConfig::default();
-    args.source_path = vec![source.to_str().unwrap().into()];
-    args.destination_path = root.path().join("dest").to_str().unwrap().into();
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
 
     let missing = crate::core::roms_service::missing_bios_for_report(&catalog, &args).unwrap();
     assert_eq!(missing.len(), 1);
@@ -1348,9 +1352,11 @@ fn missing_chds_for_report_includes_held_back_games() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("game.zip"), b"rom").unwrap();
 
-    let mut args = ExportConfig::default();
-    args.source_path = vec![source.to_str().unwrap().into()];
-    args.destination_path = root.path().join("dest").to_str().unwrap().into();
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
 
     let missing = missing_chds_for_report(&catalog, &args).unwrap();
     assert_eq!(missing.len(), 1);
@@ -1373,9 +1379,11 @@ fn require_complete_dependencies_holds_back_missing_chd() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("game.zip"), b"rom").unwrap();
 
-    let mut args = ExportConfig::default();
-    args.source_path = vec![source.to_str().unwrap().into()];
-    args.destination_path = root.path().join("dest").to_str().unwrap().into();
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
 
     let ready = crate::core::launch_ready::export_game_names(&catalog, &args).unwrap();
     assert!(ready.is_empty());
