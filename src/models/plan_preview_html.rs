@@ -12,7 +12,9 @@ use tempfile::Builder;
 
 use crate::core::launch_ready::HeldBackGame;
 use crate::core::roms_service::REST_MEDIA_REASON;
-use crate::models::plan::{Availability, MediaRole, Plan, PlannedGame, PlannedMedia, UnresolvedMedia};
+use crate::models::plan::{
+    Availability, MediaRole, Plan, PlannedGame, PlannedMedia, UnresolvedMedia,
+};
 use crate::models::report::{MissingBiosEntry, MissingChdEntry};
 
 /// Everything shown on the plan review screen.
@@ -74,11 +76,7 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
     let support: Vec<&PlannedMedia> = plan
         .media
         .iter()
-        .filter(|m| {
-            m.reasons
-                .iter()
-                .any(|reason| reason != REST_MEDIA_REASON)
-        })
+        .filter(|m| m.reasons.iter().any(|reason| reason != REST_MEDIA_REASON))
         .collect();
 
     writeln!(
@@ -111,7 +109,11 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
             _ => "Standard",
         },
     )?;
-    summary_row(&mut w, "Selected / working games", &plan.games.len().to_string())?;
+    summary_row(
+        &mut w,
+        "Selected / working games",
+        &plan.games.len().to_string(),
+    )?;
     summary_row(&mut w, "Media present", &present.to_string())?;
     summary_row(&mut w, "Media missing", &missing_media.to_string())?;
     summary_row(
@@ -136,7 +138,10 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
     )?;
     writeln!(w, "</dl>")?;
     if !plan.conflicts.is_empty() {
-        writeln!(w, "<h3>Destination conflicts</h3><p>Resolve these before export.</p><ul>")?;
+        writeln!(
+            w,
+            "<h3>Destination conflicts</h3><p>Resolve these before export.</p><ul>"
+        )?;
         for line in &plan.conflicts {
             writeln!(w, "<li>{}</li>", html_escape(line))?;
         }

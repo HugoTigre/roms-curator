@@ -90,23 +90,11 @@ fn destination_issue(value: &str) -> Option<String> {
 }
 
 fn report_issue(value: &str) -> Option<String> {
-    new_output_file_issue(
-        value,
-        ".md",
-        "Report",
-        "Markdown",
-        "report",
-    )
+    new_output_file_issue(value, ".md", "Report", "Markdown", "report")
 }
 
 fn plan_html_issue(value: &str) -> Option<String> {
-    new_output_file_issue(
-        value,
-        ".html",
-        "Plan HTML",
-        "HTML",
-        "plan preview HTML",
-    )
+    new_output_file_issue(value, ".html", "Plan HTML", "HTML", "plan preview HTML")
 }
 
 fn new_output_file_issue(
@@ -125,7 +113,9 @@ fn new_output_file_issue(
     }
     let path = Path::new(value);
     if path.is_dir() {
-        return Some(format!("{label} path needs to be a {kind} file, not a folder."));
+        return Some(format!(
+            "{label} path needs to be a {kind} file, not a folder."
+        ));
     }
     if path.is_file() {
         return Some(format!(

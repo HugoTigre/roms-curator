@@ -3,12 +3,12 @@
 use std::collections::HashSet;
 use std::error::Error;
 
+use crate::core::config::ExportConfig;
 use crate::core::export::name_in_subset_excluded;
 use crate::models::dependencies::DependencyKind;
 use crate::models::disks::DiskKind;
 use crate::models::plan::{chd_pairs_in_sources, source_has_chd};
 use crate::models::roms::Catalog;
-use crate::core::config::ExportConfig;
 
 /// One policy-selected game held back because dependencies are not in the source.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
@@ -90,16 +90,16 @@ pub fn held_back_games(
     Ok(held)
 }
 
-pub fn game_exports(edge_game: &str, export_games: &HashSet<String>, config: &ExportConfig) -> bool {
+pub fn game_exports(
+    edge_game: &str,
+    export_games: &HashSet<String>,
+    config: &ExportConfig,
+) -> bool {
     !name_in_subset_excluded(config, edge_game)
         && export_games.contains(&edge_game.to_ascii_lowercase())
 }
 
-fn blocking_gaps(
-    catalog: &Catalog,
-    chds: &HashSet<(String, String)>,
-    game: &str,
-) -> Vec<String> {
+fn blocking_gaps(catalog: &Catalog, chds: &HashSet<(String, String)>, game: &str) -> Vec<String> {
     let mut gaps = Vec::new();
     for missing in catalog
         .dependencies
@@ -113,14 +113,24 @@ fn blocking_gaps(
             missing.name
         ));
     }
-    for missing in catalog.disks.missing.iter().filter(|entry| entry.game == game) {
+    for missing in catalog
+        .disks
+        .missing
+        .iter()
+        .filter(|entry| entry.game == game)
+    {
         gaps.push(format!(
             "Missing CHD link: {} ({})",
             missing.name,
             disk_missing_label(missing.kind)
         ));
     }
-    for edge in catalog.disks.edges.iter().filter(|entry| entry.game == game) {
+    for edge in catalog
+        .disks
+        .edges
+        .iter()
+        .filter(|entry| entry.game == game)
+    {
         if source_has_chd(chds, &edge.machine, &edge.name) {
             continue;
         }
@@ -162,4 +172,3 @@ fn disk_edge_label(kind: DiskKind) -> &'static str {
         DiskKind::Device => "device disk",
     }
 }
-

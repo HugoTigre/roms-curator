@@ -552,9 +552,7 @@ fn media_reasons(
     export_games: &HashSet<String>,
 ) -> Vec<String> {
     let mut reasons = Vec::new();
-    if role == MediaRole::Archive
-        && export_games.contains(&machine.to_ascii_lowercase())
-    {
+    if role == MediaRole::Archive && export_games.contains(&machine.to_ascii_lowercase()) {
         reasons.push(format!("Selected game {machine}"));
     }
     if role == MediaRole::Archive {
@@ -664,7 +662,10 @@ pub fn excluded_games_for_review(catalog: &Catalog, args: &ExportConfig) -> Vec<
         if name_in_subset_excluded(args, name) {
             continue;
         }
-        if !matches!(rom.category, RomCategory::NotWorking | RomCategory::UnCategorized) {
+        if !matches!(
+            rom.category,
+            RomCategory::NotWorking | RomCategory::UnCategorized
+        ) {
             continue;
         }
         games.push(PlannedGame {

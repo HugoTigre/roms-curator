@@ -1,5 +1,11 @@
 use std::path::Path;
 
+use roms_curator::core::launch_ready::policy_selected_count;
+use roms_curator::core::launch_ready::HeldBackGame;
+use roms_curator::core::roms_service::{
+    excluded_games_for_review, held_back_games, indexed_chd_file_count, missing_bios_for_report,
+    missing_chds_for_report,
+};
 use roms_curator::models::plan::{Availability, Plan, PlannedGame};
 use roms_curator::models::plan_preview_html::{write_plan_preview_html, PlanPreviewHtml};
 use roms_curator::models::report::{
@@ -9,12 +15,6 @@ use roms_curator::{
     check_export_form, default_metadata_cache_dir, ensure_metadata, run_with_progress,
     ExportConfig, ExportFormIssues,
 };
-use roms_curator::core::launch_ready::HeldBackGame;
-use roms_curator::core::roms_service::{
-    excluded_games_for_review, held_back_games, indexed_chd_file_count, missing_bios_for_report,
-    missing_chds_for_report,
-};
-use roms_curator::core::launch_ready::policy_selected_count;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -253,8 +253,8 @@ fn write_plan_html_blocking(
         excluded_games: &request.excluded_games,
         held_back_games: &request.held_back_games,
     };
-    let written = write_plan_preview_html(&plan_html_path, preview)
-        .map_err(|error| error.to_string())?;
+    let written =
+        write_plan_preview_html(&plan_html_path, preview).map_err(|error| error.to_string())?;
     Ok(WritePlanHtmlResult {
         plan_html_path,
         plan_html_written: written,

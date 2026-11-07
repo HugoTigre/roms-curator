@@ -146,9 +146,7 @@ pub fn report_from_plan_preview(
         }
     }
     report.missing_source_media.sort();
-    report
-        .total_working(working)
-        .total_other(other);
+    report.total_working(working).total_other(other);
     report
 }
 

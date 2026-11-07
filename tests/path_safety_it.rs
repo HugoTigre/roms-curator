@@ -5,10 +5,10 @@ use assert_cmd::Command;
 #[cfg(unix)]
 use predicates::prelude::PredicateBooleanExt;
 use roms_curator::core::args::Args;
-use roms_curator::ExportConfig;
 use roms_curator::core::roms_service::copy_all_to_rest;
 use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::Roms;
+use roms_curator::ExportConfig;
 
 const CONTENTS: &[u8] = b"source ROM sentinel";
 

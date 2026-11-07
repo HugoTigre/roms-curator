@@ -1296,10 +1296,7 @@ fn chd_pairs_include_second_source_root() {
     fs::write(chds.join("area51mx").join("area51mx.chd"), b"chd").unwrap();
 
     let mut args = ExportConfig::default();
-    args.source_path = vec![
-        roms.to_str().unwrap().into(),
-        chds.to_str().unwrap().into(),
-    ];
+    args.source_path = vec![roms.to_str().unwrap().into(), chds.to_str().unwrap().into()];
 
     assert_eq!(
         crate::core::roms_service::indexed_chd_file_count(&args).unwrap(),
