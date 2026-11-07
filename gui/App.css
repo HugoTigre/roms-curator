@@ -30,6 +30,65 @@ header h1 {
   color: #aeb4bf;
 }
 
+.screen-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.screen-tabs button {
+  flex: 1 1 auto;
+  min-width: 7rem;
+  font-weight: 500;
+}
+
+.screen-tabs button.active {
+  background: #2e3d5c;
+  border-color: #5a82f5;
+}
+
+.screen-tabs button:disabled {
+  opacity: 0.45;
+}
+
+.actions-review {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.actions-leading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.actions-review .export-action {
+  margin-left: auto;
+  font-weight: 600;
+  min-width: 7.5rem;
+}
+
+.review-opening {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #3a4d78;
+  background: #1a2540;
+  color: #b8c4ff;
+  font-size: 0.95rem;
+}
+
+.support-missing {
+  margin: 0.2rem 0 0;
+  color: #f0c090;
+  font-size: 0.85rem;
+}
+
 .panel {
   background: #1c2028;
   border: 1px solid #2a3140;
@@ -50,6 +109,10 @@ header h1 {
   flex-direction: row;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.actions-setup {
+  justify-content: flex-end;
 }
 
 .actions-hint {

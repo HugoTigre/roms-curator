@@ -1,11 +1,15 @@
 use std::path::Path;
 
-use roms_curator::models::plan::{Availability, Plan};
-use roms_curator::models::report::{OperationStatus, Report};
+use roms_curator::models::plan::{Availability, Plan, PlannedGame};
+use roms_curator::models::plan_preview_html::{write_plan_preview_html, PlanPreviewHtml};
+use roms_curator::models::report::{
+    report_from_plan_preview, MissingChdEntry, OperationStatus, Report,
+};
 use roms_curator::{
     check_export_form, default_metadata_cache_dir, ensure_metadata, run_with_progress,
     ExportConfig, ExportFormIssues,
 };
+use roms_curator::core::roms_service::{excluded_games_for_review, missing_chds_for_report};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -14,7 +18,8 @@ use crate::progress::{
     emit_files, emit_phase, preview_phase_total, PhaseCounter, EXPORT_COPY_STEP, EXPORT_PHASE_TOTAL,
 };
 
-pub const SELECTION_HELP: &str = "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games. Computers, consoles, and similar CatVer groups are not launch-list games. Parent, BIOS, device, and disk files listed below are copied into the roms folder when a selected game needs them.";
+pub const SELECTION_HELP: &str =
+    "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games.";
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExportInput {
@@ -27,6 +32,7 @@ pub struct ExportInput {
     pub subset_start: Option<String>,
     pub subset_end: Option<String>,
     pub report_path: Option<String>,
+    pub plan_html_path: Option<String>,
     pub metadata_refresh: bool,
 }
 
@@ -39,6 +45,8 @@ pub struct PlanPreviewSummary {
     pub present_media: usize,
     pub missing_media: usize,
     pub unresolved: usize,
+    pub missing_chds: usize,
+    pub excluded_games: usize,
     pub conflicts: Vec<String>,
 }
 
@@ -48,12 +56,36 @@ pub struct PlanReviewResult {
     pub summary: PlanPreviewSummary,
     pub selection_help: &'static str,
     pub plan: Plan,
+    pub missing_chds: Vec<MissingChdEntry>,
+    pub excluded_games: Vec<PlannedGame>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ExecuteExportRequest {
     pub input: ExportInput,
     pub plan: Plan,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WritePlanPreviewRequest {
+    pub input: ExportInput,
+    pub plan: Plan,
+    pub missing_chds: Vec<MissingChdEntry>,
+    pub excluded_games: Vec<PlannedGame>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct WritePlanReportResult {
+    pub report_path: String,
+    pub report_written: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct WritePlanHtmlResult {
+    pub plan_html_path: String,
+    pub plan_html_written: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +110,7 @@ pub struct FormCheckInput {
     pub subset_start: Option<String>,
     pub subset_end: Option<String>,
     pub report_path: Option<String>,
+    pub plan_html_path: Option<String>,
 }
 
 #[tauri::command]
@@ -87,6 +120,7 @@ pub fn validate_export_form(input: FormCheckInput) -> ExportFormIssues {
         &input.source_path,
         &input.destination_path,
         input.report_path.as_deref().unwrap_or(""),
+        input.plan_html_path.as_deref().unwrap_or(""),
         input.subset_start.as_deref().unwrap_or(""),
         input.subset_end.as_deref().unwrap_or(""),
     )
@@ -133,6 +167,142 @@ pub fn cancel_background_work(state: State<'_, JobState>, run_id: u64) {
     state.request_cancel(run_id);
 }
 
+#[tauri::command]
+pub async fn write_plan_report(
+    request: WritePlanPreviewRequest,
+) -> Result<WritePlanReportResult, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || write_plan_report_blocking(request))
+        .await
+        .map_err(|error| format!("Report task failed: {error}"))?;
+    result
+}
+
+#[tauri::command]
+pub async fn write_plan_html(
+    request: WritePlanPreviewRequest,
+) -> Result<WritePlanHtmlResult, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || write_plan_html_blocking(request))
+        .await
+        .map_err(|error| format!("HTML task failed: {error}"))?;
+    result
+}
+
+fn write_plan_report_blocking(
+    request: WritePlanPreviewRequest,
+) -> Result<WritePlanReportResult, String> {
+    let config = prepare_config(&request.input)?;
+    let report_path = config.report_path.clone();
+    if report_path.trim().is_empty() {
+        return Err("Set a Markdown report path on the Setup tab first.".into());
+    }
+    let issues = plan_preview_form_issues(&request.input, &report_path);
+    if issues_blocking_markdown_report(&issues) {
+        return Err(format_form_issues(&issues));
+    }
+    if !request.plan.conflicts.is_empty() {
+        return Err(
+            "Report blocked: resolve destination conflicts shown in the plan first.".into(),
+        );
+    }
+    let report = report_from_plan_preview(&request.plan, request.missing_chds);
+    let written = report
+        .to_file(&report_path)
+        .map_err(|error| error.to_string())?;
+    Ok(WritePlanReportResult {
+        report_path,
+        report_written: written,
+    })
+}
+
+fn write_plan_html_blocking(
+    request: WritePlanPreviewRequest,
+) -> Result<WritePlanHtmlResult, String> {
+    let plan_html_path = request
+        .input
+        .plan_html_path
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if plan_html_path.is_empty() {
+        return Err("Set a plan HTML path on the Setup tab first.".into());
+    }
+    let issues = plan_preview_form_issues(&request.input, &plan_html_path);
+    if issues_blocking_plan_html(&issues) {
+        return Err(format_form_issues(&issues));
+    }
+    if !request.plan.conflicts.is_empty() {
+        return Err(
+            "HTML export blocked: resolve destination conflicts shown in the plan first.".into(),
+        );
+    }
+    let preview = PlanPreviewHtml {
+        plan: &request.plan,
+        missing_chds: &request.missing_chds,
+        excluded_games: &request.excluded_games,
+    };
+    let written = write_plan_preview_html(&plan_html_path, preview)
+        .map_err(|error| error.to_string())?;
+    Ok(WritePlanHtmlResult {
+        plan_html_path,
+        plan_html_written: written,
+    })
+}
+
+fn plan_preview_form_issues(input: &ExportInput, active_output_path: &str) -> ExportFormIssues {
+    check_export_form(
+        &input.mame_version,
+        &input.source_path,
+        &input.destination_path,
+        if active_output_path.to_ascii_lowercase().ends_with(".md") {
+            active_output_path
+        } else {
+            input.report_path.as_deref().unwrap_or("")
+        },
+        if active_output_path.to_ascii_lowercase().ends_with(".html") {
+            active_output_path
+        } else {
+            input.plan_html_path.as_deref().unwrap_or("")
+        },
+        input.subset_start.as_deref().unwrap_or(""),
+        input.subset_end.as_deref().unwrap_or(""),
+    )
+}
+
+fn issues_blocking_markdown_report(issues: &ExportFormIssues) -> bool {
+    issues.mame_version.is_some()
+        || issues.source_path.is_some()
+        || issues.destination_path.is_some()
+        || issues.report_path.is_some()
+        || issues.subset_start.is_some()
+        || issues.subset_end.is_some()
+}
+
+fn issues_blocking_plan_html(issues: &ExportFormIssues) -> bool {
+    issues.mame_version.is_some()
+        || issues.source_path.is_some()
+        || issues.destination_path.is_some()
+        || issues.plan_html_path.is_some()
+        || issues.subset_start.is_some()
+        || issues.subset_end.is_some()
+}
+
+fn format_form_issues(issues: &ExportFormIssues) -> String {
+    [
+        issues.mame_version.as_deref(),
+        issues.source_path.as_deref(),
+        issues.destination_path.as_deref(),
+        issues.report_path.as_deref(),
+        issues.plan_html_path.as_deref(),
+        issues.subset_start.as_deref(),
+        issues.subset_end.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 fn review_export_plan_blocking(
     app: &AppHandle,
     input: ExportInput,
@@ -166,7 +336,11 @@ fn review_export_plan_blocking(
         .plan_with_progress(&config, Some(&mut status), cancel)
         .map_err(|error| error.to_string())?;
 
-    Ok(plan_review(&plan))
+    let missing_chds =
+        missing_chds_for_report(&catalog, &config).map_err(|error| error.to_string())?;
+    let excluded_games = excluded_games_for_review(&catalog, &config);
+
+    Ok(plan_review(&plan, missing_chds, excluded_games))
 }
 
 fn execute_export_blocking(
@@ -263,15 +437,25 @@ fn prepare_config(input: &ExportInput) -> Result<ExportConfig, String> {
     })
 }
 
-fn plan_review(plan: &Plan) -> PlanReviewResult {
+fn plan_review(
+    plan: &Plan,
+    missing_chds: Vec<MissingChdEntry>,
+    excluded_games: Vec<PlannedGame>,
+) -> PlanReviewResult {
     PlanReviewResult {
-        summary: summarize_plan(plan),
+        summary: summarize_plan(plan, missing_chds.len(), excluded_games.len()),
         selection_help: SELECTION_HELP,
         plan: plan.clone(),
+        missing_chds,
+        excluded_games,
     }
 }
 
-fn summarize_plan(plan: &Plan) -> PlanPreviewSummary {
+fn summarize_plan(
+    plan: &Plan,
+    missing_chds: usize,
+    excluded_games: usize,
+) -> PlanPreviewSummary {
     let present_media = plan
         .media
         .iter()
@@ -290,6 +474,8 @@ fn summarize_plan(plan: &Plan) -> PlanPreviewSummary {
         present_media,
         missing_media,
         unresolved: plan.unresolved.len(),
+        missing_chds,
+        excluded_games,
         conflicts: plan.conflicts.clone(),
     }
 }
@@ -350,6 +536,7 @@ mod tests {
             subset_start: None,
             subset_end: None,
             report_path: None,
+            plan_html_path: None,
             metadata_refresh: false,
         };
         let error = validate_metadata_override(&only_xml).unwrap_err();
@@ -403,7 +590,7 @@ mod tests {
             conflicts: vec!["clash".into()],
         };
 
-        let review = plan_review(&plan);
+        let review = plan_review(&plan, vec![], vec![]);
         assert_eq!(review.summary.present_media, 1);
         assert_eq!(review.summary.missing_media, 1);
         assert!(planned_media_for_roms(&review.plan.media[0]));

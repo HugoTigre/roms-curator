@@ -14,6 +14,8 @@ pub fn run() {
             commands::execute_export,
             commands::cancel_background_work,
             commands::validate_export_form,
+            commands::write_plan_report,
+            commands::write_plan_html,
         ])
         .run(tauri::generate_context!())
         .expect("error while running roms-curator GUI");

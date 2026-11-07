@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -11,6 +17,8 @@ interface PlanPreviewSummary {
   present_media: number;
   missing_media: number;
   unresolved: number;
+  missing_chds: number;
+  excluded_games: number;
   conflicts: string[];
 }
 
@@ -51,6 +59,71 @@ interface PlanReviewResult {
   summary: PlanPreviewSummary;
   selection_help: string;
   plan: PlanDocument;
+  missing_chds: MissingChdEntry[];
+  excluded_games: PlannedGame[];
+}
+
+interface MissingChdEntry {
+  game: string;
+  machine: string;
+  disk: string;
+  reason: string;
+}
+
+type Screen = "setup" | "review" | "export";
+
+function countLabel(total: number, shown?: number): string {
+  if (shown !== undefined && shown !== total) {
+    return ` (${shown.toLocaleString()} of ${total.toLocaleString()})`;
+  }
+  return ` (${total.toLocaleString()})`;
+}
+
+const PLAN_SUMMARY_HELP =
+  "High-level counts for this preview: selected games, support files found or missing in the source, CHD gaps, dependency warnings, and machines left off the list. Review the sections below before copying files.";
+
+const GAMES_SECTION_HELP =
+  "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games.";
+
+const UNRESOLVED_SECTION_HELP =
+  "Dependency checks from MAME metadata. Disk gaps usually also appear under Missing CHDs; this list also covers missing parent ROM zips and broken dependency chains. Selected/working will still be copied in export (unless there is a destination conflict). A game with a gap here may copy to roms/ but will not run in MAME until the missing file is added.";
+
+const SUPPORT_FILES_HELP =
+  "This list is what would land in roms/ because at least one working game needs it.";
+
+const EXPORT_STAYS_SELECTED =
+  "The game stays on your selected list; export still copies its ROM zip and any CHDs you already have.";
+
+function formatSupportRole(role: PlannedMedia["role"]): string {
+  return role === "disk" ? "CHD folder" : "ROM zip";
+}
+
+function unresolvedDescription(entry: UnresolvedMedia): string {
+  const game = entry.game ? `“${entry.game}”` : "a selected game";
+  let detail: string;
+  switch (entry.kind) {
+    case "delta-parent":
+      detail = `${game} uses a delta CHD: file “${entry.name}” must already exist as a full CHD in your source (the delta base). That base was not found.`;
+      break;
+    case "own-disk":
+    case "shared-disk":
+    case "device-disk":
+      detail = `${game} needs disk “${entry.name}”, but no matching CHD was found in the source.`;
+      break;
+    case "parent-archive":
+    case "rom-parent-archive":
+    case "own-archive":
+    case "device-archive":
+      detail = `${game} needs ROM zip “${entry.name}” (${entry.kind.replace(/-/g, " ")}), but that zip is not in the source.`;
+      break;
+    case "dependency-cycle":
+    case "disk-cycle":
+      detail = `Circular reference in ${entry.kind.replace(/-/g, " ")}: ${entry.name}`;
+      break;
+    default:
+      detail = `${game} — ${entry.kind}: ${entry.name}`;
+  }
+  return `${detail} ${EXPORT_STAYS_SELECTED}`;
 }
 
 /** Must stay in sync with `roms_curator::REST_MEDIA_REASON`. */
@@ -70,6 +143,7 @@ interface ExportInput {
   subset_start?: string;
   subset_end?: string;
   report_path?: string;
+  plan_html_path?: string;
   metadata_refresh: boolean;
 }
 
@@ -85,11 +159,22 @@ interface ExportResult {
   names_error?: string | null;
 }
 
+interface WritePlanReportResult {
+  report_path: string;
+  report_written: boolean;
+}
+
+interface WritePlanHtmlResult {
+  plan_html_path: string;
+  plan_html_written: boolean;
+}
+
 interface FormIssues {
   mame_version: string | null;
   source_path: string | null;
   destination_path: string | null;
   report_path: string | null;
+  plan_html_path: string | null;
   subset_start: string | null;
   subset_end: string | null;
 }
@@ -197,9 +282,17 @@ function App() {
   const [subsetStart, setSubsetStart] = useState("");
   const [subsetEnd, setSubsetEnd] = useState("");
   const [reportPath, setReportPath] = useState("");
+  const [planHtmlPath, setPlanHtmlPath] = useState("");
   const [metadataRefresh, setMetadataRefresh] = useState(false);
   const [gameQuery, setGameQuery] = useState("");
   const [supportQuery, setSupportQuery] = useState("");
+  const [unresolvedQuery, setUnresolvedQuery] = useState("");
+  const [missingChdQuery, setMissingChdQuery] = useState("");
+  const [excludedQuery, setExcludedQuery] = useState("");
+  const [screen, setScreen] = useState<Screen>("setup");
+  const [reviewListsReady, setReviewListsReady] = useState(false);
+  const [isReviewPending, startReviewTransition] = useTransition();
+  const [planExportNotes, setPlanExportNotes] = useState<string[]>([]);
   const [progress, setProgress] = useState<ProgressView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +304,7 @@ function App() {
     source: false,
     destination: false,
     report: false,
+    plan_html: false,
   });
   const acceptProgress = useRef(false);
   const runId = useRef(0);
@@ -239,9 +333,29 @@ function App() {
     };
   }, []);
 
+  function goToReview() {
+    if (!review) {
+      return;
+    }
+    setReviewListsReady(false);
+    setPlanExportNotes([]);
+    startReviewTransition(() => setScreen("review"));
+  }
+
+  useEffect(() => {
+    if (screen !== "review" || !review) {
+      setReviewListsReady(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setReviewListsReady(true), 0);
+    return () => window.clearTimeout(timeout);
+  }, [screen, review]);
+
   useEffect(() => {
     setReview(null);
     setExportResult(null);
+    setPlanExportNotes([]);
+    setScreen("setup");
   }, [
     sourcePath,
     destinationPath,
@@ -250,6 +364,7 @@ function App() {
     subsetStart,
     subsetEnd,
     reportPath,
+    planHtmlPath,
     metadataRefresh,
   ]);
 
@@ -264,6 +379,7 @@ function App() {
           subset_start: subsetStart.trim() || undefined,
           subset_end: subsetEnd.trim() || undefined,
           report_path: reportPath.trim() || undefined,
+          plan_html_path: planHtmlPath.trim() || undefined,
         },
       })
         .then((next) => {
@@ -280,7 +396,7 @@ function App() {
         });
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [sourcePath, destinationPath, mameVersion, subsetStart, subsetEnd, reportPath]);
+  }, [sourcePath, destinationPath, mameVersion, subsetStart, subsetEnd, reportPath, planHtmlPath]);
 
   const exportInput = (): ExportInput => ({
     source_path: sourcePath,
@@ -290,6 +406,7 @@ function App() {
     subset_start: subsetStart.trim().toLowerCase() || undefined,
     subset_end: subsetEnd.trim().toLowerCase() || undefined,
     report_path: reportPath.trim() || undefined,
+    plan_html_path: planHtmlPath.trim() || undefined,
     metadata_refresh: metadataRefresh,
   });
 
@@ -322,6 +439,56 @@ function App() {
         entry.reasons.some((reason) => matchesQuery(reason, supportQuery)),
     );
   }, [review, supportQuery]);
+
+  const filteredUnresolved = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const rows = review.plan.unresolved;
+    if (!unresolvedQuery.trim()) {
+      return rows;
+    }
+    return rows.filter(
+      (entry) =>
+        matchesQuery(entry.name, unresolvedQuery) ||
+        matchesQuery(entry.kind, unresolvedQuery) ||
+        matchesQuery(entry.game, unresolvedQuery) ||
+        matchesQuery(unresolvedDescription(entry), unresolvedQuery),
+    );
+  }, [review, unresolvedQuery]);
+
+  const filteredMissingChds = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const rows = review.missing_chds;
+    if (!missingChdQuery.trim()) {
+      return rows;
+    }
+    return rows.filter(
+      (entry) =>
+        matchesQuery(entry.game, missingChdQuery) ||
+        matchesQuery(entry.machine, missingChdQuery) ||
+        matchesQuery(entry.disk, missingChdQuery) ||
+        matchesQuery(entry.reason, missingChdQuery),
+    );
+  }, [review, missingChdQuery]);
+
+  const filteredExcluded = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const rows = review.excluded_games;
+    if (!excludedQuery.trim()) {
+      return rows;
+    }
+    return rows.filter(
+      (game) =>
+        matchesQuery(game.machine, excludedQuery) ||
+        matchesQuery(game.category, excludedQuery) ||
+        matchesQuery(game.reason, excludedQuery),
+    );
+  }, [review, excludedQuery]);
 
   async function pickSource() {
     const selected = await open({
@@ -358,6 +525,17 @@ function App() {
     }
   }
 
+  async function pickPlanHtmlPath() {
+    const selected = await save({
+      title: "Plan preview (HTML)",
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+    if (typeof selected === "string") {
+      setPlanHtmlPath(selected);
+      setTouchedPaths((current) => ({ ...current, plan_html: true }));
+    }
+  }
+
   async function cancelWork() {
     await invoke("cancel_background_work", { runId: runId.current });
   }
@@ -386,6 +564,8 @@ function App() {
       });
       endRun();
       setReview(result);
+      setReviewListsReady(false);
+      startReviewTransition(() => setScreen("review"));
       setProgress({
         step: 10,
         total: 10,
@@ -400,6 +580,62 @@ function App() {
         setError(message);
         setProgress(null);
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function planPreviewRequest() {
+    if (!review) {
+      return null;
+    }
+    return {
+      input: exportInput(),
+      plan: review.plan,
+      missing_chds: review.missing_chds,
+      excluded_games: review.excluded_games,
+    };
+  }
+
+  async function writePlanReport() {
+    const request = planPreviewRequest();
+    if (!request) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await invoke<WritePlanReportResult>("write_plan_report", { request });
+      if (result.report_written) {
+        setPlanExportNotes((current) => [
+          ...current,
+          `Markdown plan report: ${result.report_path}`,
+        ]);
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function writePlanHtml() {
+    const request = planPreviewRequest();
+    if (!request) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await invoke<WritePlanHtmlResult>("write_plan_html", { request });
+      if (result.plan_html_written) {
+        setPlanExportNotes((current) => [
+          ...current,
+          `HTML plan preview: ${result.plan_html_path}`,
+        ]);
+      }
+    } catch (err) {
+      setError(String(err));
     } finally {
       setBusy(false);
     }
@@ -424,6 +660,7 @@ function App() {
       });
       endRun();
       setExportResult(result);
+      setScreen("export");
       setProgress({
         step: 9,
         total: 9,
@@ -434,6 +671,7 @@ function App() {
       const message = String(err);
       if (isCancelled(message)) {
         setReview(null);
+        setScreen("setup");
         setProgress({
           step: 0,
           total: 9,
@@ -457,6 +695,11 @@ function App() {
     touchedPaths.destination,
   );
   const reportIssue = shownIssue(issues?.report_path, reportPath, touchedPaths.report);
+  const planHtmlIssue = shownIssue(
+    issues?.plan_html_path,
+    planHtmlPath,
+    touchedPaths.plan_html,
+  );
   const subsetStartIssue = issues?.subset_start ?? null;
   const subsetEndIssue = issues?.subset_end ?? null;
   const formReady =
@@ -465,6 +708,7 @@ function App() {
     !issues.source_path &&
     !issues.destination_path &&
     !issues.report_path &&
+    !issues.plan_html_path &&
     !issues.subset_start &&
     !issues.subset_end;
 
@@ -485,11 +729,38 @@ function App() {
       <header>
         <h1>Roms Curator</h1>
         <p className="lede">
-          Pick your ROM folder and where to save a working set, preview what will
-          be kept, then export for your emulator or frontend.
+          Set paths and preferences, preview the plan, then export when you are ready.
         </p>
       </header>
 
+      <nav className="screen-tabs" aria-label="Workflow">
+        <button
+          type="button"
+          className={screen === "setup" ? "active" : undefined}
+          onClick={() => setScreen("setup")}
+        >
+          1. Setup
+        </button>
+        <button
+          type="button"
+          className={screen === "review" ? "active" : undefined}
+          onClick={goToReview}
+          disabled={!review || isReviewPending}
+        >
+          2. Plan review
+        </button>
+        <button
+          type="button"
+          className={screen === "export" ? "active" : undefined}
+          onClick={() => exportResult && setScreen("export")}
+          disabled={!exportResult}
+        >
+          3. Export result
+        </button>
+      </nav>
+
+      {screen === "setup" && (
+        <>
       <section className="panel">
         <h2 className="panel-title">Paths</h2>
         <label>
@@ -621,39 +892,52 @@ function App() {
           </div>
           {reportIssue && <p className="field-error">{reportIssue}</p>}
         </label>
+        <label>
+          Plan HTML path (optional, for collapsible browser preview)
+          <div className="path-row">
+            <input
+              value={planHtmlPath}
+              onChange={(e) => setPlanHtmlPath(e.currentTarget.value)}
+              onBlur={() => setTouchedPaths((current) => ({ ...current, plan_html: true }))}
+              placeholder="/path/to/plan-preview.html"
+              disabled={busy}
+              aria-invalid={planHtmlIssue ? true : undefined}
+              className={planHtmlIssue ? "invalid" : undefined}
+            />
+            <button type="button" onClick={pickPlanHtmlPath} disabled={busy}>
+              Browse…
+            </button>
+          </div>
+          {planHtmlIssue && <p className="field-error">{planHtmlIssue}</p>}
+        </label>
         <p className="hint">
-          {review?.selection_help ??
-            "Arcade games with minor MAME issues stay in the list by default. Support files needed by your selection are copied into the roms folder."}
+          Arcade games with minor MAME issues stay on the list by default. Support
+          files needed by your selection are copied into the roms folder.
         </p>
       </section>
 
-      <section className="panel actions">
+      <section className="panel actions actions-setup">
+        {review && !busy && (
+          <button type="button" onClick={goToReview} disabled={isReviewPending}>
+            Open plan review
+          </button>
+        )}
+        {busy && (
+          <button type="button" onClick={cancelWork}>
+            Cancel
+          </button>
+        )}
         <button
           type="button"
           className="primary"
           onClick={reviewPlan}
           disabled={!canReview}
         >
-          {busy && !review ? "Building plan…" : "Preview plan"}
+          {busy ? "Building plan…" : "Preview plan"}
         </button>
-        <button type="button" onClick={runExport} disabled={!canExport}>
-          {busy && review ? "Exporting…" : "Export"}
-        </button>
-        {busy && (
-          <button type="button" onClick={cancelWork}>
-            Cancel
-          </button>
-        )}
-        {exportSkipsMissing && (
-          <p className="hint actions-hint">
-            Some files are missing or unresolved in the plan. Export still runs;
-            those files are skipped and listed in the report if you set a report
-            path.
-          </p>
-        )}
       </section>
 
-      {progress && (
+      {progress && (busy || screen === "setup") && (
         <div className="progress-panel" aria-live="polite">
           <p className="progress">
             Step {progress.step}/{progress.total} — {progress.message}
@@ -683,13 +967,25 @@ function App() {
           )}
         </div>
       )}
+        </>
+      )}
+
       {formCheckError && <p className="error">{formCheckError}</p>}
       {error && <p className="error">{error}</p>}
 
-      {review && (
+      {screen === "review" && review && (
         <>
+          {(isReviewPending || !reviewListsReady) && (
+            <p className="review-opening" role="status" aria-live="polite">
+              Opening plan review… loading lists (
+              {review.summary.selected_games.toLocaleString()} games and support
+              files). This can take a few seconds.
+            </p>
+          )}
+
           <section className="panel results">
             <h2>Plan summary</h2>
+            <p className="hint">{PLAN_SUMMARY_HELP}</p>
             <dl>
               <div>
                 <dt>MAME build</dt>
@@ -700,7 +996,7 @@ function App() {
                 <dd>{formatEmulationPolicy(review.summary.emulation_policy)}</dd>
               </div>
               <div>
-                <dt>Selected games</dt>
+                <dt>Selected / working games</dt>
                 <dd>{review.summary.selected_games}</dd>
               </div>
               <div>
@@ -712,8 +1008,16 @@ function App() {
                 <dd>{review.summary.missing_media}</dd>
               </div>
               <div>
+                <dt>Missing CHDs</dt>
+                <dd>{review.summary.missing_chds}</dd>
+              </div>
+              <div>
                 <dt>Unresolved references</dt>
                 <dd>{review.summary.unresolved}</dd>
+              </div>
+              <div>
+                <dt>Not on working list</dt>
+                <dd>{review.summary.excluded_games}</dd>
               </div>
             </dl>
             {review.summary.missing_media > 0 && (
@@ -723,6 +1027,23 @@ function App() {
                 source; export skips them.
               </p>
             )}
+            {exportSkipsMissing && (
+              <p className="hint">
+                Some files are missing or unresolved in the plan. Export still runs;
+                those items are skipped and appear in the report when a report path
+                is set.
+              </p>
+            )}
+            <p className="hint">
+              <strong>Write plan report</strong> and <strong>Write HTML preview</strong> (below)
+              save this preview without copying files. Markdown suits diffing and tooling; HTML
+              opens in a browser with collapsible sections. Set paths on Setup first.
+            </p>
+            {planExportNotes.map((note) => (
+              <p key={note} className="hint">
+                {note}
+              </p>
+            ))}
             {review.summary.conflicts.length > 0 && (
               <div className="conflicts">
                 <h3>Destination conflicts</h3>
@@ -736,8 +1057,14 @@ function App() {
             )}
           </section>
 
+          {reviewListsReady && !isReviewPending && (
+            <>
           <section className="panel">
-            <h2>Selected games</h2>
+            <h2>
+              Selected / working games
+              {countLabel(review.plan.games.length, filteredGames.length)}
+            </h2>
+            <p className="hint">{GAMES_SECTION_HELP}</p>
             <input
               className="search"
               value={gameQuery}
@@ -756,7 +1083,14 @@ function App() {
           </section>
 
           <section className="panel">
-            <h2>Support files for roms</h2>
+            <h2>
+              Support files for roms
+              {countLabel(
+                supportMediaFromPlan(review.plan.media).length,
+                filteredSupport.length,
+              )}
+            </h2>
+            <p className="hint">{SUPPORT_FILES_HELP}</p>
             <input
               className="search"
               value={supportQuery}
@@ -767,34 +1101,181 @@ function App() {
               {filteredSupport.map((entry, index) => (
                 <li key={`${index}:${entry.machine}:${entry.role}`}>
                   <strong>{entry.machine}</strong>
-                  <span>
-                    {entry.role} · {entry.availability}
-                  </span>
+                  <span>{formatSupportRole(entry.role)}</span>
+                  {entry.availability === "missing" && (
+                    <p className="support-missing">Not in your source — export skips this file</p>
+                  )}
                   <p>{entry.reasons.join("; ")}</p>
                 </li>
               ))}
             </ul>
           </section>
 
-          {review.plan.unresolved.length > 0 && (
+          {review.missing_chds.length > 0 && (
             <section className="panel">
-              <h2>Unresolved references</h2>
+              <h2>
+                Missing CHDs
+                {countLabel(review.missing_chds.length, filteredMissingChds.length)}
+              </h2>
+              <p className="hint">
+                CHD files selected/working games need that are not in your source.
+                Same list as the export report.
+              </p>
+              <input
+                className="search"
+                value={missingChdQuery}
+                onChange={(e) => setMissingChdQuery(e.currentTarget.value)}
+                placeholder="Filter by game, machine folder, or disk…"
+              />
               <ul className="scroll-list">
-                {review.plan.unresolved.map((entry, index) => (
-                  <li key={`${index}:${entry.game}:${entry.name}`}>
-                    <strong>{entry.name}</strong>
+                {filteredMissingChds.map((entry, index) => (
+                  <li key={`${index}:${entry.game}:${entry.disk}`}>
+                    <strong>{entry.disk}</strong>
                     <span>
-                      {entry.kind} · game {entry.game || "(cycle)"}
+                      game {entry.game} · folder {entry.machine}
                     </span>
+                    <p>{entry.reason}</p>
                   </li>
                 ))}
               </ul>
             </section>
           )}
+
+          {review.plan.unresolved.length > 0 && (
+            <section className="panel">
+              <h2>
+                Unresolved references
+                {countLabel(review.plan.unresolved.length, filteredUnresolved.length)}
+              </h2>
+              <p className="hint">{UNRESOLVED_SECTION_HELP}</p>
+              <input
+                className="search"
+                value={unresolvedQuery}
+                onChange={(e) => setUnresolvedQuery(e.currentTarget.value)}
+                placeholder="Filter by name, kind, or game…"
+              />
+              <ul className="scroll-list">
+                {filteredUnresolved.map((entry, index) => (
+                  <li key={`${index}:${entry.game}:${entry.name}:${entry.kind}`}>
+                    <strong>{entry.name}</strong>
+                    <span>{entry.kind}</span>
+                    <p>{unresolvedDescription(entry)}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {review.excluded_games.length > 0 && (
+            <section className="panel">
+              <h2>
+                Not on working list
+                {countLabel(review.excluded_games.length, filteredExcluded.length)}
+              </h2>
+              <p className="hint">
+                Arcade-style machines kept off the selected list (preliminary,
+                non-arcade CatVer groups, strict policy, mechanical, and similar).
+              </p>
+              <input
+                className="search"
+                value={excludedQuery}
+                onChange={(e) => setExcludedQuery(e.currentTarget.value)}
+                placeholder="Filter by name, category, or reason…"
+              />
+              <ul className="scroll-list">
+                {filteredExcluded.map((game) => (
+                  <li key={game.machine}>
+                    <strong>{game.machine}</strong>
+                    <span>{game.category}</span>
+                    <p>{game.reason}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+            </>
+          )}
+
+          {progress && busy && (
+            <div className="progress-panel" aria-live="polite">
+              <p className="progress">
+                Step {progress.step}/{progress.total} — {progress.message}
+                {progress.fileLen !== undefined &&
+                  progress.filePos !== undefined &&
+                  progress.fileLen > 0 && (
+                    <span className="progress-files">
+                      {" "}
+                      ({progress.filePos.toLocaleString()}/
+                      {progress.fileLen.toLocaleString()} source entries)
+                    </span>
+                  )}
+              </p>
+              {progressPercent(progress) !== null && (
+                <div
+                  className="progress-bar"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progressPercent(progress) ?? 0}
+                >
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${progressPercent(progress)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <section className="panel actions actions-review">
+            <div className="actions-leading">
+              <button type="button" onClick={() => setScreen("setup")} disabled={busy}>
+                Back to setup
+              </button>
+              <button
+                type="button"
+                onClick={writePlanReport}
+                disabled={busy || !reportPath.trim() || !!reportIssue}
+                title={
+                  reportPath.trim()
+                    ? undefined
+                    : "Set a Markdown report path on Setup first."
+                }
+              >
+                Write plan report
+              </button>
+              <button
+                type="button"
+                onClick={writePlanHtml}
+                disabled={busy || !planHtmlPath.trim() || !!planHtmlIssue}
+                title={
+                  planHtmlPath.trim()
+                    ? undefined
+                    : "Set a plan HTML path on Setup first."
+                }
+              >
+                Write HTML preview
+              </button>
+              {busy && (
+                <button type="button" onClick={cancelWork}>
+                  Cancel
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="primary export-action"
+              onClick={runExport}
+              disabled={!canExport}
+            >
+              {busy ? "Exporting…" : "Export"}
+            </button>
+          </section>
         </>
       )}
 
-      {exportResult && (
+      {screen === "export" && exportResult && (
+        <>
         <section className={`panel results ${exportResult.all_ok ? "ok" : "warn"}`}>
           <h2>Export result</h2>
           <dl>
@@ -830,6 +1311,15 @@ function App() {
             <p className="error">{exportResult.names_error}</p>
           )}
         </section>
+        <section className="panel actions">
+          <button type="button" onClick={() => setScreen("review")}>
+            Back to plan review
+          </button>
+          <button type="button" onClick={() => setScreen("setup")}>
+            Back to setup
+          </button>
+        </section>
+        </>
       )}
     </main>
   );
