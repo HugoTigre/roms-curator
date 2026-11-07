@@ -1,6 +1,6 @@
 # RFC 0001 Repair and simplify roms curator
 
-Status: accepted direction. Work through one task at a time. Check off an item in the same change that implements it, so master does not contain the behavior without the checklist. Keep implementation history and test results in commits and PRs.
+Status: accepted direction. Work through one task at a time. Check off an item in the same change that implements it, so main does not contain the behavior without the checklist. Keep implementation history and test results in commits and PRs.
 
 The [software review](../software-review.md) contains the original findings.
 
@@ -84,7 +84,7 @@ Phase 4 may start before **VERIFY-01**. MAME and frontend verification remain on
   - Decision: `review_export_plan` returns games, filtered support media, unresolved rows, and the full `Plan` JSON. `execute_export` reloads the catalog and runs `Catalog::copy_with_plan` after the user confirms (export uses `copy_with_plan_progress` for UI file progress). Preferences cover strict emulation, subset range, optional report path, and metadata refresh. Frontend build and GUI crate checks run in Linux CI when path filters include the GUI stack; see [releasing.md](../releasing.md#ci).
 - [x] **GUI-03** Define cancellation, incomplete-export recovery and desktop distribution after GUI-02/SAFE-02.
   - Done when cancellation preserves source/completed output and recovery is tested. Decide signing, updates and GUI release assets here.
-  - Decision: cooperative `CancelFlag` in the library (catalog load, plan scan, per-file copy). The GUI exposes **Cancel** via `cancel_background_work`. Completed copies stay; `selected.txt` is not published when cancelled. Recovery is documented in [gui-export-recovery.md](../gui-export-recovery.md) with a regression test for mid-copy cancel. Linux CI validates the GUI on filtered changes (PR: fmt, Clippy, check, test, release **`tauri build --no-bundle`**; master, manual CI, and CD: full **`npm run tauri build`** when the GUI job runs). Path filters, caching, and permissions are in `.github/workflows/ci.yml`; summary in [releasing.md](../releasing.md#ci). Signing, auto-update, and attaching GUI installers to CD are documented in [releasing.md](../releasing.md#gui-release-delivery) and deferred for the first GUI release.
+  - Decision: cooperative `CancelFlag` in the library (catalog load, plan scan, per-file copy). The GUI exposes **Cancel** via `cancel_background_work`. Completed copies stay; `selected.txt` is not published when cancelled. Recovery is documented in [gui-export-recovery.md](../gui-export-recovery.md) with a regression test for mid-copy cancel. Linux CI validates the GUI on filtered changes (PR: fmt, Clippy, check, test, release **`tauri build --no-bundle`**; main, manual CI, and CD: full **`npm run tauri build`** when the GUI job runs). Path filters, caching, and permissions are in `.github/workflows/ci.yml`; summary in [releasing.md](../releasing.md#ci). Signing, auto-update, and attaching GUI installers to CD are documented in [releasing.md](../releasing.md#gui-release-delivery) and deferred for the first GUI release.
 
 ## Remaining validation
 

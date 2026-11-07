@@ -98,7 +98,7 @@ jobs:
             echo "Use a stable tag matching Cargo.toml: v$version"
             exit 1
           fi
-          git merge-base --is-ancestor HEAD origin/master
+          git merge-base --is-ancestor HEAD origin/main
 
       - uses: actions/download-artifact@v8
         with:
