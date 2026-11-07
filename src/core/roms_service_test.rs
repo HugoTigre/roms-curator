@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::core::args::Args;
+use crate::core::config::ExportConfig;
 use crate::core::export::name_in_subset_excluded;
 use crate::core::roms_service::{
     copy_all_to_rest, missing_chds_for_report, parse_mame_xml_from_str, REST_MEDIA_REASON,
@@ -352,21 +352,21 @@ fn should_properly_classify_roms() {
 #[test]
 fn should_exclude_subsets() {
     // subset_start only
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.subset_start = "r".to_string();
 
     assert!(name_in_subset_excluded(&args, "area51"));
     assert!(!name_in_subset_excluded(&args, "robocop"));
 
     // subset_end only
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.subset_end = "sv0".to_string();
 
     assert!(!name_in_subset_excluded(&args, "robocop"));
     assert!(name_in_subset_excluded(&args, "sv801"));
 
     // subset_start and subset_end
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.subset_start = "az".to_string();
     args.subset_end = "sv0".to_string();
 
@@ -981,7 +981,7 @@ fn copy_report_selected_games_follows_subset_and_catalog_selection() {
     fs::write(source.join("alpha.zip"), b"a").unwrap();
     fs::write(source.join("beta.zip"), b"b").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
     args.subset_start = "b".to_string();
@@ -1018,7 +1018,7 @@ fn subset_keeps_parent_archive_outside_the_range() {
     fs::write(source.join("parent.zip"), b"parent").unwrap();
     fs::write(source.join("aaa.zip"), b"unrelated").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
     args.subset_start = "c".to_string();
@@ -1161,7 +1161,7 @@ fn resolves_shared_delta_and_device_disks_without_changing_category() {
     fs::write(source.join("optional/opt.chd"), b"optional disk").unwrap();
     fs::write(source.join("gallery.zip"), b"gallery").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
     // `parent` sorts after this end. `delta`, `nodump`, `hdd`, and `gallery` sort inside it.
@@ -1219,7 +1219,7 @@ fn copies_an_unzipped_rom_directory_that_has_no_disks() {
     fs::create_dir_all(source.join("plain")).unwrap();
     fs::write(source.join("plain/rom.bin"), b"rom").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
@@ -1246,7 +1246,7 @@ fn map_copy_keeps_disk_directories_without_a_resolved_disk_set() {
     fs::create_dir_all(source.join("game")).unwrap();
     fs::write(source.join("game/disk.chd"), b"disk").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
@@ -1273,7 +1273,7 @@ fn copy_report_lists_chds_absent_from_the_source() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("game.zip"), b"rom").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
@@ -1284,6 +1284,112 @@ fn copy_report_lists_chds_absent_from_the_source() {
     assert_eq!(entry.machine, "game");
     assert_eq!(entry.disk, "disk");
     assert_eq!(entry.reason, "Own disk");
+}
+
+#[test]
+fn chd_pairs_include_second_source_root() {
+    let root = tempfile::tempdir().unwrap();
+    let roms = root.path().join("roms");
+    let chds = root.path().join("chds");
+    fs::create_dir_all(&roms).unwrap();
+    fs::create_dir_all(chds.join("area51mx")).unwrap();
+    fs::write(chds.join("area51mx").join("area51mx.chd"), b"chd").unwrap();
+
+    let args = ExportConfig {
+        source_path: vec![roms.to_str().unwrap().into(), chds.to_str().unwrap().into()],
+        ..ExportConfig::default()
+    };
+
+    assert_eq!(
+        crate::core::roms_service::indexed_chd_file_count(&args).unwrap(),
+        1
+    );
+    let present = crate::models::plan::chd_pairs_in_sources(&args.source_path).unwrap();
+    assert!(present.contains(&("area51mx".into(), "area51mx".into())));
+}
+
+#[test]
+fn missing_bios_for_report_lists_absent_bios_zip() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="bios" isbios="yes">
+            <driver status="good" emulation="good"/>
+        </machine>
+        <machine name="play" romof="bios">
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("play.zip"), b"rom").unwrap();
+
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
+
+    let missing = crate::core::roms_service::missing_bios_for_report(&catalog, &args).unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0].archive, "bios");
+    assert!(missing[0].needed_by.iter().any(|name| name == "play"));
+}
+
+#[test]
+fn missing_chds_for_report_includes_held_back_games() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="game">
+            <disk name="disk" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("game.zip"), b"rom").unwrap();
+
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
+
+    let missing = missing_chds_for_report(&catalog, &args).unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0].game, "game");
+    assert_eq!(missing[0].disk, "disk");
+}
+
+#[test]
+fn require_complete_dependencies_holds_back_missing_chd() {
+    let catalog = catalog_of(
+        r#"
+        <machine name="game">
+            <disk name="disk" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
+            <driver status="good" emulation="good"/>
+        </machine>
+        "#,
+    );
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("game.zip"), b"rom").unwrap();
+
+    let args = ExportConfig {
+        source_path: vec![source.to_str().unwrap().into()],
+        destination_path: root.path().join("dest").to_str().unwrap().into(),
+        ..ExportConfig::default()
+    };
+
+    let ready = crate::core::launch_ready::export_game_names(&catalog, &args).unwrap();
+    assert!(ready.is_empty());
+    let held = crate::core::launch_ready::held_back_games(&catalog, &args).unwrap();
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].machine, "game");
 }
 
 #[test]
@@ -1302,7 +1408,7 @@ fn missing_chds_for_report_lists_unresolved_disks() {
     );
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("source")).unwrap();
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![root.path().join("source").to_str().unwrap().into()];
 
     let missing = missing_chds_for_report(&catalog, &args).unwrap();
@@ -1387,7 +1493,7 @@ fn records_a_missing_delta_parent_when_no_same_named_disk_exists() {
     fs::write(source.join("optclone.zip"), b"clone").unwrap();
     fs::write(source.join("added.zip"), b"clone").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
     args.report_path = root.path().join("report.md").to_str().unwrap().to_string();
@@ -1474,7 +1580,7 @@ fn plan_lists_games_missing_media_and_conflicts_and_rechecks_sizes() {
         .categorize()
         .unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.mame_xml_path = xml.to_str().unwrap().into();
     args.catver_path = catver.to_str().unwrap().into();
     args.source_path = vec![source.to_str().unwrap().into()];
@@ -1571,7 +1677,7 @@ fn plan_recheck_catches_metadata_new_files_disks_and_stable_conflicts() {
         .unwrap()
         .categorize()
         .unwrap();
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.mame_xml_path = xml.to_str().unwrap().into();
     args.catver_path = catver.to_str().unwrap().into();
     args.source_path = vec![source.to_str().unwrap().into()];
@@ -1666,7 +1772,7 @@ fn copy_with_plan_refuses_a_run_that_does_not_match_the_plan() {
     let categories = parse_categories("[Category]\n", &catver).unwrap();
 
     let load = || parse_mame_xml_from_str(&xml, document, &categories).unwrap();
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.mame_xml_path = xml.to_str().unwrap().into();
     args.catver_path = catver.to_str().unwrap().into();
     args.source_path = vec![source.to_str().unwrap().into()];
@@ -1732,7 +1838,7 @@ fn copy_cancelled_after_first_file_keeps_that_file_and_skips_selected_txt() {
     fs::write(source.join("alpha.zip"), b"alpha").unwrap();
     fs::write(source.join("beta.zip"), b"beta").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
@@ -1776,7 +1882,7 @@ fn copy_cancelled_during_the_last_file_does_not_publish_selected_txt() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("alpha.zip"), b"alpha").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 
@@ -1819,7 +1925,7 @@ fn plan_cancelled_leaves_the_destination_unchanged() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("alpha.zip"), b"alpha").unwrap();
 
-    let mut args = Args::new();
+    let mut args = ExportConfig::include_incomplete_dependencies();
     args.source_path = vec![source.to_str().unwrap().to_string()];
     args.destination_path = destination.to_str().unwrap().to_string();
 

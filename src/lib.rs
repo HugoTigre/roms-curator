@@ -26,6 +26,7 @@ pub mod utils;
 pub use crate::cancel::CancelFlag;
 pub use crate::core::config::ExportConfig;
 pub use crate::core::form_check::{check_export_form, ExportFormIssues};
+pub use crate::core::launch_ready::HeldBackGame;
 pub use crate::core::metadata_fetch::{
     default_metadata_cache_dir, ensure_metadata, parse_mame_version, MameMetadataPaths, MameVersion,
 };

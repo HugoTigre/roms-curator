@@ -160,6 +160,15 @@ pub fn command() -> Command {
                 .value_parser(validate_strict_emulation),
         )
         .arg(
+            Arg::new("include_incomplete_games")
+                .help("Include policy-selected games even when ROM or CHD dependencies are missing from the source. Default is false. (true|false)")
+                .long("include-incomplete-games")
+                .num_args(1)
+                .required(false)
+                .default_value("false")
+                .value_parser(validate_include_incomplete_games),
+        )
+        .arg(
             Arg::new("progress")
                 .help("If true, shows a progress bar. Default is true. (true|false).")
                 .long("progress")
@@ -210,6 +219,9 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
     let strict_emulation: &bool = matches
         .get_one("strict_emulation")
         .expect("validated in args parser");
+    let include_incomplete_games: &bool = matches
+        .get_one("include_incomplete_games")
+        .expect("validated in args parser");
 
     let args = ExportConfig {
         mame_xml_path: mame_xml_path.clone(),
@@ -223,6 +235,7 @@ pub fn build_args() -> Result<ExportConfig, Box<dyn Error>> {
         subset_start: subset_start.clone(),
         subset_end: subset_end.clone(),
         strict_emulation: *strict_emulation,
+        require_complete_dependencies: !*include_incomplete_games,
         progress: *progress,
     };
 
@@ -392,6 +405,14 @@ fn validate_simulation(value: &str) -> Result<bool, String> {
         Ok(false)
     } else {
         Err("Invalid value for simulation. (true|false)".into())
+    }
+}
+
+fn validate_include_incomplete_games(value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err("Invalid value for include_incomplete_games. (true|false)".into()),
     }
 }
 

@@ -3,6 +3,7 @@ pub mod config;
 pub(crate) mod copying;
 pub(crate) mod export;
 pub mod form_check;
+pub mod launch_ready;
 pub(crate) mod listxml;
 pub mod metadata_fetch;
 pub(crate) mod paths;
