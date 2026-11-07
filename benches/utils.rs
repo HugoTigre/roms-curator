@@ -170,6 +170,7 @@ pub fn build_args(tag: &str, simulation: bool) -> Args {
         subset_start: String::new(),
         subset_end: String::new(),
         strict_emulation: false,
+        require_complete_dependencies: false,
         progress: false,
     }
 }

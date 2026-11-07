@@ -18,8 +18,18 @@ interface PlanPreviewSummary {
   missing_media: number;
   unresolved: number;
   missing_chds: number;
+  missing_bios: number;
   excluded_games: number;
+  held_back_games: number;
+  policy_selected_games: number;
+  chd_files_indexed: number;
   conflicts: string[];
+}
+
+interface HeldBackGame {
+  machine: string;
+  category: string;
+  blockers: string[];
 }
 
 interface PlannedGame {
@@ -48,6 +58,7 @@ interface UnresolvedMedia {
 interface PlanDocument {
   version: number;
   metadata: Record<string, string>;
+  source_paths?: string[];
   games: PlannedGame[];
   media: PlannedMedia[];
   unresolved: UnresolvedMedia[];
@@ -60,7 +71,9 @@ interface PlanReviewResult {
   selection_help: string;
   plan: PlanDocument;
   missing_chds: MissingChdEntry[];
+  missing_bios: MissingBiosEntry[];
   excluded_games: PlannedGame[];
+  held_back_games: HeldBackGame[];
 }
 
 interface MissingChdEntry {
@@ -68,6 +81,12 @@ interface MissingChdEntry {
   machine: string;
   disk: string;
   reason: string;
+}
+
+interface MissingBiosEntry {
+  archive: string;
+  title: string;
+  needed_by: string[];
 }
 
 type Screen = "setup" | "review" | "export";
@@ -80,13 +99,13 @@ function countLabel(total: number, shown?: number): string {
 }
 
 const PLAN_SUMMARY_HELP =
-  "High-level counts for this preview: selected games, support files found or missing in the source, CHD gaps, dependency warnings, and machines left off the list. Review the sections below before copying files.";
+  "High-level counts for this preview: selected games, support files found or missing in the source, missing BIOS and CHD gaps, dependency warnings, and machines left off the list. Review the sections below before copying files.";
 
 const GAMES_SECTION_HELP =
   "Standard selection keeps arcade games MAME rates good or imperfect. Strict keeps only fully working games.";
 
 const UNRESOLVED_SECTION_HELP =
-  "Dependency checks from MAME metadata. Disk gaps usually also appear under Missing CHDs; this list also covers missing parent ROM zips and broken dependency chains. Selected/working will still be copied in export (unless there is a destination conflict). A game with a gap here may copy to roms/ but will not run in MAME until the missing file is added.";
+  "Dependency checks from MAME metadata. Disk gaps usually also appear under Missing CHDs or Held back. This list also covers missing parent ROM zips and broken dependency chains. With the default completeness policy, affected games are held back rather than exported.";
 
 const SUPPORT_FILES_HELP =
   "This list is what would land in roms/ because at least one working game needs it.";
@@ -142,8 +161,8 @@ interface ExportInput {
   strict_emulation: boolean;
   subset_start?: string;
   subset_end?: string;
-  report_path?: string;
-  plan_html_path?: string;
+  chd_source_path?: string;
+  require_complete_dependencies?: boolean;
   metadata_refresh: boolean;
 }
 
@@ -276,19 +295,22 @@ function isCancelled(message: string): boolean {
 
 function App() {
   const [sourcePath, setSourcePath] = useState("");
+  const [chdSourcePath, setChdSourcePath] = useState("");
   const [destinationPath, setDestinationPath] = useState("");
   const [mameVersion, setMameVersion] = useState("0.289");
   const [strictEmulation, setStrictEmulation] = useState(false);
+  const [includeIncompleteGames, setIncludeIncompleteGames] = useState(false);
   const [subsetStart, setSubsetStart] = useState("");
   const [subsetEnd, setSubsetEnd] = useState("");
-  const [reportPath, setReportPath] = useState("");
-  const [planHtmlPath, setPlanHtmlPath] = useState("");
   const [metadataRefresh, setMetadataRefresh] = useState(false);
   const [gameQuery, setGameQuery] = useState("");
   const [supportQuery, setSupportQuery] = useState("");
   const [unresolvedQuery, setUnresolvedQuery] = useState("");
   const [missingChdQuery, setMissingChdQuery] = useState("");
+  const [missingBiosQuery, setMissingBiosQuery] = useState("");
+  const [supportMissingOnly, setSupportMissingOnly] = useState(false);
   const [excludedQuery, setExcludedQuery] = useState("");
+  const [heldBackQuery, setHeldBackQuery] = useState("");
   const [screen, setScreen] = useState<Screen>("setup");
   const [reviewListsReady, setReviewListsReady] = useState(false);
   const [isReviewPending, startReviewTransition] = useTransition();
@@ -303,8 +325,6 @@ function App() {
   const [touchedPaths, setTouchedPaths] = useState({
     source: false,
     destination: false,
-    report: false,
-    plan_html: false,
   });
   const acceptProgress = useRef(false);
   const runId = useRef(0);
@@ -363,8 +383,8 @@ function App() {
     strictEmulation,
     subsetStart,
     subsetEnd,
-    reportPath,
-    planHtmlPath,
+    chdSourcePath,
+    includeIncompleteGames,
     metadataRefresh,
   ]);
 
@@ -378,8 +398,6 @@ function App() {
           mame_version: mameVersion,
           subset_start: subsetStart.trim() || undefined,
           subset_end: subsetEnd.trim() || undefined,
-          report_path: reportPath.trim() || undefined,
-          plan_html_path: planHtmlPath.trim() || undefined,
         },
       })
         .then((next) => {
@@ -396,7 +414,7 @@ function App() {
         });
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [sourcePath, destinationPath, mameVersion, subsetStart, subsetEnd, reportPath, planHtmlPath]);
+  }, [sourcePath, destinationPath, mameVersion, subsetStart, subsetEnd]);
 
   const exportInput = (): ExportInput => ({
     source_path: sourcePath,
@@ -405,8 +423,8 @@ function App() {
     strict_emulation: strictEmulation,
     subset_start: subsetStart.trim().toLowerCase() || undefined,
     subset_end: subsetEnd.trim().toLowerCase() || undefined,
-    report_path: reportPath.trim() || undefined,
-    plan_html_path: planHtmlPath.trim() || undefined,
+    chd_source_path: chdSourcePath.trim() || undefined,
+    require_complete_dependencies: !includeIncompleteGames,
     metadata_refresh: metadataRefresh,
   });
 
@@ -425,20 +443,27 @@ function App() {
     );
   }, [review, gameQuery]);
 
-  const filteredSupport = useMemo(() => {
+  const supportRows = useMemo(() => {
     if (!review) {
       return [];
     }
-    const support = supportMediaFromPlan(review.plan.media);
-    if (!supportQuery.trim()) {
-      return support;
+    let support = supportMediaFromPlan(review.plan.media);
+    if (supportMissingOnly) {
+      support = support.filter((entry) => entry.availability === "missing");
     }
-    return support.filter(
+    return support;
+  }, [review, supportMissingOnly]);
+
+  const filteredSupport = useMemo(() => {
+    if (!supportQuery.trim()) {
+      return supportRows;
+    }
+    return supportRows.filter(
       (entry) =>
         matchesQuery(entry.machine, supportQuery) ||
         entry.reasons.some((reason) => matchesQuery(reason, supportQuery)),
     );
-  }, [review, supportQuery]);
+  }, [supportRows, supportQuery]);
 
   const filteredUnresolved = useMemo(() => {
     if (!review) {
@@ -474,6 +499,22 @@ function App() {
     );
   }, [review, missingChdQuery]);
 
+  const filteredMissingBios = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const rows = review.missing_bios;
+    if (!missingBiosQuery.trim()) {
+      return rows;
+    }
+    return rows.filter(
+      (entry) =>
+        matchesQuery(entry.archive, missingBiosQuery) ||
+        matchesQuery(entry.title, missingBiosQuery) ||
+        entry.needed_by.some((game) => matchesQuery(game, missingBiosQuery)),
+    );
+  }, [review, missingBiosQuery]);
+
   const filteredExcluded = useMemo(() => {
     if (!review) {
       return [];
@@ -489,6 +530,33 @@ function App() {
         matchesQuery(game.reason, excludedQuery),
     );
   }, [review, excludedQuery]);
+
+  const filteredHeldBack = useMemo(() => {
+    if (!review) {
+      return [];
+    }
+    const rows = review.held_back_games;
+    if (!heldBackQuery.trim()) {
+      return rows;
+    }
+    return rows.filter(
+      (game) =>
+        matchesQuery(game.machine, heldBackQuery) ||
+        matchesQuery(game.category, heldBackQuery) ||
+        game.blockers.some((line) => matchesQuery(line, heldBackQuery)),
+    );
+  }, [review, heldBackQuery]);
+
+  async function pickChdSource() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "CHD collection folder (optional)",
+    });
+    if (typeof selected === "string") {
+      setChdSourcePath(selected);
+    }
+  }
 
   async function pickSource() {
     const selected = await open({
@@ -511,28 +579,6 @@ function App() {
     if (typeof selected === "string") {
       setDestinationPath(selected);
       setTouchedPaths((current) => ({ ...current, destination: true }));
-    }
-  }
-
-  async function pickReportPath() {
-    const selected = await save({
-      title: "Export report (Markdown)",
-      filters: [{ name: "Markdown", extensions: ["md"] }],
-    });
-    if (typeof selected === "string") {
-      setReportPath(selected);
-      setTouchedPaths((current) => ({ ...current, report: true }));
-    }
-  }
-
-  async function pickPlanHtmlPath() {
-    const selected = await save({
-      title: "Plan preview (HTML)",
-      filters: [{ name: "HTML", extensions: ["html"] }],
-    });
-    if (typeof selected === "string") {
-      setPlanHtmlPath(selected);
-      setTouchedPaths((current) => ({ ...current, plan_html: true }));
     }
   }
 
@@ -593,7 +639,9 @@ function App() {
       input: exportInput(),
       plan: review.plan,
       missing_chds: review.missing_chds,
+      missing_bios: review.missing_bios,
       excluded_games: review.excluded_games,
+      held_back_games: review.held_back_games,
     };
   }
 
@@ -602,10 +650,19 @@ function App() {
     if (!request) {
       return;
     }
+    const selected = await save({
+      title: "Save plan report",
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (selected === null || typeof selected !== "string") {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const result = await invoke<WritePlanReportResult>("write_plan_report", { request });
+      const result = await invoke<WritePlanReportResult>("write_plan_report", {
+        request: { ...request, output_path: selected },
+      });
       if (result.report_written) {
         setPlanExportNotes((current) => [
           ...current,
@@ -624,10 +681,19 @@ function App() {
     if (!request) {
       return;
     }
+    const selected = await save({
+      title: "Save HTML plan preview",
+      filters: [{ name: "HTML", extensions: ["html"] }],
+    });
+    if (selected === null || typeof selected !== "string") {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const result = await invoke<WritePlanHtmlResult>("write_plan_html", { request });
+      const result = await invoke<WritePlanHtmlResult>("write_plan_html", {
+        request: { ...request, output_path: selected },
+      });
       if (result.plan_html_written) {
         setPlanExportNotes((current) => [
           ...current,
@@ -694,12 +760,6 @@ function App() {
     destinationPath,
     touchedPaths.destination,
   );
-  const reportIssue = shownIssue(issues?.report_path, reportPath, touchedPaths.report);
-  const planHtmlIssue = shownIssue(
-    issues?.plan_html_path,
-    planHtmlPath,
-    touchedPaths.plan_html,
-  );
   const subsetStartIssue = issues?.subset_start ?? null;
   const subsetEndIssue = issues?.subset_end ?? null;
   const formReady =
@@ -707,8 +767,6 @@ function App() {
     !issues.mame_version &&
     !issues.source_path &&
     !issues.destination_path &&
-    !issues.report_path &&
-    !issues.plan_html_path &&
     !issues.subset_start &&
     !issues.subset_end;
 
@@ -798,6 +856,24 @@ function App() {
           </div>
           {sourceIssue && <p className="field-error">{sourceIssue}</p>}
         </label>
+        <label>
+          CHD source (optional, separate folder)
+          <div className="path-row">
+            <input
+              value={chdSourcePath}
+              onChange={(e) => setChdSourcePath(e.currentTarget.value)}
+              placeholder="/path/to/chds"
+              disabled={busy}
+            />
+            <button type="button" onClick={pickChdSource} disabled={busy}>
+              Browse…
+            </button>
+          </div>
+          <p className="hint">
+            When CHDs live outside the merged ROM folder, add that directory here so
+            completeness checks and copies include them.
+          </p>
+        </label>
 
         <label>
           Export destination
@@ -831,6 +907,15 @@ function App() {
             disabled={busy}
           />
           Strict selection (only fully working games)
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={includeIncompleteGames}
+            onChange={(e) => setIncludeIncompleteGames(e.currentTarget.checked)}
+            disabled={busy}
+          />
+          Include games with missing ROM or CHD dependencies (legacy export)
         </label>
         <label className="checkbox-row">
           <input
@@ -874,42 +959,6 @@ function App() {
           names such as 1942. Through those z's includes `zaxxon` and the rest of the list.
           Parent, BIOS, and disk files that a working game needs are still copied.
         </p>
-        <label>
-          Report path (optional, must be outside source and export folders)
-          <div className="path-row">
-            <input
-              value={reportPath}
-              onChange={(e) => setReportPath(e.currentTarget.value)}
-              onBlur={() => setTouchedPaths((current) => ({ ...current, report: true }))}
-              placeholder="/path/to/export-report.md"
-              disabled={busy}
-              aria-invalid={reportIssue ? true : undefined}
-              className={reportIssue ? "invalid" : undefined}
-            />
-            <button type="button" onClick={pickReportPath} disabled={busy}>
-              Browse…
-            </button>
-          </div>
-          {reportIssue && <p className="field-error">{reportIssue}</p>}
-        </label>
-        <label>
-          Plan HTML path (optional, for collapsible browser preview)
-          <div className="path-row">
-            <input
-              value={planHtmlPath}
-              onChange={(e) => setPlanHtmlPath(e.currentTarget.value)}
-              onBlur={() => setTouchedPaths((current) => ({ ...current, plan_html: true }))}
-              placeholder="/path/to/plan-preview.html"
-              disabled={busy}
-              aria-invalid={planHtmlIssue ? true : undefined}
-              className={planHtmlIssue ? "invalid" : undefined}
-            />
-            <button type="button" onClick={pickPlanHtmlPath} disabled={busy}>
-              Browse…
-            </button>
-          </div>
-          {planHtmlIssue && <p className="field-error">{planHtmlIssue}</p>}
-        </label>
         <p className="hint">
           Arcade games with minor MAME issues stay on the list by default. Support
           files needed by your selection are copied into the roms folder.
@@ -986,6 +1035,24 @@ function App() {
           <section className="panel results">
             <h2>Plan summary</h2>
             <p className="hint">{PLAN_SUMMARY_HELP}</p>
+            {review.plan.source_paths && review.plan.source_paths.length > 0 && (
+              <p className="hint">
+                Source roots scanned:{" "}
+                {review.plan.source_paths.map((path) => (
+                  <span key={path} className="source-root">
+                    {path}
+                  </span>
+                ))}
+                . CHD files indexed: {review.summary.chd_files_indexed.toLocaleString()}.
+                {review.summary.chd_files_indexed === 0 && chdSourcePath.trim() && (
+                  <>
+                    {" "}
+                    If you set a CHD folder, re-check that path and run Preview plan again — zero
+                    usually means no <code>.chd</code> files were seen under those roots.
+                  </>
+                )}
+              </p>
+            )}
             <dl>
               <div>
                 <dt>MAME build</dt>
@@ -996,8 +1063,16 @@ function App() {
                 <dd>{formatEmulationPolicy(review.summary.emulation_policy)}</dd>
               </div>
               <div>
-                <dt>Selected / working games</dt>
+                <dt>Ready to export</dt>
                 <dd>{review.summary.selected_games}</dd>
+              </div>
+              <div>
+                <dt>Policy-selected (before completeness)</dt>
+                <dd>{review.summary.policy_selected_games}</dd>
+              </div>
+              <div>
+                <dt>Held back (missing deps)</dt>
+                <dd>{review.summary.held_back_games}</dd>
               </div>
               <div>
                 <dt>Media present</dt>
@@ -1010,6 +1085,10 @@ function App() {
               <div>
                 <dt>Missing CHDs</dt>
                 <dd>{review.summary.missing_chds}</dd>
+              </div>
+              <div>
+                <dt>Missing BIOS</dt>
+                <dd>{review.summary.missing_bios}</dd>
               </div>
               <div>
                 <dt>Unresolved references</dt>
@@ -1029,16 +1108,10 @@ function App() {
             )}
             {exportSkipsMissing && (
               <p className="hint">
-                Some files are missing or unresolved in the plan. Export still runs;
-                those items are skipped and appear in the report when a report path
-                is set.
+                Some files are missing or unresolved in the plan. Export still runs and
+                skips them; save a plan report below if you want those gaps in writing.
               </p>
             )}
-            <p className="hint">
-              <strong>Write plan report</strong> and <strong>Write HTML preview</strong> (below)
-              save this preview without copying files. Markdown suits diffing and tooling; HTML
-              opens in a browser with collapsible sections. Set paths on Setup first.
-            </p>
             {planExportNotes.map((note) => (
               <p key={note} className="hint">
                 {note}
@@ -1061,10 +1134,12 @@ function App() {
             <>
           <section className="panel">
             <h2>
-              Selected / working games
+              Ready to export
               {countLabel(review.plan.games.length, filteredGames.length)}
             </h2>
-            <p className="hint">{GAMES_SECTION_HELP}</p>
+            <p className="hint">
+              {GAMES_SECTION_HELP} These machines will be copied and listed in selected.txt.
+            </p>
             <input
               className="search"
               value={gameQuery}
@@ -1085,12 +1160,17 @@ function App() {
           <section className="panel">
             <h2>
               Support files for roms
-              {countLabel(
-                supportMediaFromPlan(review.plan.media).length,
-                filteredSupport.length,
-              )}
+              {countLabel(supportRows.length, filteredSupport.length)}
             </h2>
             <p className="hint">{SUPPORT_FILES_HELP}</p>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={supportMissingOnly}
+                onChange={(e) => setSupportMissingOnly(e.currentTarget.checked)}
+              />
+              Show only ROM/CHD files not in your source
+            </label>
             <input
               className="search"
               value={supportQuery}
@@ -1111,6 +1191,40 @@ function App() {
             </ul>
           </section>
 
+          {review.missing_bios.length > 0 && (
+            <section className="panel">
+              <h2>
+                Missing BIOS files
+                {countLabel(review.missing_bios.length, filteredMissingBios.length)}
+              </h2>
+              <p className="hint">
+                BIOS ROM zips your selected games need, but that were not found as{" "}
+                <code>name.zip</code> in your source folders. Add the zip to your merged set
+                (or ROM source) and preview again.
+              </p>
+              <input
+                className="search"
+                value={missingBiosQuery}
+                onChange={(e) => setMissingBiosQuery(e.currentTarget.value)}
+                placeholder="Filter by zip name, description, or game…"
+              />
+              <ul className="scroll-list">
+                {filteredMissingBios.map((entry) => (
+                  <li key={entry.archive}>
+                    <strong>{entry.archive}.zip</strong>
+                    <span>{entry.title}</span>
+                    <p>
+                      Needed by:{" "}
+                      {entry.needed_by.length > 0
+                        ? entry.needed_by.join(", ")
+                        : "—"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {review.missing_chds.length > 0 && (
             <section className="panel">
               <h2>
@@ -1118,8 +1232,8 @@ function App() {
                 {countLabel(review.missing_chds.length, filteredMissingChds.length)}
               </h2>
               <p className="hint">
-                CHD files selected/working games need that are not in your source.
-                Same list as the export report.
+                CHD disk images your selected games need that are not in your source paths.
+                Same list as in the plan report.
               </p>
               <input
                 className="search"
@@ -1160,6 +1274,36 @@ function App() {
                     <strong>{entry.name}</strong>
                     <span>{entry.kind}</span>
                     <p>{unresolvedDescription(entry)}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {review.held_back_games.length > 0 && (
+            <section className="panel">
+              <h2>
+                Held back (missing dependencies)
+                {countLabel(review.held_back_games.length, filteredHeldBack.length)}
+              </h2>
+              <p className="hint">
+                Policy-selected games not exported because a required ROM zip or CHD is
+                missing from your source paths. Fix the blockers, then preview again.
+              </p>
+              <input
+                className="search"
+                value={heldBackQuery}
+                onChange={(e) => setHeldBackQuery(e.currentTarget.value)}
+                placeholder="Filter by name, category, or blocker…"
+              />
+              <ul className="scroll-list">
+                {filteredHeldBack.map((game) => (
+                  <li key={game.machine}>
+                    <strong>{game.machine}</strong>
+                    <span>{game.category}</span>
+                    {game.blockers.map((line) => (
+                      <p key={`${game.machine}:${line}`}>{line}</p>
+                    ))}
                   </li>
                 ))}
               </ul>
@@ -1227,34 +1371,27 @@ function App() {
             </div>
           )}
 
+          <section className="panel plan-save">
+            <h2>Save plan preview</h2>
+            <p className="hint">
+              Optional. Writes this preview without copying files. Markdown suits diffing and
+              tooling; HTML opens in a browser with collapsible sections. Each button asks where
+              to save.
+            </p>
+            <div className="plan-save-actions">
+              <button type="button" onClick={writePlanReport} disabled={busy}>
+                Save Markdown report…
+              </button>
+              <button type="button" onClick={writePlanHtml} disabled={busy}>
+                Save HTML preview…
+              </button>
+            </div>
+          </section>
+
           <section className="panel actions actions-review">
             <div className="actions-leading">
               <button type="button" onClick={() => setScreen("setup")} disabled={busy}>
                 Back to setup
-              </button>
-              <button
-                type="button"
-                onClick={writePlanReport}
-                disabled={busy || !reportPath.trim() || !!reportIssue}
-                title={
-                  reportPath.trim()
-                    ? undefined
-                    : "Set a Markdown report path on Setup first."
-                }
-              >
-                Write plan report
-              </button>
-              <button
-                type="button"
-                onClick={writePlanHtml}
-                disabled={busy || !planHtmlPath.trim() || !!planHtmlIssue}
-                title={
-                  planHtmlPath.trim()
-                    ? undefined
-                    : "Set a plan HTML path on Setup first."
-                }
-              >
-                Write HTML preview
               </button>
               {busy && (
                 <button type="button" onClick={cancelWork}>

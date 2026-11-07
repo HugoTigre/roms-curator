@@ -10,15 +10,18 @@ use std::path::Path;
 use chrono;
 use tempfile::Builder;
 
+use crate::core::launch_ready::HeldBackGame;
 use crate::core::roms_service::REST_MEDIA_REASON;
 use crate::models::plan::{Availability, MediaRole, Plan, PlannedGame, PlannedMedia, UnresolvedMedia};
-use crate::models::report::MissingChdEntry;
+use crate::models::report::{MissingBiosEntry, MissingChdEntry};
 
 /// Everything shown on the plan review screen.
 pub struct PlanPreviewHtml<'a> {
     pub plan: &'a Plan,
     pub missing_chds: &'a [MissingChdEntry],
+    pub missing_bios: &'a [MissingBiosEntry],
     pub excluded_games: &'a [PlannedGame],
+    pub held_back_games: &'a [HeldBackGame],
 }
 
 /// Write a new `.html` file. Refuses to replace an existing path.
@@ -91,7 +94,7 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
     writeln!(w, "<header><h1>Roms Curator plan preview</h1>")?;
     writeln!(
         w,
-        "<p class=\"lede\">Generated {}. No files were copied.</p></header>",
+        "<p class=\"lede\">Generated {}. No files were copied. Machine and file names in the lists link to a Google search (<code>mame …</code>) in a new tab.</p></header>",
         html_escape(&chrono::offset::Local::now().to_string())
     )?;
 
@@ -115,6 +118,11 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
         &mut w,
         "Missing CHDs",
         &preview.missing_chds.len().to_string(),
+    )?;
+    summary_row(
+        &mut w,
+        "Missing BIOS",
+        &preview.missing_bios.len().to_string(),
     )?;
     summary_row(
         &mut w,
@@ -142,7 +150,7 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
         &["Machine", "Category", "Reason"],
         plan.games.iter().map(|game| {
             vec![
-                html_escape(&game.machine),
+                mame_search_cell(&game.machine),
                 html_escape(&game.category),
                 html_escape(&game.reason),
             ]
@@ -160,9 +168,9 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
                 "In source"
             };
             vec![
-                html_escape(&entry.machine),
+                mame_search_cell(&entry.machine),
                 html_escape(support_role_label(entry.role)),
-                status.into(),
+                html_escape(status),
                 html_escape(&entry.reasons.join("; ")),
             ]
         }),
@@ -175,10 +183,28 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
             &["Disk", "Game", "Folder", "Reason"],
             preview.missing_chds.iter().map(|entry| {
                 vec![
-                    html_escape(&entry.disk),
-                    html_escape(&entry.game),
-                    html_escape(&entry.machine),
+                    mame_search_cell(&entry.disk),
+                    mame_search_cell(&entry.game),
+                    mame_search_cell(&entry.machine),
                     html_escape(&entry.reason),
+                ]
+            }),
+        )?;
+    }
+
+    if !preview.missing_bios.is_empty() {
+        details_table(
+            &mut w,
+            &format!("Missing BIOS files ({})", preview.missing_bios.len()),
+            &["Zip", "Description", "Needed by"],
+            preview.missing_bios.iter().map(|entry| {
+                vec![
+                    mame_search_cell_with_label(
+                        &entry.archive,
+                        Some(&format!("{}.zip", entry.archive)),
+                    ),
+                    html_escape(&entry.title),
+                    needed_by_search_links(&entry.needed_by),
                 ]
             }),
         )?;
@@ -191,7 +217,7 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
             &["Name", "Kind", "Explanation"],
             plan.unresolved.iter().map(|entry| {
                 vec![
-                    html_escape(&entry.name),
+                    mame_search_cell(&entry.name),
                     html_escape(&entry.kind),
                     html_escape(&unresolved_blurb(entry)),
                 ]
@@ -206,9 +232,27 @@ fn write_document(mut w: impl Write, preview: PlanPreviewHtml<'_>) -> std::io::R
             &["Machine", "Category", "Reason"],
             preview.excluded_games.iter().map(|game| {
                 vec![
-                    html_escape(&game.machine),
+                    mame_search_cell(&game.machine),
                     html_escape(&game.category),
                     html_escape(&game.reason),
+                ]
+            }),
+        )?;
+    }
+
+    if !preview.held_back_games.is_empty() {
+        details_table(
+            &mut w,
+            &format!(
+                "Held back — missing dependencies ({})",
+                preview.held_back_games.len()
+            ),
+            &["Machine", "Category", "Blockers"],
+            preview.held_back_games.iter().map(|game| {
+                vec![
+                    mame_search_cell(&game.machine),
+                    html_escape(&game.category),
+                    html_escape(&game.blockers.join("; ")),
                 ]
             }),
         )?;
@@ -303,6 +347,56 @@ fn html_escape(text: &str) -> String {
     out
 }
 
+fn google_mame_search_url(name: &str) -> String {
+    let query = format!("mame {}", name.trim());
+    format!(
+        "https://www.google.com/search?q={}",
+        percent_encode_query(&query)
+    )
+}
+
+fn percent_encode_query(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+fn mame_search_cell(name: &str) -> String {
+    mame_search_cell_with_label(name, None)
+}
+
+/// Link opening Google for `mame {name}` in a new tab.
+fn mame_search_cell_with_label(name: &str, label: Option<&str>) -> String {
+    let name = name.trim();
+    if name.is_empty() {
+        return String::new();
+    }
+    let display = label.unwrap_or(name);
+    let url = google_mame_search_url(name);
+    format!(
+        r#"<a class="mame-search" href="{url}" target="_blank" rel="noopener noreferrer" title="Search Google for mame {name}">{display}</a>"#,
+        url = html_escape(&url),
+        name = html_escape(name),
+        display = html_escape(display),
+    )
+}
+
+fn needed_by_search_links(games: &[String]) -> String {
+    games
+        .iter()
+        .map(|game| mame_search_cell(game))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 const STYLES: &str = r#"
 :root { font-family: system-ui, sans-serif; line-height: 1.45; color: #1a1a1a; background: #f4f5f7; }
 body { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 2rem; }
@@ -319,6 +413,8 @@ th { position: sticky; top: 0; background: #f9fafb; }
 dl.summary { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 1rem; margin: 0.5rem 0 0; }
 dt { margin: 0; color: #666; font-size: 0.85rem; }
 dd { margin: 0; font-weight: 600; }
+a.mame-search { color: #1a56db; text-decoration: none; }
+a.mame-search:hover { text-decoration: underline; }
 "#;
 
 #[cfg(test)]
@@ -375,7 +471,9 @@ mod tests {
             PlanPreviewHtml {
                 plan: &plan,
                 missing_chds: &[],
+                missing_bios: &[],
                 excluded_games: &[],
+                held_back_games: &[],
             },
         )
         .unwrap();
@@ -383,7 +481,17 @@ mod tests {
         assert!(html.contains("<details"));
         assert!(html.contains("Selected / working games"));
         assert!(html.contains("galaga"));
+        assert!(html.contains("https://www.google.com/search?q=mame+galaga"));
+        assert!(html.contains("target=\"_blank\""));
         assert!(!html.contains("<script"));
+    }
+
+    #[test]
+    fn search_url_encodes_spaces() {
+        assert_eq!(
+            google_mame_search_url("chaos heat"),
+            "https://www.google.com/search?q=mame+chaos+heat"
+        );
     }
 
     #[test]

@@ -158,6 +158,7 @@ pub fn build_args(tag: &str, simulate: bool, subset_start: String, subset_end: S
         subset_start,
         subset_end,
         strict_emulation: false,
+        require_complete_dependencies: false,
         progress,
     }
 }

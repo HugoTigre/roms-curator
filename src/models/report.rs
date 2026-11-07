@@ -50,6 +50,18 @@ pub struct ReportDetailEntry {
     pub error: Option<String>,
 }
 
+/// One BIOS ROM zip required by policy-selected games that is not in the source.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MissingBiosEntry {
+    /// MAME machine name and expected zip stem (for example `neogeo`).
+    pub archive: String,
+    /// Short label from metadata (usually CatVer category).
+    pub title: String,
+    /// Selected games that need this BIOS zip.
+    pub needed_by: Vec<String>,
+}
+
 /// One CHD file a selected game needs that is not in the source.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,6 +92,8 @@ pub struct Report {
     pub names_error: Option<String>,
     /// CHDs required by selected games but absent from the source.
     pub missing_chds: Vec<MissingChdEntry>,
+    /// BIOS zips required by selected games but absent from the source.
+    pub missing_bios: Vec<MissingBiosEntry>,
     /// Support files the plan needs in `roms/` but the source does not have.
     pub missing_source_media: Vec<String>,
     /// False if a copy failed or `selected.txt` could not be published. A
@@ -88,11 +102,16 @@ pub struct Report {
 }
 
 /// Build a simulation-style report from a preview plan (no source walk).
-pub fn report_from_plan_preview(plan: &Plan, missing_chds: Vec<MissingChdEntry>) -> Report {
+pub fn report_from_plan_preview(
+    plan: &Plan,
+    missing_chds: Vec<MissingChdEntry>,
+    missing_bios: Vec<MissingBiosEntry>,
+) -> Report {
     let mut report = Report {
         simulation: true,
         selected_games: plan.games.len(),
         missing_chds,
+        missing_bios,
         all_ok: plan.conflicts.is_empty(),
         ..Report::default()
     };
@@ -281,6 +300,21 @@ impl Report {
             writer.write_all(b"```\n\n")?;
         }
 
+        if !self.missing_bios.is_empty() {
+            writer.write_all(b"### Missing BIOS files\n\n")?;
+            writer.write_all(
+                b"Selected games need these BIOS ROM zips. They were not found in the source.\n\n",
+            )?;
+            writer.write_all(b"```text\n")?;
+            for entry in &self.missing_bios {
+                writeln!(writer, "bios zip: {}.zip", entry.archive)?;
+                writeln!(writer, "  {}", entry.title)?;
+                writeln!(writer, "  needed by: {}", entry.needed_by.join(", "))?;
+                writer.write_all(b"\n")?;
+            }
+            writer.write_all(b"```\n\n")?;
+        }
+
         if !self.missing_source_media.is_empty() {
             writer.write_all(b"### Media missing from source (roms/)\n\n")?;
             writer.write_all(
@@ -328,13 +362,18 @@ impl Report {
         } else {
             "  - [Missing CHDs](#missing-chds)\n"
         };
+        let missing_bios = if self.missing_bios.is_empty() {
+            ""
+        } else {
+            "  - [Missing BIOS files](#missing-bios-files)\n"
+        };
         let missing_media = if self.missing_source_media.is_empty() {
             ""
         } else {
             "  - [Media missing from source (roms/)](#media-missing-from-source-roms)\n"
         };
         format!(
-            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} required folder (roms)](#{anchor}-required-folder-roms)\n  - [{label} rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}{missing_media}\n"
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} required folder (roms)](#{anchor}-required-folder-roms)\n  - [{label} rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}{missing_bios}{missing_media}\n"
         )
     }
 
@@ -359,11 +398,12 @@ impl Report {
             None => String::new(),
         };
         format!(
-            "## Summary\n\n- All OK: {}\n- Selected games: {}\n- {label} required folder (roms): {working} ({working_archives} archives, {working_disks} disk directories)\n- {label} rest folder: {other} ({other_archives} archives, {other_disks} disk directories)\n- Files copied: {copied}\n- Ignored source entries: {}\n- Failed copies: {failed}\n- Missing CHDs: {}\n{names}\n",
+            "## Summary\n\n- All OK: {}\n- Selected games: {}\n- {label} required folder (roms): {working} ({working_archives} archives, {working_disks} disk directories)\n- {label} rest folder: {other} ({other_archives} archives, {other_disks} disk directories)\n- Files copied: {copied}\n- Ignored source entries: {}\n- Failed copies: {failed}\n- Missing CHDs: {}\n- Missing BIOS: {}\n{names}\n",
             self.all_ok,
             self.selected_games,
             self.ignored_roms.len(),
-            self.missing_chds.len()
+            self.missing_chds.len(),
+            self.missing_bios.len()
         )
     }
 
@@ -472,6 +512,7 @@ mod tests {
                 disk: "disk".into(),
                 reason: "test".into(),
             }],
+            Vec::new(),
         );
         assert_eq!(report.selected_games, 1);
         assert_eq!(report.roms_working.len(), 1);

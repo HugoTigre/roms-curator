@@ -9,6 +9,7 @@ use log::error;
 
 use crate::core::config::{DestinationFolders, ExportConfig};
 use crate::core::export::{check_export_paths, copy_source_entry, name_in_subset_excluded};
+use crate::core::launch_ready::{export_game_names, export_game_set, game_exports};
 use crate::models::dependencies::{DependencyKind, DependencySet};
 use crate::models::disks::{DiskKind, DiskSet};
 use crate::models::plan::{
@@ -16,7 +17,7 @@ use crate::models::plan::{
     MediaRole, MetadataIdentity, Plan, PlannedGame, PlannedMedia, UnresolvedMedia, PLAN_VERSION,
 };
 use crate::models::report::{
-    ExportMediaKind, MissingChdEntry, OperationStatus, Report, ReportDetailEntry,
+    ExportMediaKind, MissingBiosEntry, MissingChdEntry, OperationStatus, Report, ReportDetailEntry,
 };
 use crate::models::roms::{Catalog, Roms, UnfilteredRoms};
 use crate::models::roms::{Rom, RomCategory};
@@ -188,15 +189,18 @@ impl Catalog {
         if let Some(conflict) = plan.conflicts.first() {
             return Err(conflict.clone().into());
         }
-        let retain = retained_archives(&self.dependencies, config);
-        let disks = required_disk_machines(&self.disks, config);
+        let export_games = export_game_set(&self, config)?;
+        let retain = retained_archives(&self.dependencies, config, &export_games);
+        let disks = required_disk_machines(&self.disks, config, &export_games);
         let missing_chds = missing_chds_for_report(&self, config)?;
+        let export_names = export_game_names(&self, config)?;
         copy_retaining(
             self.roms,
             config,
             &retain,
             Some(&disks),
             missing_chds,
+            export_names,
             cancel,
             on_copy_progress,
         )
@@ -208,7 +212,16 @@ impl Catalog {
 /// [`Catalog::copy_roms`] places required archives and CHD directories in `roms`
 /// and everything else this run keeps in `rest`.
 pub fn copy_all_to_rest(roms: Roms, config: &ExportConfig) -> Result<Report, Box<dyn Error>> {
-    copy_retaining(roms, config, &HashSet::new(), None, Vec::new(), None, None)
+    copy_retaining(
+        roms,
+        config,
+        &HashSet::new(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        None,
+        None,
+    )
 }
 
 fn categorize_machines(
@@ -358,8 +371,10 @@ fn build_plan(
 
     status("Scanning source collection for export plan…");
     check_cancelled(cancel)?;
-    let retain = retained_archives(&catalog.dependencies, args);
-    let disk_machines = required_disk_machines(&catalog.disks, args);
+    let export_games = export_game_set(catalog, args)?;
+    let export_names = export_game_names(catalog, args)?;
+    let retain = retained_archives(&catalog.dependencies, args, &export_games);
+    let disk_machines = required_disk_machines(&catalog.disks, args, &export_games);
     let folders = args.destination_folders();
     let mut media = Vec::new();
     let mut seen_archives = HashSet::new();
@@ -420,7 +435,7 @@ fn build_plan(
                 destination: Some(destination.display().to_string()),
                 bytes: Some(bytes),
                 reasons: if required {
-                    media_reasons(&key, role, catalog, args)
+                    media_reasons(&key, role, catalog, args, &export_games)
                 } else {
                     vec![REST_MEDIA_REASON.to_string()]
                 },
@@ -428,7 +443,7 @@ fn build_plan(
         }
     }
 
-    for archive in required_archive_names(&catalog.dependencies, args) {
+    for archive in required_archive_names(&catalog.dependencies, args, &export_games) {
         if seen_archives.contains(&archive) {
             continue;
         }
@@ -439,7 +454,7 @@ fn build_plan(
             source: None,
             destination: None,
             bytes: None,
-            reasons: media_reasons(&archive, MediaRole::Archive, catalog, args),
+            reasons: media_reasons(&archive, MediaRole::Archive, catalog, args, &export_games),
         });
     }
     let mut disks = disk_machines.into_iter().collect::<Vec<_>>();
@@ -455,7 +470,7 @@ fn build_plan(
             source: None,
             destination: None,
             bytes: None,
-            reasons: media_reasons(&machine, MediaRole::Disk, catalog, args),
+            reasons: media_reasons(&machine, MediaRole::Disk, catalog, args, &export_games),
         });
     }
     media.sort();
@@ -472,10 +487,7 @@ fn build_plan(
     )?;
 
     let mut games = Vec::new();
-    for name in &catalog.selected {
-        if name_in_subset_excluded(args, name) {
-            continue;
-        }
+    for name in &export_names {
         let rom = &catalog.roms[name];
         games.push(PlannedGame {
             machine: name.clone(),
@@ -516,11 +528,15 @@ fn build_plan(
     })
 }
 
-fn required_archive_names(dependencies: &DependencySet, args: &ExportConfig) -> Vec<String> {
+fn required_archive_names(
+    dependencies: &DependencySet,
+    args: &ExportConfig,
+    export_games: &HashSet<String>,
+) -> Vec<String> {
     let mut names = dependencies
         .edges
         .iter()
-        .filter(|edge| !name_in_subset_excluded(args, &edge.game))
+        .filter(|edge| game_exports(&edge.game, export_games, args))
         .map(|edge| edge.archive.to_ascii_lowercase())
         .collect::<Vec<_>>();
     names.sort();
@@ -533,20 +549,18 @@ fn media_reasons(
     role: MediaRole,
     catalog: &Catalog,
     args: &ExportConfig,
+    export_games: &HashSet<String>,
 ) -> Vec<String> {
     let mut reasons = Vec::new();
     if role == MediaRole::Archive
-        && catalog
-            .selected
-            .iter()
-            .any(|game| game.eq_ignore_ascii_case(machine) && !name_in_subset_excluded(args, game))
+        && export_games.contains(&machine.to_ascii_lowercase())
     {
         reasons.push(format!("Selected game {machine}"));
     }
     if role == MediaRole::Archive {
         for edge in &catalog.dependencies.edges {
             if edge.archive.eq_ignore_ascii_case(machine)
-                && !name_in_subset_excluded(args, &edge.game)
+                && game_exports(&edge.game, export_games, args)
             {
                 let why = match edge.kind {
                     DependencyKind::Own => "Own archive",
@@ -561,7 +575,7 @@ fn media_reasons(
     if role == MediaRole::Disk {
         for edge in &catalog.disks.edges {
             if edge.machine.eq_ignore_ascii_case(machine)
-                && !name_in_subset_excluded(args, &edge.game)
+                && game_exports(&edge.game, export_games, args)
             {
                 let why = match edge.kind {
                     DiskKind::Own => "Own disk",
@@ -635,6 +649,8 @@ fn unresolved_media(catalog: &Catalog, args: &ExportConfig) -> Vec<UnresolvedMed
     unresolved
 }
 
+pub use crate::core::launch_ready::held_back_games;
+
 /// Arcade-style machines left off the selected list, with a short reason.
 pub fn excluded_games_for_review(catalog: &Catalog, args: &ExportConfig) -> Vec<PlannedGame> {
     let mut games = Vec::new();
@@ -683,7 +699,108 @@ fn exclusion_reason(name: &str, rom: &Rom, policy: EmulationPolicy) -> String {
     "Not on the selected arcade list.".into()
 }
 
-/// CHD files selected games need that are not present in the source.
+fn policy_selected_game(catalog: &Catalog, config: &ExportConfig, game: &str) -> bool {
+    !name_in_subset_excluded(config, game) && catalog.selected.iter().any(|name| name == game)
+}
+
+/// ROM zip stems for `.zip` archives found under the source roots.
+fn archives_in_sources(roots: &[String]) -> Result<HashSet<String>, Box<dyn Error>> {
+    use std::fs::read_dir;
+    let mut stems = HashSet::new();
+    for root in roots {
+        for entry in read_dir(root)
+            .map_err(|error| format!("Cannot read source directory {root}: {error}"))?
+        {
+            let path = entry
+                .map_err(|error| format!("Cannot read entry in source directory {root}: {error}"))?
+                .path();
+            if !path.is_file() {
+                continue;
+            }
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_none_or(|ext| !ext.eq_ignore_ascii_case("zip"))
+            {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|name| name.to_str()) {
+                stems.insert(stem.to_ascii_lowercase());
+            }
+        }
+    }
+    Ok(stems)
+}
+
+fn archive_is_bios(catalog: &Catalog, archive: &str) -> bool {
+    catalog
+        .roms
+        .get(archive)
+        .is_some_and(|rom| rom.data.is_bios)
+}
+
+fn missing_bios_title(catalog: &Catalog, archive: &str) -> String {
+    catalog
+        .roms
+        .get(archive)
+        .map(|rom| {
+            if rom.data.category.is_empty() {
+                "BIOS image".to_string()
+            } else {
+                rom.data.category.clone()
+            }
+        })
+        .unwrap_or_else(|| "BIOS image".to_string())
+}
+
+/// BIOS ROM zips policy-selected games need that are not present in the source.
+pub fn missing_bios_for_report(
+    catalog: &Catalog,
+    args: &ExportConfig,
+) -> Result<Vec<MissingBiosEntry>, Box<dyn Error>> {
+    use std::collections::HashMap;
+    let present = archives_in_sources(&args.source_path)?;
+    let mut by_archive: HashMap<String, (String, HashSet<String>)> = HashMap::new();
+    for edge in &catalog.dependencies.edges {
+        if !policy_selected_game(catalog, args, &edge.game) {
+            continue;
+        }
+        let archive = edge.archive.to_ascii_lowercase();
+        if present.contains(&archive) || !archive_is_bios(catalog, &archive) {
+            continue;
+        }
+        let title = missing_bios_title(catalog, &archive);
+        by_archive
+            .entry(archive)
+            .or_insert_with(|| (title, HashSet::new()))
+            .1
+            .insert(edge.game.clone());
+    }
+    let mut entries = by_archive
+        .into_iter()
+        .map(|(archive, (title, games))| {
+            let mut needed_by: Vec<_> = games.into_iter().collect();
+            needed_by.sort();
+            MissingBiosEntry {
+                archive,
+                title,
+                needed_by,
+            }
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| left.archive.cmp(&right.archive));
+    Ok(entries)
+}
+
+/// Count of `.chd` files indexed under all configured source roots (ROM + optional CHD folder).
+pub fn indexed_chd_file_count(args: &ExportConfig) -> Result<usize, Box<dyn Error>> {
+    Ok(chd_pairs_in_sources(&args.source_path)?.len())
+}
+
+/// CHD files policy-selected games need that are not present in the source.
+///
+/// Includes games held back for incomplete dependencies so the plan preview matches
+/// [`held_back_games`], not only launch-ready export names.
 pub fn missing_chds_for_report(
     catalog: &Catalog,
     args: &ExportConfig,
@@ -691,7 +808,10 @@ pub fn missing_chds_for_report(
     let present = chd_pairs_in_sources(&args.source_path)?;
     let mut entries = Vec::new();
     for missing in &catalog.disks.missing {
-        if name_in_subset_excluded(args, &missing.game) {
+        if !policy_selected_game(catalog, args, &missing.game) {
+            continue;
+        }
+        if source_has_chd(&present, &missing.machine, &missing.name) {
             continue;
         }
         entries.push(MissingChdEntry {
@@ -702,7 +822,7 @@ pub fn missing_chds_for_report(
         });
     }
     for edge in &catalog.disks.edges {
-        if name_in_subset_excluded(args, &edge.game) {
+        if !policy_selected_game(catalog, args, &edge.game) {
             continue;
         }
         if source_has_chd(&present, &edge.machine, &edge.name) {
@@ -744,6 +864,7 @@ fn copy_retaining(
     retain: &HashSet<String>,
     disk_machines: Option<&HashSet<String>>,
     missing_chds: Vec<MissingChdEntry>,
+    export_names: Vec<String>,
     cancel: Option<&CancelFlag>,
     mut on_copy_progress: Option<&mut dyn FnMut(u64, u64)>,
 ) -> Result<Report, Box<dyn Error>> {
@@ -906,7 +1027,7 @@ fn copy_retaining(
     check_cancelled(cancel)?;
 
     if !config.simulation && !something_failed {
-        if let Err(error) = write_selected_names(&roms, config, &names_path) {
+        if let Err(error) = write_selected_names(&export_names, &names_path) {
             error!("{error}");
             something_failed = true;
             report.names_error = Some(error.to_string());
@@ -917,10 +1038,7 @@ fn copy_retaining(
         .total_working(total_working)
         .total_other(total_other)
         .all_ok(!something_failed);
-    report.selected_games = roms
-        .iter()
-        .filter(|(name, rom)| rom.selected && !name_in_subset_excluded(config, name))
-        .count();
+    report.selected_games = export_names.len();
 
     Ok(report)
 }
@@ -930,13 +1048,17 @@ fn copy_retaining(
 /// The range limits selected games. A parent directory that stores a required
 /// shared or delta disk stays in `roms` even when its name falls outside the range.
 /// Other disk directories go to `rest` when this run copies them.
-pub(crate) fn required_disk_machines(disks: &DiskSet, args: &ExportConfig) -> HashSet<String> {
+pub(crate) fn required_disk_machines(
+    disks: &DiskSet,
+    args: &ExportConfig,
+    export_games: &HashSet<String>,
+) -> HashSet<String> {
     // The flag remains accepted so existing commands parse. It does not choose a folder.
     let _retired = args.ignore_not_working_chd;
     disks
         .edges
         .iter()
-        .filter(|edge| !name_in_subset_excluded(args, &edge.game))
+        .filter(|edge| game_exports(&edge.game, export_games, args))
         .map(|edge| edge.machine.to_ascii_lowercase())
         .collect()
 }
@@ -1011,17 +1133,9 @@ fn export_destination(
     Ok(export_directory(required, folders).join(file_name))
 }
 
-fn write_selected_names(
-    roms: &Roms,
-    args: &ExportConfig,
-    path: &Path,
-) -> Result<(), Box<dyn Error>> {
-    let mut names: Vec<&str> = roms
-        .iter()
-        .filter(|(name, rom)| rom.selected && !name_in_subset_excluded(args, name))
-        .map(|(name, _)| name.as_str())
-        .collect();
-    names.sort_unstable();
+fn write_selected_names(export_names: &[String], path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut names = export_names.to_vec();
+    names.sort();
     let mut bytes = names.join("\n");
     if !bytes.is_empty() {
         bytes.push('\n');
@@ -1066,11 +1180,12 @@ fn is_disk_media(path: &Path, machine_has_disks: bool) -> bool {
 pub(crate) fn retained_archives(
     dependencies: &DependencySet,
     args: &ExportConfig,
+    export_games: &HashSet<String>,
 ) -> HashSet<String> {
     dependencies
         .edges
         .iter()
-        .filter(|edge| !name_in_subset_excluded(args, &edge.game))
+        .filter(|edge| game_exports(&edge.game, export_games, args))
         .map(|edge| edge.archive.to_ascii_lowercase())
         .collect()
 }

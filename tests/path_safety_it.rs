@@ -5,6 +5,7 @@ use assert_cmd::Command;
 #[cfg(unix)]
 use predicates::prelude::PredicateBooleanExt;
 use roms_curator::core::args::Args;
+use roms_curator::ExportConfig;
 use roms_curator::core::roms_service::copy_all_to_rest;
 use roms_curator::models::report::OperationStatus;
 use roms_curator::models::roms::Roms;
@@ -30,14 +31,13 @@ impl Collection {
         fs::create_dir(&source).unwrap();
         fs::write(source.join("005.zip"), CONTENTS).unwrap();
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/resources");
-        let args = Args {
-            source_path: vec![source.to_str().unwrap().into()],
-            destination_path: root.join("output").to_str().unwrap().into(),
-            report_path: root.join("report.md").to_str().unwrap().into(),
-            mame_xml_path: fixtures.join("listxml_sample.xml").to_str().unwrap().into(),
-            catver_path: fixtures.join("catver_sample.ini").to_str().unwrap().into(),
-            ..Args::default()
-        };
+        let mut args = ExportConfig::include_incomplete_dependencies();
+        args.source_path = vec![source.to_str().unwrap().into()];
+        args.destination_path = root.join("output").to_str().unwrap().into();
+        args.report_path = root.join("report.md").to_str().unwrap().into();
+        args.mame_xml_path = fixtures.join("listxml_sample.xml").to_str().unwrap().into();
+        args.catver_path = fixtures.join("catver_sample.ini").to_str().unwrap().into();
+        let args = args;
         Self { root, args }
     }
 
@@ -61,6 +61,7 @@ impl Collection {
             &self.args.subset_end,
         ]);
         command.arg(format!("--simulation={}", self.args.simulation));
+        command.arg("--include-incomplete-games=true");
         command
     }
 

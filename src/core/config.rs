@@ -7,7 +7,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 
 /// Paths and flags for one export run.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportConfig {
     /// Path to MAME ROM database file. See README on how to get this.
     pub mame_xml_path: String,
@@ -33,6 +33,8 @@ pub struct ExportConfig {
     pub subset_end: String,
     /// When true, select only machines whose driver and emulation are both good.
     pub strict_emulation: bool,
+    /// When true (default), only export games whose ROM and CHD dependencies are in the source.
+    pub require_complete_dependencies: bool,
     /// If true, show progress bar.
     pub progress: bool,
 }
@@ -45,9 +47,37 @@ pub struct DestinationFolders {
     pub rest: PathBuf,
 }
 
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self {
+            mame_xml_path: String::new(),
+            catver_path: String::new(),
+            source_path: Vec::new(),
+            destination_path: String::new(),
+            report_path: String::new(),
+            plan_path: String::new(),
+            ignore_not_working_chd: false,
+            simulation: false,
+            subset_start: String::new(),
+            subset_end: String::new(),
+            strict_emulation: false,
+            require_complete_dependencies: true,
+            progress: false,
+        }
+    }
+}
+
 impl ExportConfig {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Same as [`Default`] but keeps policy-selected games that have missing dependencies.
+    pub fn include_incomplete_dependencies() -> Self {
+        Self {
+            require_complete_dependencies: false,
+            ..Self::default()
+        }
     }
 
     /// Read-only path checks shared by the CLI and library callers.
