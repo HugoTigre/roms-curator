@@ -6,6 +6,9 @@ use std::path::Path;
 
 use tempfile::Builder;
 
+use crate::core::roms_service::planned_media_for_roms;
+use crate::models::plan::{Availability, MediaRole, Plan, PlannedMedia};
+
 /// Outcome recorded for one source entry.
 ///
 /// [`Ignored`](Self::Ignored) is the default. A failed copy has to set
@@ -48,7 +51,8 @@ pub struct ReportDetailEntry {
 }
 
 /// One CHD file a selected game needs that is not in the source.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct MissingChdEntry {
     /// Selected game that needs this disk.
     pub game: String,
@@ -76,9 +80,78 @@ pub struct Report {
     pub names_error: Option<String>,
     /// CHDs required by selected games but absent from the source.
     pub missing_chds: Vec<MissingChdEntry>,
+    /// Support files the plan needs in `roms/` but the source does not have.
+    pub missing_source_media: Vec<String>,
     /// False if a copy failed or `selected.txt` could not be published. A
     /// successful simulation does not verify write access or available space.
     pub all_ok: bool,
+}
+
+/// Build a simulation-style report from a preview plan (no source walk).
+pub fn report_from_plan_preview(plan: &Plan, missing_chds: Vec<MissingChdEntry>) -> Report {
+    let mut report = Report {
+        simulation: true,
+        selected_games: plan.games.len(),
+        missing_chds,
+        all_ok: plan.conflicts.is_empty(),
+        ..Report::default()
+    };
+    let mut working = 0i32;
+    let mut other = 0i32;
+    for item in &plan.media {
+        match item.availability {
+            Availability::Present => {
+                let entry = ReportDetailEntry {
+                    rom_name: plan_media_basename(item),
+                    status: OperationStatus::Planned,
+                    media_kind: match item.role {
+                        MediaRole::Archive => ExportMediaKind::Archive,
+                        MediaRole::Disk => ExportMediaKind::DiskDirectory,
+                    },
+                    ..ReportDetailEntry::default()
+                };
+                if planned_media_for_roms(item) {
+                    working += 1;
+                    report.add_rom_working(entry);
+                } else {
+                    other += 1;
+                    report.add_rom_other(entry);
+                }
+            }
+            Availability::Missing if planned_media_for_roms(item) => {
+                report
+                    .missing_source_media
+                    .push(missing_source_media_line(item));
+            }
+            Availability::Missing => {}
+        }
+    }
+    report.missing_source_media.sort();
+    report
+        .total_working(working)
+        .total_other(other);
+    report
+}
+
+fn plan_media_basename(item: &PlannedMedia) -> String {
+    if let Some(source) = &item.source {
+        return Path::new(source)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| item.machine.clone());
+    }
+    match item.role {
+        MediaRole::Archive => format!("{}.zip", item.machine),
+        MediaRole::Disk => item.machine.clone(),
+    }
+}
+
+fn missing_source_media_line(item: &PlannedMedia) -> String {
+    let kind = match item.role {
+        MediaRole::Archive => "ROM zip",
+        MediaRole::Disk => "CHD folder",
+    };
+    format!("{} ({kind}, planned for roms/)", plan_media_basename(item))
 }
 
 fn write_all_roms(
@@ -208,6 +281,18 @@ impl Report {
             writer.write_all(b"```\n\n")?;
         }
 
+        if !self.missing_source_media.is_empty() {
+            writer.write_all(b"### Media missing from source (roms/)\n\n")?;
+            writer.write_all(
+                b"These support files are required by selected games but were not found in the source.\n\n",
+            )?;
+            writer.write_all(b"```text\n")?;
+            for line in &self.missing_source_media {
+                writeln!(writer, "{line}")?;
+            }
+            writer.write_all(b"```\n\n")?;
+        }
+
         writer.flush()?;
 
         Ok(())
@@ -243,8 +328,13 @@ impl Report {
         } else {
             "  - [Missing CHDs](#missing-chds)\n"
         };
+        let missing_media = if self.missing_source_media.is_empty() {
+            ""
+        } else {
+            "  - [Media missing from source (roms/)](#media-missing-from-source-roms)\n"
+        };
         format!(
-            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} required folder (roms)](#{anchor}-required-folder-roms)\n  - [{label} rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}\n"
+            "- [Summary](#summary)\n- [Detail](#detail)\n  - [{label} required folder (roms)](#{anchor}-required-folder-roms)\n  - [{label} rest folder](#{anchor}-rest-folder)\n{failures}{ignored}{missing}{missing_media}\n"
         )
     }
 
@@ -322,6 +412,76 @@ fn folder_counts(entries: &[ReportDetailEntry], status: OperationStatus) -> (usi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn report_from_plan_preview_lists_planned_roms_support_and_missing_source() {
+        use crate::models::plan::{
+            Availability, MediaRole, MetadataIdentity, PlannedGame, PlannedMedia,
+        };
+
+        let plan = Plan {
+            version: 2,
+            metadata: MetadataIdentity {
+                mame_build: "0".into(),
+                emulation_policy: "playable".into(),
+                mame_xml_path: String::new(),
+                mame_xml_sha1: String::new(),
+                catver_path: String::new(),
+                catver_sha1: String::new(),
+            },
+            source_paths: vec!["/src".into()],
+            destination_path: "/dest".into(),
+            selected_names_path: "/dest/selected.txt".into(),
+            report_path: String::new(),
+            subset_start: String::new(),
+            subset_end: String::new(),
+            games: vec![PlannedGame {
+                machine: "galaga".into(),
+                category: "Arcade".into(),
+                folder: "Working".into(),
+                reason: "playable".into(),
+            }],
+            media: vec![
+                PlannedMedia {
+                    machine: "galaga".into(),
+                    role: MediaRole::Archive,
+                    availability: Availability::Present,
+                    source: Some("/src/galaga.zip".into()),
+                    destination: Some("/dest/roms/galaga.zip".into()),
+                    bytes: Some(1),
+                    reasons: vec!["Selected game".into()],
+                },
+                PlannedMedia {
+                    machine: "missing".into(),
+                    role: MediaRole::Archive,
+                    availability: Availability::Missing,
+                    source: None,
+                    destination: None,
+                    bytes: None,
+                    reasons: vec!["BIOS for galaga".into()],
+                },
+            ],
+            unresolved: Vec::new(),
+            conflicts: Vec::new(),
+        };
+        let report = report_from_plan_preview(
+            &plan,
+            vec![MissingChdEntry {
+                game: "galaga".into(),
+                machine: "galaga".into(),
+                disk: "disk".into(),
+                reason: "test".into(),
+            }],
+        );
+        assert_eq!(report.selected_games, 1);
+        assert_eq!(report.roms_working.len(), 1);
+        assert_eq!(report.missing_source_media.len(), 1);
+        let mut output = Vec::new();
+        report.write_to(&mut output).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("galaga.zip (archive)"));
+        assert!(text.contains("### Media missing from source (roms/)"));
+    }
 
     #[test]
     fn simulation_reports_planned_entries_without_counting_them_as_copies_or_failures() {

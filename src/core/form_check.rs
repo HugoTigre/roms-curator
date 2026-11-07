@@ -13,6 +13,7 @@ pub struct ExportFormIssues {
     pub source_path: Option<String>,
     pub destination_path: Option<String>,
     pub report_path: Option<String>,
+    pub plan_html_path: Option<String>,
     pub subset_start: Option<String>,
     pub subset_end: Option<String>,
 }
@@ -23,6 +24,7 @@ pub fn check_export_form(
     source_path: &str,
     destination_path: &str,
     report_path: &str,
+    plan_html_path: &str,
     subset_start: &str,
     subset_end: &str,
 ) -> ExportFormIssues {
@@ -31,18 +33,21 @@ pub fn check_export_form(
         source_path: source_issue(source_path),
         destination_path: destination_issue(destination_path),
         report_path: report_issue(report_path),
+        plan_html_path: plan_html_issue(plan_html_path),
         ..subset_issues(subset_start, subset_end)
     };
 
     if issues.source_path.is_none()
         && issues.destination_path.is_none()
         && issues.report_path.is_none()
+        && issues.plan_html_path.is_none()
     {
         apply_relationship_issues(
             &mut issues,
             source_path.trim(),
             destination_path.trim(),
             report_path.trim(),
+            plan_html_path.trim(),
         );
     }
 
@@ -85,23 +90,53 @@ fn destination_issue(value: &str) -> Option<String> {
 }
 
 fn report_issue(value: &str) -> Option<String> {
+    new_output_file_issue(
+        value,
+        ".md",
+        "Report",
+        "Markdown",
+        "report",
+    )
+}
+
+fn plan_html_issue(value: &str) -> Option<String> {
+    new_output_file_issue(
+        value,
+        ".html",
+        "Plan HTML",
+        "HTML",
+        "plan preview HTML",
+    )
+}
+
+fn new_output_file_issue(
+    value: &str,
+    extension: &str,
+    label: &str,
+    kind: &str,
+    choose_hint: &str,
+) -> Option<String> {
     let value = value.trim();
     if value.is_empty() {
         return None;
     }
-    if !value.to_ascii_lowercase().ends_with(".md") {
-        return Some("Report file needs to end in .md.".into());
+    if !value.to_ascii_lowercase().ends_with(extension) {
+        return Some(format!("{label} file needs to end in {extension}."));
     }
     let path = Path::new(value);
     if path.is_dir() {
-        return Some("Report path needs to be a Markdown file, not a folder.".into());
+        return Some(format!("{label} path needs to be a {kind} file, not a folder."));
     }
     if path.is_file() {
-        return Some("A report already exists at that path. Choose a new file name.".into());
+        return Some(format!(
+            "A file already exists at that path. Choose a new {choose_hint} file name."
+        ));
     }
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
-            return Some("Choose a report path in a folder that already exists.".into());
+            return Some(format!(
+                "Choose a {label} path in a folder that already exists."
+            ));
         }
     }
     None
@@ -149,6 +184,7 @@ fn apply_relationship_issues(
     source: &str,
     destination: &str,
     report: &str,
+    plan_html: &str,
 ) {
     let source_path = match crate::core::paths::resolve(Path::new(source)) {
         Ok(path) => path,
@@ -171,20 +207,49 @@ fn apply_relationship_issues(
         issues.destination_path =
             Some("Export destination must be a different folder from the source.".into());
     }
-    if report.is_empty() {
+    check_output_outside_trees(
+        &mut issues.report_path,
+        report,
+        "That report path could not be checked.",
+        "Report file must sit outside the source folder.",
+        "Report file must sit outside the export folder.",
+        &source_path,
+        &destination_path,
+    );
+    check_output_outside_trees(
+        &mut issues.plan_html_path,
+        plan_html,
+        "That plan HTML path could not be checked.",
+        "Plan HTML file must sit outside the source folder.",
+        "Plan HTML file must sit outside the export folder.",
+        &source_path,
+        &destination_path,
+    );
+}
+
+fn check_output_outside_trees(
+    issue: &mut Option<String>,
+    path_str: &str,
+    resolve_error: &str,
+    inside_source: &str,
+    inside_destination: &str,
+    source_path: &std::path::Path,
+    destination_path: &std::path::Path,
+) {
+    if path_str.is_empty() {
         return;
     }
-    let report_path = match crate::core::paths::resolve(Path::new(report)) {
+    let resolved = match crate::core::paths::resolve(Path::new(path_str)) {
         Ok(path) => path,
         Err(_) => {
-            issues.report_path = Some("That report path could not be checked.".into());
+            *issue = Some(resolve_error.into());
             return;
         }
     };
-    if report_path.starts_with(&source_path) {
-        issues.report_path = Some("Report file must sit outside the source folder.".into());
-    } else if report_path.starts_with(&destination_path) {
-        issues.report_path = Some("Report file must sit outside the export folder.".into());
+    if resolved.starts_with(source_path) {
+        *issue = Some(inside_source.into());
+    } else if resolved.starts_with(destination_path) {
+        *issue = Some(inside_destination.into());
     }
 }
 
@@ -200,7 +265,7 @@ mod tests {
         start: &str,
         end: &str,
     ) -> ExportFormIssues {
-        check_export_form(version, source, destination, report, start, end)
+        check_export_form(version, source, destination, report, "", start, end)
     }
 
     #[test]
@@ -332,5 +397,39 @@ mod tests {
             .report_path
             .unwrap()
             .contains("outside the source"));
+    }
+
+    #[test]
+    fn plan_html_must_be_a_new_html_file_outside_the_export() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+
+        let extension = check_export_form(
+            "0.289",
+            source.to_str().unwrap(),
+            destination.to_str().unwrap(),
+            "",
+            root.path().join("preview.txt").to_str().unwrap(),
+            "",
+            "",
+        );
+        assert!(extension.plan_html_path.unwrap().contains(".html"));
+
+        let inside = check_export_form(
+            "0.289",
+            source.to_str().unwrap(),
+            destination.to_str().unwrap(),
+            "",
+            destination.join("preview.html").to_str().unwrap(),
+            "",
+            "",
+        );
+        assert!(inside
+            .plan_html_path
+            .unwrap()
+            .contains("outside the export"));
     }
 }

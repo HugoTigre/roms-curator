@@ -19,7 +19,8 @@ use crate::models::report::{
     ExportMediaKind, MissingChdEntry, OperationStatus, Report, ReportDetailEntry,
 };
 use crate::models::roms::{Catalog, Roms, UnfilteredRoms};
-use crate::models::selection::EmulationPolicy;
+use crate::models::roms::{Rom, RomCategory};
+use crate::models::selection::{category_preference, machine_override, EmulationPolicy};
 use crate::utils::{build_progress_bar, ProgressBarEx, ThrottledProgress};
 use crate::RomCategories;
 
@@ -634,8 +635,56 @@ fn unresolved_media(catalog: &Catalog, args: &ExportConfig) -> Vec<UnresolvedMed
     unresolved
 }
 
+/// Arcade-style machines left off the selected list, with a short reason.
+pub fn excluded_games_for_review(catalog: &Catalog, args: &ExportConfig) -> Vec<PlannedGame> {
+    let mut games = Vec::new();
+    for (name, rom) in &catalog.roms {
+        if rom.selected {
+            continue;
+        }
+        if matches!(rom.category, RomCategory::Bios | RomCategory::System) {
+            continue;
+        }
+        if name_in_subset_excluded(args, name) {
+            continue;
+        }
+        if !matches!(rom.category, RomCategory::NotWorking | RomCategory::UnCategorized) {
+            continue;
+        }
+        games.push(PlannedGame {
+            machine: name.clone(),
+            category: rom.data.category.clone(),
+            folder: rom.category.to_string(),
+            reason: exclusion_reason(name, rom, catalog.policy),
+        });
+    }
+    games.sort_by(|left, right| left.machine.cmp(&right.machine));
+    games
+}
+
+fn exclusion_reason(name: &str, rom: &Rom, policy: EmulationPolicy) -> String {
+    if let Some(override_rule) = machine_override(name) {
+        return format!("{} {}", override_rule.effect, override_rule.reason);
+    }
+    if rom.data.is_mechanical {
+        return "Mechanical machine; not on the arcade game list.".into();
+    }
+    if let Some(preference) = category_preference(&rom.data.category) {
+        return format!("{} {}", preference.effect, preference.reason);
+    }
+    if let Some(status) = &rom.data.status {
+        if !policy.accepts(status) {
+            return format!(
+                "Driver is {:?}, emulation is {:?}; not accepted under the current selection policy.",
+                status.driver, status.emulation
+            );
+        }
+    }
+    "Not on the selected arcade list.".into()
+}
+
 /// CHD files selected games need that are not present in the source.
-pub(crate) fn missing_chds_for_report(
+pub fn missing_chds_for_report(
     catalog: &Catalog,
     args: &ExportConfig,
 ) -> Result<Vec<MissingChdEntry>, Box<dyn Error>> {
