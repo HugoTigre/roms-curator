@@ -23,30 +23,25 @@ Today the curator assumes a **merged** collection: a selected clone needs only i
 
 **Separate product surface** from MAME export: optional; default install cost is **zero** until the user runs a library action. Primary app remains **MAME set curation**.
 
-User picks a **tier**. Lite needs no SQLite and no network; full library is opt-in enrichment.
+**One index:** a single **SQLite** database per library (or one global DB with library ids). **Discovery** walks the filesystem once and records files; **enrichment** and **export** read that index — no second full discovery for a “lite” vs “full” path.
 
 **Isolation (avoid cross-feature coupling):**
 
 - Own Rust module (or crate) + GUI **mode/screen** distinct from export `setup → review → export`.
-- No shared `ExportConfig` / plan path with export; at most reuse generic pieces (path validation, metadata cache dirs, MAME listxml loader for MAME rows only, report-style **HTML/Markdown writers**).
+- No shared `ExportConfig` / plan path with export; at most reuse generic pieces (path validation, metadata cache dirs, MAME listxml loader, report-style **HTML/Markdown writers**).
 
-### Tier A — Inventory report (lite)
+**Pipeline (three steps, reusable):**
 
-**Goal:** “What do I have?” — filesystem scan only, minimal fields, **no media scraping**, no API keys.
+1. **Discover** — scan configured roots → upsert files in SQLite (path, platform, size, mtime; optional hash in a later pass). Incremental rescans only diff changed paths.
+2. **Enrich** — user chooses **simplified** or **full** when starting (or upgrading) enrichment; same rows, different columns filled:
+   - **Simplified:** local matchers only (MAME stem/listxml, DAT filename/hash if configured), titles/playable from **local** metadata, store **outbound link templates** (adb, IGDB/ScreenScraper search, etc.). **No** media download, **no** API calls.
+   - **Full:** call providers below; cache cover (and optional screenshot) on disk; store short description when returned.
+   - User can run **simplified first**, then **re-enrich to full** later without rediscovering files.
+3. **Export / browse** — **GUI** searches SQLite (no web server). **Export HTML** (optional Markdown) is a view over the DB:
+   - **Simplified export:** minimal columns + external links; embed no images (or only `file://` paths if already cached).
+   - **Full export:** include cached artwork paths / inline refs where present.
 
-- Output: single **HTML file** (and optional Markdown), same spirit as export `Report::to_file` — open in any browser from disk.
-- Rows: platform, filename/path, size; optional local match (MAME stem + listxml title/status if metadata already cached); playable/condition only when it comes from **local** data (e.g. MAME XML), not from the network.
-- **Outbound links only:** per row, templated URLs to public pages (e.g. adb.arcadeitalia, ScreenScraper/IGDB search, MobyGames search) — user clicks if they want more; app does not fetch.
-- No SQLite required; scan → write file. Suitable for CLI `--library-inventory` / GUI “Export inventory HTML”.
-
-### Tier B — Library database (full)
-
-**Goal:** Repeatable browse/search inside the app via **SQLite** (still no embedded web server).
-
-- Libraries: root path, platform id, last scan time.
-- Files: path, size, platform, optional hash (background/optional).
-- Games (when matched): canonical id, title, **playable / condition**, cover path (local cache), short description optional.
-- Enrichment jobs (optional): providers below; GUI grid/list + search reads DB only.
+Discovery is **not** repeated for export format; export only chooses which columns/media to include.
 
 **Playable / condition (per platform, keep honest):**
 
@@ -74,9 +69,10 @@ Defer: full MobyGames, RetroAchievements, browser emulators, multi-user, any alw
 
 **Essential work (order):**
 
-1. **Tier A:** shared inventory scan + HTML report generator + link templates; GUI/CLI export path.
-2. **Tier B:** SQLite schema/migrations; reuse scan; matchers (MAME stem, DAT hash, filename rules).
-3. **Tier B only:** enrichment (cover cache); library settings + browse UI; `enrich-library` job.
+1. SQLite schema; **discover** job + incremental rescan.
+2. **Enrich** profiles (simplified vs full) + matchers per platform.
+3. GUI browse (read DB) + **export HTML** with simplified/full template.
+4. Optional CLI: `library discover`, `library enrich`, `library export`.
 
 **Out of scope:** Launching games, save sync, reorganizing user folders, replacing RomM/LaunchBox for play.
 
