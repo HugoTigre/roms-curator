@@ -7,7 +7,7 @@ Status: **implemented** (Phases 0–4). The [software review](../software-review
 - Merged MAME **0.289** collection → **`roms`** (everything launch-ready games need) and **`rest`** (everything else this run keeps), so the full source can be removed after a successful export. **`selected.txt`** lists launch-ready machine names for frontends (LaunchBox, playlists, etc.).
 - Default selection: good/imperfect arcade drivers; minor sound/graphics issues accepted. Parents, BIOSes, devices, and required CHDs are copied into `roms` even when those machines are not on the game list.
 - Rust library + CLI + **Tauri** desktop curator. Launchers stay external.
-- Later decisions (not in scope): split-set selection, rebuilding merged archives, device performance filters, optional `mame -verifyroms` / `chdman verify` integration.
+- Later decisions (not in scope): split **storage** mode (see [TODO.md](../TODO.md)), rebuilding merged archives, device performance filters, optional `mame -verifyroms` / `chdman verify` integration.
 
 ## Checklist
 

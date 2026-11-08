@@ -8,7 +8,7 @@
 
 Curates a MAME merged ROM set into a smaller, launch-ready tree plus a game list for frontends.
 
-Implementation status: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md). Releases: [releasing.md](docs/releasing.md).
+Implementation status: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md). Backlog: [TODO.md](docs/TODO.md). Releases: [releasing.md](docs/releasing.md).
 
 Possible usages might include:
 
