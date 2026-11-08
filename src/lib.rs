@@ -1,9 +1,10 @@
 //! # roms-curator
 //!
 //! `roms-curator` exports a merged MAME collection into two folders.
-//! `roms` holds every file a selected game needs. `rest` holds every other source
-//! file, so the original collection can be removed. `selected.txt` lists the
-//! selected machine names for a frontend.
+//! `roms` holds every file launch-ready games need; `rest` holds the remainder
+//! so the original collection can be removed after a full export.
+//! `selected.txt` lists launch-ready machine names for a frontend (by default
+//! games with missing ROM/CHD dependencies are held back).
 //!
 //! See [documentation](https://github.com/HugoTigre/roms-curator) for more details
 //! on how to use this as a command-line Application or as a Library.

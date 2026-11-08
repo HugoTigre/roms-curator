@@ -1,33 +1,37 @@
-## Frequently Asked Questions
+# FAQ
 
-### Is there any risk of corrupting the original MAME ROM collection?
+### Is there any risk of corrupting the original collection?
 
-No. The tool copies your ROMs and rejects unsafe source/output paths. Keep those folders unchanged while it runs.
+No. The tool only copies files and rejects unsafe overlapping source/output/report paths. Do not point the destination inside the source.
 
-### Can I copy into an existing collection?
+### Can I copy into an existing export folder?
 
-Existing selected files or CHD folders stop the run before copying. Use a fresh output folder; the tool does not overwrite files or merge CHD folders.
+No. Existing files, CHD folders, or `selected.txt` in the destination block the run. Use a new folder for a clean export.
 
-### Why does this take so long?
+### Why is it slow?
 
-Reading the full MAME database takes time. Copying large ROM and CHD collections takes longer and depends on your disk and network speed.
+Parsing the full MAME XML takes time once per run. Copying large ROM/CHD trees dominates wall clock on slow disks or network mounts.
 
-### Does simulation write anything?
+### What goes in `selected.txt`?
 
-Only a report if you request one. It leaves your source and output folders unchanged and labels operations Planned.
+By default, only **launch-ready** games: every required archive and CHD for that game is present in your source paths. Games with missing ROM or CHD dependencies are **held back** (visible in the GUI/plan/report). Their ROM zips copy to **`rest`** when the source has them, not to `roms`. Use **`--include-incomplete-games=true`** to include them on `selected.txt` and pull their required media into `roms` like other export games (flag must be `true` or `false`, not bare).
 
-### Does this work with split and merged sets?
+### Merged vs split sets?
 
-The export assumes a merged collection: a clone requires its parent archive, plus BIOS and device archives, even when those machines are not games. Those files go in `roms` with the CHD directories the selected games need. `rest` keeps every other source file. MAME uses `roms`. A name-range subset still copies required archives and disk directories when their names fall outside the range, and leaves other out-of-range names in the source. Split-set file selection is a later decision.
+The curator assumes a **merged** collection: clones need parent archives in `roms`. `rest` holds leftover files so you can delete the original tree after a full export. Per-file split selection is not implemented.
 
-### Does this work with any MAME version?
+### Which MAME version?
 
-Use metadata matching your ROM collection and MAME version. Games that require CHDs also need matching CHD files. Compatibility with every MAME version has not been verified.
+Match listxml, CatVer, ROMs, and CHDs to the same set version (e.g. **0.289**). Other versions are untested.
 
-### Why use both mame.xml and catver.ini?
+### Why listxml and CatVer?
 
-MAME's XML describes emulation status and machine relationships. CatVer supplies game categories. The visible list is good or imperfect arcade games. A clone stays on that list when its parent does not, and the parent's archive stays required. BIOS, devices, and other support machines stay in the catalog outside that list. CatVer groups such as computers and consoles are classified as systems, not dropped as genres.
+XML gives emulation status and machine relationships. CatVer gives categories so non-arcade groups (computers, consoles, …) stay off the game list while BIOS/devices still resolve as dependencies.
 
-### What does strict emulation mean?
+### Strict emulation?
 
-The default keeps arcade games when MAME marks both driver status and emulation as good or imperfect. **`--strict-emulation=true`** (or the same option in the desktop app) keeps only games where both are good. It does not look at individual sound or graphics feature flags.
+Default: good **or** imperfect driver and overall emulation. **`--strict-emulation=true`**: both must be **good**.
+
+### Frontends (LaunchBox, Android)?
+
+Point MAME at **`roms`** and use **`selected.txt`** (or your launcher’s equivalent) for the visible game list. The export is ordinary files; launcher smoke tests are optional.

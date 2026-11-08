@@ -1,6 +1,6 @@
 # GUI export recovery
 
-The desktop app and CLI share the same copy rules from **SAFE-02** and **EXPORT-01**.
+The desktop app and CLI share the same export rules (path safety, `roms`/`rest` split, launch-ready `selected.txt`).
 
 ## Stopped or failed export
 

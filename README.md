@@ -6,12 +6,9 @@
 
 ---
 
-Helper utility to manage Sets of ROMs.
-Currently only works for MAME ROMs,
-for example to create a working only ROM Set.
+Curates a MAME merged ROM set into a smaller, launch-ready tree plus a game list for frontends.
 
-Development planning: [repair and simplification RFC](docs/rfcs/0001-repair-and-simplify.md).
-Release rules: [CI and release delivery](docs/releasing.md).
+Implementation status: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md). Backlog: [TODO.md](docs/TODO.md). Releases: [releasing.md](docs/releasing.md).
 
 Possible usages might include:
 
@@ -30,7 +27,7 @@ __Index__
 - [FAQ](#faq)
 - [Useful links](#useful-links)
 - [Help](#help)
-- [Planned for the future (maybe)](#planned-for-the-future-maybe)
+- [Desktop curator](#desktop-curator)
 
 ## Requirement / Dependencies
 
@@ -83,9 +80,9 @@ It can also generate a report with all copied files and/or errors encountered.
 
 - **roms**: every file a selected game needs. That is its merged archive (the parent archive when the game is a clone), BIOS and device archives, and the CHD directories it needs. Point MAME at this folder.
 - **rest**: every other source file. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no selected game needs land here too. This folder is what makes it safe to delete the original collection.
-- **selected.txt**: the exact selected machine names, one per line, written after every file in the run has been copied. A failed copy does not publish this list. A frontend uses it. `mayday` can be in `roms` because `batlzone` is inside that zip, and still stay off the list. The report file must be a different path.
+- **selected.txt**: launch-ready machine names (by default every required ROM and CHD must be in the source), one per line, written only after every copy succeeds. Use `--include-incomplete-games=true` to list games with missing dependencies too. Frontends use this file; MAME still reads only `roms`. The report path must not be `selected.txt`.
 
-A selected game keeps every required disk. That includes one shared ancestor CHD, and the parent's same-named non-optional CHD when a clone disk has its own content and may be stored as a delta. A bad or missing dump does not remove the game. A CHD that is not in the source is recorded as missing and is not copied; the game and its ROM archive stay. The Markdown report lists those disks under **Missing CHDs**.
+Required CHDs go to `roms` when present for **launch-ready** games. Missing CHDs are listed under **Missing CHDs** and **hold back** a game from `selected.txt` until you add the disk or pass `--include-incomplete-games=true`. If the game’s ROM zip is in the source, it is still copied, but to **`rest`** (not `roms`), because held-back games are outside the launch export set.
 
 A merged zip is copied whole, so unselected clones stored in it stay inside the file in `roms`. MAME uses only the `roms` folder. `rest` is the remainder, and a game left there will not run on its own when its parent archive moved into `roms`.
 
@@ -118,6 +115,6 @@ Please feel free to open an [Issue](https://github.com/HugoTigre/roms-curator/is
 - Something is missing from the documentation material or hard to understand;
 - Have any improvement suggestions or feature request.
 
-## Planned for the future (maybe)
+## Desktop curator
 
-- Verify ROM Set integrity.
+Build and run the Tauri app: [build instructions](docs/build-instructions.md). Export cancellation and partial runs: [gui-export-recovery.md](docs/gui-export-recovery.md).
