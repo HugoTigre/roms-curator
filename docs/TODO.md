@@ -21,21 +21,32 @@ Today the curator assumes a **merged** collection: a selected clone needs only i
 
 ## Collection library (browse / index)
 
-**Separate product surface** from MAME export: optional; default install cost is **zero** (no scan, no DB, no background work until the user opts in). Primary app remains **MAME set curation**.
+**Separate product surface** from MAME export: optional; default install cost is **zero** until the user runs a library action. Primary app remains **MAME set curation**.
 
-**Goal:** Scan configured library roots (MAME, consoles, computers, PC, …), store inventory + enrichment in **SQLite**, browse/search in the **desktop GUI** (no embedded web server, no requirement to run LaunchBox).
+User picks a **tier**. Lite needs no SQLite and no network; full library is opt-in enrichment.
 
 **Isolation (avoid cross-feature coupling):**
 
 - Own Rust module (or crate) + GUI **mode/screen** distinct from export `setup → review → export`.
-- No shared `ExportConfig` / plan path with export; at most reuse generic pieces (path validation, metadata cache dirs, MAME listxml loader for MAME rows only).
-- Library DB path optional (e.g. user data dir); absent DB = feature unused.
+- No shared `ExportConfig` / plan path with export; at most reuse generic pieces (path validation, metadata cache dirs, MAME listxml loader for MAME rows only, report-style **HTML/Markdown writers**).
 
-**MVP data:**
+### Tier A — Inventory report (lite)
+
+**Goal:** “What do I have?” — filesystem scan only, minimal fields, **no media scraping**, no API keys.
+
+- Output: single **HTML file** (and optional Markdown), same spirit as export `Report::to_file` — open in any browser from disk.
+- Rows: platform, filename/path, size; optional local match (MAME stem + listxml title/status if metadata already cached); playable/condition only when it comes from **local** data (e.g. MAME XML), not from the network.
+- **Outbound links only:** per row, templated URLs to public pages (e.g. adb.arcadeitalia, ScreenScraper/IGDB search, MobyGames search) — user clicks if they want more; app does not fetch.
+- No SQLite required; scan → write file. Suitable for CLI `--library-inventory` / GUI “Export inventory HTML”.
+
+### Tier B — Library database (full)
+
+**Goal:** Repeatable browse/search inside the app via **SQLite** (still no embedded web server).
 
 - Libraries: root path, platform id, last scan time.
 - Files: path, size, platform, optional hash (background/optional).
-- Games (when matched): canonical id, title, **playable / condition** fields, cover path (local cache), short description optional.
+- Games (when matched): canonical id, title, **playable / condition**, cover path (local cache), short description optional.
+- Enrichment jobs (optional): providers below; GUI grid/list + search reads DB only.
 
 **Playable / condition (per platform, keep honest):**
 
@@ -61,13 +72,11 @@ Store a small normalized enum on each row, e.g. `verified` \| `emulation_status`
 
 Defer: full MobyGames, RetroAchievements, browser emulators, multi-user, any always-on HTTP API in the app.
 
-**Essential work:**
+**Essential work (order):**
 
-- Schema + migrations (SQLite); scan job (filesystem walk).
-- Platform plugins: matcher per system (MAME stem, DAT hash, filename rules).
-- Enrichment job: fetch/cache **one cover per game** (+ optional screenshot); respect API keys in settings.
-- GUI: library settings, scan/enrich progress, grid/list + search (read DB only).
-- CLI/library: `scan-library`, `enrich-library` (optional; GUI can call same Rust API).
+1. **Tier A:** shared inventory scan + HTML report generator + link templates; GUI/CLI export path.
+2. **Tier B:** SQLite schema/migrations; reuse scan; matchers (MAME stem, DAT hash, filename rules).
+3. **Tier B only:** enrichment (cover cache); library settings + browse UI; `enrich-library` job.
 
 **Out of scope:** Launching games, save sync, reorganizing user folders, replacing RomM/LaunchBox for play.
 
