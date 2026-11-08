@@ -283,6 +283,11 @@ button.primary {
   transition: width 0.15s ease-out;
 }
 
+
+.progress-bar-copy {
+  height: 0.65rem;
+}
+
 .error {
   color: #ff8a8a;
   white-space: pre-wrap;

@@ -289,6 +289,27 @@ function progressPercent(view: ProgressView): number | null {
   return Math.min(100, Math.round((view.step / view.total) * 100));
 }
 
+/** Step 8 copy uses per-file counts; this bar tracks only that phase. */
+function copyProgressPercent(view: ProgressView): number | null {
+  if (
+    view.fileLen === undefined ||
+    view.filePos === undefined ||
+    view.fileLen <= 0
+  ) {
+    return null;
+  }
+  return Math.min(100, Math.round((view.filePos / view.fileLen) * 100));
+}
+
+function exportCopyInProgress(view: ProgressView | null): boolean {
+  return (
+    view !== null &&
+    view.fileLen !== undefined &&
+    view.fileLen > 0 &&
+    view.filePos !== undefined
+  );
+}
+
 function isCancelled(message: string): boolean {
   return message.toLowerCase().includes("cancelled");
 }
@@ -1340,38 +1361,8 @@ function App() {
             </>
           )}
 
-          {progress && busy && (
-            <div className="progress-panel" aria-live="polite">
-              <p className="progress">
-                Step {progress.step}/{progress.total} — {progress.message}
-                {progress.fileLen !== undefined &&
-                  progress.filePos !== undefined &&
-                  progress.fileLen > 0 && (
-                    <span className="progress-files">
-                      {" "}
-                      ({progress.filePos.toLocaleString()}/
-                      {progress.fileLen.toLocaleString()} source entries)
-                    </span>
-                  )}
-              </p>
-              {progressPercent(progress) !== null && (
-                <div
-                  className="progress-bar"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progressPercent(progress) ?? 0}
-                >
-                  <div
-                    className="progress-bar-fill"
-                    style={{ width: `${progressPercent(progress)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          <section className="panel plan-save">
+          {!exportCopyInProgress(progress) && (
+            <section className="panel plan-save">
             <h2>Save plan preview</h2>
             <p className="hint">
               Optional. Writes this preview without copying files. Markdown suits diffing and
@@ -1387,6 +1378,54 @@ function App() {
               </button>
             </div>
           </section>
+          )}
+
+          {progress && busy && (
+            <section className="panel export-progress" aria-live="polite">
+              <p className="progress">
+                Step {progress.step}/{progress.total} — {progress.message}
+              </p>
+              {exportCopyInProgress(progress) ? (
+                <>
+                  <p className="progress-files">
+                    Copying source entries{" "}
+                    {progress.filePos!.toLocaleString()} /{" "}
+                    {progress.fileLen!.toLocaleString()}
+                  </p>
+                  {copyProgressPercent(progress) !== null && (
+                    <div
+                      className="progress-bar progress-bar-copy"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={copyProgressPercent(progress) ?? 0}
+                      aria-label="Copy progress"
+                    >
+                      <div
+                        className="progress-bar-fill"
+                        style={{ width: `${copyProgressPercent(progress)}%` }}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                progressPercent(progress) !== null && (
+                  <div
+                    className="progress-bar"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progressPercent(progress) ?? 0}
+                  >
+                    <div
+                      className="progress-bar-fill"
+                      style={{ width: `${progressPercent(progress)}%` }}
+                    />
+                  </div>
+                )
+              )}
+            </section>
+          )}
 
           <section className="panel actions actions-review">
             <div className="actions-leading">
@@ -1421,11 +1460,15 @@ function App() {
               <dd>{exportResult.all_ok ? "All OK" : "Completed with errors"}</dd>
             </div>
             <div>
-              <dt>Selected games</dt>
+              <dt title="Machines in selected.txt (launch-ready after your filters)">
+                Selected games
+              </dt>
               <dd>{exportResult.selected_games}</dd>
             </div>
             <div>
-              <dt>Roms folder entries</dt>
+              <dt title="ZIPs, CHD folders, and other files copied into roms/">
+                Roms folder entries
+              </dt>
               <dd>{exportResult.roms_entries}</dd>
             </div>
             <div>
