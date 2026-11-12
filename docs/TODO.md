@@ -6,9 +6,9 @@ Lightweight backlog. Shipped MAME work: [RFC 0001](rfcs/0001-repair-and-simplify
 
 **Spec:** [RFC 0002](rfcs/0002-collection-library.md) (decisions locked for v1).
 
-v1 = **arcade only**, simplified enrich first, one SQLite DB in **user data**, GUI **Library** top-level, modules **`src/library/`** vs existing MAME export.
+First platform: **SNES** (ScreenScraper + thumbnail), then **arcade**. Incremental discover (new/changed/removed), `rusqlite` in user data, GUI **Library** top-level, **`src/library/`** vs MAME export. Ignore `MAME 0.288 CHDs (merged)` for now.
 
-Checklist lives in RFC 0002 (`LIB-01` …).
+Checklist: RFC 0002 (`LIB-01` …).
 
 ## Split ROM sets (storage mode)
 

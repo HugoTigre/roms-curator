@@ -1,95 +1,88 @@
 # RFC 0002 Collection library
 
-Status: **accepted direction**, not implemented. Tracks [TODO](../TODO.md); split-ROM work stays separate and later.
+Status: **accepted direction**, implementation starting. Tracks [TODO](../TODO.md).
 
-MAME **set curation** (export) remains the primary feature. This RFC is the **collection library**: discover what you own, enrich, browse in the app, export HTML.
+MAME **set curation** (export) remains the primary feature. This RFC is the **collection library**: discover, enrich, browse, export HTML.
 
-## v1 scope
+## Principles
 
-- **Platform:** **arcade (MAME)** only. Other platforms (SNES, Genesis, Amiga, …) add one at a time later with their own matchers and link templates.
-- **Enrich:** **simplified** first (no image download). **Full** enrich (cached covers via APIs) is a later phase.
-- **Split ROM storage mode:** not part of this RFC.
+- **One SQLite index** (`rusqlite`) under **application user data** (path shown in UI; user can delete DB).
+- **Discover is incremental for enrichment** — each scan still walks the configured roots and loads the rows for those roots. It records new, changed, restored, and removed files. Unchanged files stay in the index and are not queued for enrichment again.
+- **Browse is not useful without a thumbnail** — at least **one cover image per game** in the GUI (cached on disk under user data, not embedded in SQLite blobs).
+- **Free defaults:** [ScreenScraper](https://www.screenscraper.fr/) (+ dev registration) for console/computer metadata and covers; LaunchBox / EmuMovies **later**, opt-in only.
+- **Testing:** ignore paths like `MAME 0.288 CHDs (merged)` until arcade+CHD library work is scoped separately.
 
 ## User-facing behavior
 
-- Top-level GUI: **MAME export** vs **Library** (separate flows).
-- User configures **one or more folder roots per platform** (v1: arcade roots only).
-- Pipeline: **Discover** → **Enrich** → **Browse** or **Export HTML**. One **SQLite** index; changing export style or re-enriching does **not** rediscover files.
-- **Simplified enrich** may call **online sources for text/metadata** (titles, categories, emulation/playable where the provider gives it). It does **not** download box art or screenshots into the cache.
-- Every game row should expose:
-  - **Curated outbound links** when we can map the item (e.g. adb.arcadeitalia for MAME).
-  - A **Google search** link always (fallback when mapping is wrong or missing).
-- **Full enrich** (later): fetch/cache artwork; **HTML full export** references cached files or relative asset paths — **do not embed** thousands of images in one HTML file.
+- Top-level GUI: **MAME export** vs **Library**.
+- User assigns **folder roots per platform** (one platform wired at a time in code).
+- Pipeline: **Discover** → **Enrich** → **Browse** (search) / **Export HTML**.
+- Every row: **Google search** link; curated deep links when mapped (e.g. adb for MAME).
 
 ## Database
 
-- Single library DB under **application user data** (survives app reinstall).
-- UI: show **DB path**, optional **open folder**, **delete database** (with confirmation).
+Single DB file in app user data. Tables at minimum:
 
-## HTML export
+- **libraries** — platform id and display name.
+- **roots** — one row per folder the user assigned to that library (canonical path).
+- **files** — stable id, `root_id`, relative path, size, mtime, optional hash (later); **discover state** (`present` / `removed`). Unique key is `(root_id, relative_path)`.
+- **games** — enriched display fields (title, year, publisher, …), provider ids, **playable/condition**, `thumb_path` (filesystem cache).
 
-| Mode | Content |
-| --- | --- |
-| **Simplified** | Table/list: inventory + enriched text fields + curated links + Google search. No bundled images. |
-| **Full** (later) | Same rows plus **links/paths** to cached artwork alongside the HTML (sidecar directory), not inline base64. |
+A scan walks each root's tree and compares it to the files already stored for that root. Only **new, changed, and restored** files are marked `needs_enrich`. Unchanged files are counted and left alone.
 
-## Code organization
+## First platform (implementation order)
 
-Keep MAME export and library isolated so neither complicates the other:
+| Order | Platform | Why |
+| --- | --- | --- |
+| **1** | **SNES** | Flat No-Intro-style zips on test volume; ScreenScraper system id well defined; proves **discover + incremental + API enrich + thumbnail + search** end-to-end. |
+| **2** | **Arcade (MAME)** | listxml/CatVer for text/playable; adb links; ScreenScraper arcade is weaker — thumbnails via ScreenScraper when match works, else placeholder + links. |
+| **3** | **PC** | Later; messy layouts. |
 
-| Area | Responsibility |
-| --- | --- |
-| **MAME curator** | Existing `core/`, export `Catalog`, plan/copy, Tauri commands used today for setup → review → export. |
-| **Collection library** | New **`src/library/`** (discover, SQLite, enrich, link templates, HTML export). New Tauri commands and **`gui/library/`** (or equivalent route) for the Library top-level entry. |
+## Enrich (per platform plugin)
 
-Shared only where obvious: path validation, metadata cache paths, MAME listxml/CatVer loading for arcade matching.
+- **SNES:** ScreenScraper (filename/hash when available) → title, year, publisher/genre, description; download **one box cover** into cache; IGDB fallback later on miss.
+- **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links; thumbnail from ScreenScraper when matched else placeholder.
 
-## Arcade (v1) matching and links
-
-- **Discover:** record files under user-configured arcade roots (stem, path, size, mtime).
-- **Simplified enrich:** match stems to **cached MAME listxml** (+ CatVer when available) for title, category, driver/emulation **playable** fields; store provider id for link templates.
-- **Curated links (v1):** hyperlinks to [adb.arcadeitalia](https://adb.arcadeitalia.net/) (Arcade Database Italia) from the MAME machine name — **no adb API in v1**, user opens the page in a browser.
-- **Google:** `https://www.google.com/search?q=…` built from title + “MAME” (or machine name).
+Enrich runs in **batches** with rate limits; skips rows already enriched unless file mtime changed or user forces refresh.
 
 ## Online providers
 
-**Policy:** Default flows must work with **free** services and **no paid subscriptions**. Optional settings may use the user’s own **LaunchBox** / **EmuMovies** (or other) accounts or local files; those paths are **not required** for other users.
+**Policy:** Core flows work with **free** ScreenScraper + IGDB (fallback) + local listxml (arcade). Optional: Hasheous (free), LaunchBox local DB/Images, EmuMovies — not required for others.
 
-| Role | Provider | Cost | Notes |
-| --- | --- | --- | --- |
-| **Arcade identity / playable** | MAME listxml + CatVer (local/cache) | Free | v1 primary for arcade. |
-| **Arcade links** | adb.arcadeitalia URLs | Free | Link-only in v1. |
-| **Non-arcade default** | [ScreenScraper](https://www.screenscraper.fr/) API | Free account (+ dev id) | First choice when adding consoles/computers; hash or filename match. |
-| **Non-arcade fallback** | [IGDB](https://api-docs.igdb.com/) | Free Twitch dev credentials | Second choice; rate limits. |
-| **Hash → game id** | [Hasheous](https://hasheous.org/) | **Free** (hosted) | Optional: CRC/MD5/SHA1 lookup → IGDB / ScreenScraper ids; use only while the service remains free and terms allow. |
-| **Local DAT match** | No-Intro / Redump files | Free | Offline integrity / naming; not a scraper. |
-| **Link fallback** | Google search URL | Free | Every row. |
-| **Full enrich images** | ScreenScraper, IGDB, SteamGridDB (optional key) | Mostly free tiers | Later phase; cache to user data, sidecar HTML. |
+| Role | Provider |
+| --- | --- |
+| Console/computer metadata + **thumbnail** | ScreenScraper (primary) |
+| Fallback metadata | IGDB |
+| Arcade text / playable | MAME listxml + CatVer (local) |
+| Arcade links | adb.arcadeitalia URLs |
+| Hash → id (later) | Hasheous |
+| Every row | Google search URL |
+| Opt-in later | LaunchBox, EmuMovies |
 
-**Optional (personal, not default):**
+## HTML export
 
-| Provider | Use | Notes |
-| --- | --- | --- |
-| **LaunchBox** | Read local `LaunchBox.Metadata.db` and/or `Images` folders the user already has | No public games DB API; import path the user configures. |
-| **EmuMovies** | Media via Sync/API with the user’s subscription | Developer API access; ship as **opt-in credentials**, not core. |
+- **Simplified:** text + links (no mass image embed).
+- **Full-style:** reference cached thumbs beside HTML (sidecar folder).
 
-**Deferred / paid-only:** MobyGames API (paid tiers), scraping sites without APIs.
+## Code organization
 
-**Simplified enrich:** official APIs for **text** where configured; no image download. **Full enrich:** download media into cache. **Hasheous:** optional accelerator when hashes are computed; skip if unavailable.
+| Module | Role |
+| --- | --- |
+| `core/` + export GUI | MAME curator (unchanged) |
+| `src/library/` | discover, db, enrich providers, cache, html export |
+| `gui/library/` or routes | Library top-level UI |
 
-## Implementation phases (checklist)
+## Implementation phases
 
-- [ ] **LIB-01** `src/library/` skeleton + SQLite schema + user-data DB path + delete/open in settings.
-- [ ] **LIB-02** Discover arcade roots + incremental rescan (mtime/size).
-- [ ] **LIB-03** Simplified enrich (listxml/CatVer + curated links + Google).
-- [ ] **LIB-04** GUI Library top-level: configure roots, run discover/enrich, simple browse/search.
-- [ ] **LIB-05** Export simplified HTML from DB.
-- [ ] **LIB-06** (later) Full enrich + browse with artwork paths + full HTML template.
-- [ ] **LIB-07** (later) Additional platforms one at a time.
+- [x] **LIB-01** `src/library/` + `rusqlite` schema + user-data DB path. Settings UI (show/delete) comes with the Library screen.
+- [x] **LIB-02** Incremental **discover**: new, changed, restored, and removed files. Platform-agnostic; SNES is the first folder we will point it at.
+- [ ] **LIB-03** **Enrich** SNES via ScreenScraper (credentials in settings): title, year, publisher, **thumbnail cache**.
+- [ ] **LIB-04** GUI Library: pick root, scan, **search + grid with thumb**.
+- [ ] **LIB-05** Export HTML from DB.
+- [ ] **LIB-06** Arcade platform plugin (listxml + links + thumb/placeholder).
+- [ ] **LIB-07** Additional platforms one at a time.
 
-## Open later (not blocking v1)
+## Open later
 
-- Hash-based matching, DAT files for non-MAME platforms.
-- adb API for arcade text (v1 stays adb **links** only).
-- LaunchBox metadata / EmuMovies importers (opt-in).
-- Hasheous client integration when adding hash-based console matching.
+- CHD / merged CHD roots in library.
+- Hasheous, DAT files, adb API, LaunchBox/EmuMovies import.
