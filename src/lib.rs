@@ -21,6 +21,7 @@ use std::path::Path;
 
 pub mod cancel;
 pub mod core;
+pub mod library;
 pub mod models;
 pub mod utils;
 
