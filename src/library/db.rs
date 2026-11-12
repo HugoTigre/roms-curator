@@ -2,13 +2,13 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 pub use super::paths::default_library_db_path;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
-    version INTEGER NOT NULL
+    version INTEGER PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS libraries (
     id INTEGER PRIMARY KEY,
@@ -86,7 +86,7 @@ impl LibraryDb {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        let db = LibraryDb { conn };
+        let mut db = LibraryDb { conn };
         db.migrate()?;
         Ok(db)
     }
@@ -104,30 +104,27 @@ impl LibraryDb {
         Ok(PathBuf::from(name))
     }
 
-    fn migrate(&self) -> Result<(), Box<dyn Error>> {
+    fn migrate(&mut self) -> Result<(), Box<dyn Error>> {
         self.conn.execute_batch(SCHEMA)?;
-        let mut versions = Vec::new();
-        {
-            let mut stmt = self.conn.prepare("SELECT version FROM schema_version")?;
-            let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
-            for row in rows {
-                versions.push(row?);
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let version: Option<i64> = tx
+            .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+            .optional()?;
+        match version {
+            None => {
+                tx.execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
+            }
+            Some(1) => {}
+            Some(version) => {
+                return Err(format!(
+                    "Unsupported library database version {version} (this build reads version 1)"
+                )
+                .into());
             }
         }
-        if versions.is_empty() {
-            self.conn
-                .execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
-        } else if versions != [1] {
-            return Err(format!(
-                "Unsupported library database version {} (this build reads version 1)",
-                versions
-                    .iter()
-                    .map(|version| version.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-            .into());
-        }
+        tx.commit()?;
         Ok(())
     }
 

@@ -165,12 +165,10 @@ fn walk_files(root: &Path) -> Result<HashMap<String, SeenFile>, Box<dyn Error>> 
             let link_meta = fs::symlink_metadata(&path)
                 .map_err(|error| format!("Cannot read type of {}: {error}", path.display()))?;
             if is_link(&link_meta) {
-                let followed = fs::metadata(&path).map_err(|error| {
-                    format!("Cannot read metadata for {}: {error}", path.display())
-                })?;
-                if followed.is_dir() {
+                // A dangling or looping link must not abort the rest of the root.
+                let Ok(followed) = fs::metadata(&path) else {
                     continue;
-                }
+                };
                 if followed.is_file() {
                     record_file(&mut seen, root, &path, &followed)?;
                 }
@@ -299,13 +297,19 @@ mod tests {
             (FileState::Present, true)
         );
 
+        db.connection_mut()
+            .execute(
+                "UPDATE files SET needs_enrich = 0 WHERE relative_path = 'game.zip'",
+                [],
+            )
+            .unwrap();
         let second = discover_library(&mut db, library).unwrap();
         assert_eq!(second.added, 0);
         assert_eq!(second.unchanged, 1);
         assert_eq!(second.changed, 0);
         assert_eq!(
             enrich_flag(&db, library, "game.zip"),
-            (FileState::Present, true)
+            (FileState::Present, false)
         );
 
         let file = OpenOptions::new().write(true).open(&game).unwrap();
@@ -394,6 +398,7 @@ mod tests {
             .write_all(b"rom")
             .unwrap();
         symlink("game.zip", root.path().join("alias.zip")).unwrap();
+        symlink("missing.zip", root.path().join("dangling.zip")).unwrap();
         symlink(root.path(), root.path().join("loopdir")).unwrap();
         let library = db.create_library("snes", "SNES").unwrap();
         db.add_root(library, root.path()).unwrap();
