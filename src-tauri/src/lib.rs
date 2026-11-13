@@ -21,12 +21,14 @@ pub fn run() {
             library_cmd::library_credentials,
             library_cmd::library_save_credentials,
             library_cmd::library_add_root,
+            library_cmd::library_set_mame_version,
             library_cmd::library_remove_root,
             library_cmd::library_scan,
             library_cmd::library_enrich,
             library_cmd::library_search,
             library_cmd::library_delete,
             library_cmd::library_open_search,
+            library_cmd::library_open_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running roms-curator GUI");

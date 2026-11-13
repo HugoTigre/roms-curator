@@ -6,7 +6,7 @@ Lightweight backlog. Shipped MAME work: [RFC 0001](rfcs/0001-repair-and-simplify
 
 **Spec:** [RFC 0002](rfcs/0002-collection-library.md) (decisions locked for v1).
 
-First platform: **SNES** (ScreenScraper + thumbnail), then **arcade**. Incremental discover (new/changed/removed), `rusqlite` in user data, GUI **Library** top-level, **`src/library/`** vs MAME export. Ignore `MAME 0.288 CHDs (merged)` for now.
+**SNES** scrape still waits on a ScreenScraper developer id. **Arcade** (LIB-06) uses the local MAME list: title, year, manufacturer, playable, and an Arcade Database link. Add a platform in `src/library/platform.rs` and a provider under `src/library/platforms/`. Ignore `MAME 0.288 CHDs (merged)` for now.
 
 Checklist: RFC 0002 (`LIB-01` …).
 

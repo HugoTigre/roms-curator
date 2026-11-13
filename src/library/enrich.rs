@@ -36,6 +36,34 @@ pub struct GameMetadata {
     pub year: Option<String>,
     pub publisher: Option<String>,
     pub thumbnail: Option<Vec<u8>>,
+    pub playable: Option<bool>,
+    pub link: Option<String>,
+    /// Arcade export category. Other platforms leave this empty.
+    pub condition: Option<GameCondition>,
+}
+
+/// How an arcade set relates to the export list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameCondition {
+    Working,
+    NotWorking,
+    Bios,
+    System,
+}
+
+impl GameCondition {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Working => "working",
+            Self::NotWorking => "not_working",
+            Self::Bios => "bios",
+            Self::System => "system",
+        }
+    }
+
+    pub fn is_playable(self) -> bool {
+        matches!(self, Self::Working)
+    }
 }
 
 /// Result of looking up one ROM file name.
@@ -64,12 +92,21 @@ pub enum RomChecksum {
 pub struct RomQuery<'a> {
     pub name: &'a str,
     pub size: u64,
-    pub checksum: &'a RomChecksum,
+    /// Set when the provider matches file bytes. Arcade matches the file name.
+    pub checksum: Option<&'a RomChecksum>,
 }
 
-/// Platform-specific metadata source. ScreenScraper is the SNES implementation.
+/// Platform-specific metadata source.
+///
+/// ScreenScraper is the SNES implementation. Arcade reads a local MAME list.
+/// A new platform adds a type that implements this trait and a row in the
+/// platform registry.
 pub trait MetadataProvider {
     fn supports(&self, platform: &str) -> bool;
+    /// When false, enrichment does not hash the file before lookup.
+    fn wants_content_identity(&self) -> bool {
+        true
+    }
     fn lookup(&self, platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>>;
 }
 
@@ -116,11 +153,15 @@ pub fn enrich_library_reporting(
             .and_then(|name| name.to_str())
             .unwrap_or(file.relative_path.as_str());
         on_file((index as u64) + 1, total, &file.relative_path);
-        let identity = rom_identity(&file.path, file.size)?;
+        let content = if provider.wants_content_identity() {
+            Some(rom_identity(&file.path, file.size)?)
+        } else {
+            None
+        };
         let rom = RomQuery {
             name: rom_name,
-            size: identity.size,
-            checksum: &identity.checksum,
+            size: content.as_ref().map(|item| item.size).unwrap_or(file.size),
+            checksum: content.as_ref().map(|item| &item.checksum),
         };
         match provider.lookup(&platform, &rom) {
             Ok(Lookup::Found(metadata)) => {
@@ -136,6 +177,11 @@ pub fn enrich_library_reporting(
                         provider: metadata.provider,
                         provider_id: metadata.provider_id,
                         thumb_path: thumb_path.map(|path| path.display().to_string()),
+                        playable: metadata.playable,
+                        link: metadata.link,
+                        condition: metadata
+                            .condition
+                            .map(|condition| condition.as_str().to_string()),
                     },
                 )?;
                 stats.enriched += 1;
@@ -297,8 +343,9 @@ mod tests {
                 return Err("provider unavailable".into());
             }
             let checksum_ok = match rom.checksum {
-                RomChecksum::Sha1(sha1) => sha1.len() == 40,
-                RomChecksum::Crc32(crc) => crc.len() == 8,
+                Some(RomChecksum::Sha1(sha1)) => sha1.len() == 40,
+                Some(RomChecksum::Crc32(crc)) => crc.len() == 8,
+                None => false,
             };
             if rom.size == 0 || !checksum_ok {
                 return Err("lookup is missing the file size or checksum".into());
@@ -333,6 +380,9 @@ mod tests {
                 year: Some("1994".into()),
                 publisher: Some("Nintendo".into()),
                 thumbnail: Some(b"\x89PNG\r\n\x1a\nthumb".to_vec()),
+                playable: None,
+                link: None,
+                condition: None,
             }),
         };
         let stats = enrich_library(&mut db, library, cache.path(), &provider).unwrap();
@@ -377,6 +427,9 @@ mod tests {
                 year: None,
                 publisher: None,
                 thumbnail: Some(b"\x89PNGstale".to_vec()),
+                playable: None,
+                link: None,
+                condition: None,
             }),
         };
         enrich_library(&mut db, library, cache.path(), &found).unwrap();
@@ -479,7 +532,10 @@ mod tests {
         }
 
         fn lookup(&self, _platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>> {
-            *self.0.lock().unwrap() = Some((rom.size, rom.checksum.clone()));
+            let Some(checksum) = rom.checksum else {
+                return Err("lookup is missing the file checksum".into());
+            };
+            *self.0.lock().unwrap() = Some((rom.size, checksum.clone()));
             Ok(Lookup::Missing)
         }
     }

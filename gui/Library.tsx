@@ -3,14 +3,22 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 
-interface LibraryStatus {
-  db_path: string;
-  exists: boolean;
-  credentials_saved: boolean;
+interface PlatformStatus {
+  id: string;
+  name: string;
+  uses_mame_version: boolean;
+  mame_version: string | null;
   roots: string[];
   present: number;
   enriched: number;
   pending: number;
+}
+
+interface LibraryStatus {
+  db_path: string;
+  exists: boolean;
+  credentials_saved: boolean;
+  platforms: PlatformStatus[];
 }
 
 interface Credentials {
@@ -44,6 +52,9 @@ interface BrowseHit {
   publisher: string | null;
   thumb_path: string | null;
   needs_enrich: boolean;
+  playable: boolean | null;
+  link: string | null;
+  condition: "working" | "not_working" | "bios" | "system" | null;
 }
 
 interface ProgressView {
@@ -60,8 +71,7 @@ const SEARCH_LIMIT = 80;
 
 type LibraryScreen = "platforms" | "browse" | "settings";
 
-/** Platforms with a wired folder screen. More entries land here as each one is implemented. */
-const PLATFORMS = [{ id: "snes", name: "Super Nintendo" }] as const;
+type ScreenNote = { screen: LibraryScreen; text: string };
 
 export default function Library({
   active,
@@ -81,14 +91,30 @@ export default function Library({
     password: "",
   });
   const [query, setQuery] = useState("");
+  const [browsePlatform, setBrowsePlatform] = useState("snes");
+  const [versionDrafts, setVersionDrafts] = useState<Record<string, string>>({});
   const [hits, setHits] = useState<BrowseHit[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ScreenNote | null>(null);
+  const [error, setError] = useState<ScreenNote | null>(null);
   const [progress, setProgress] = useState<ProgressView | null>(null);
   const [busy, setBusy] = useState(false);
   const acceptProgress = useRef(false);
   const runId = useRef(0);
   const searchRequest = useRef(0);
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+
+  function clearError(where: LibraryScreen) {
+    setError((current) => (current?.screen === where ? null : current));
+  }
+
+  function showError(where: LibraryScreen, value: unknown) {
+    setError({ screen: where, text: String(value) });
+  }
+
+  function showNotice(where: LibraryScreen, text: string) {
+    setNotice({ screen: where, text });
+  }
 
   useEffect(() => {
     onBusyChange(busy);
@@ -141,10 +167,10 @@ export default function Library({
         }
         setStatus(nextStatus);
         setCreds(stored);
-        setError(null);
+        setVersionDrafts(versionDraftsFrom(nextStatus));
       } catch (loadError) {
         if (!cancelled) {
-          setError(String(loadError));
+          showError(screenRef.current, loadError);
         }
       }
     })();
@@ -159,7 +185,11 @@ export default function Library({
     }
     const request = ++searchRequest.current;
     const handle = window.setTimeout(() => {
-      void invoke<BrowseHit[]>("library_search", { query, limit: SEARCH_LIMIT })
+      void invoke<BrowseHit[]>("library_search", {
+        platform: browsePlatform,
+        query,
+        limit: SEARCH_LIMIT,
+      })
         .then((rows) => {
           if (request === searchRequest.current) {
             setHits(rows);
@@ -167,12 +197,12 @@ export default function Library({
         })
         .catch((searchError: unknown) => {
           if (request === searchRequest.current) {
-            setError(String(searchError));
+            showError("browse", searchError);
           }
         });
     }, 200);
     return () => window.clearTimeout(handle);
-  }, [active, query, status]);
+  }, [active, browsePlatform, query, status]);
 
   async function refresh() {
     const next = await invoke<LibraryStatus>("library_status");
@@ -180,7 +210,7 @@ export default function Library({
     setStatus(next);
   }
 
-  async function pickRoot(platformName: string) {
+  async function pickRoot(platformId: string, platformName: string) {
     const selected = await open({
       directory: true,
       multiple: false,
@@ -189,44 +219,50 @@ export default function Library({
     if (typeof selected !== "string") {
       return;
     }
-    setError(null);
+    clearError("platforms");
     try {
-      const next = await invoke<LibraryStatus>("library_add_root", { path: selected });
+      const next = await invoke<LibraryStatus>("library_add_root", {
+        platform: platformId,
+        path: selected,
+      });
       searchRequest.current += 1;
       setStatus(next);
-      setNotice(null);
+      setNotice((current) => (current?.screen === "platforms" ? null : current));
     } catch (addError) {
-      setError(String(addError));
+      showError("platforms", addError);
     }
   }
 
-  async function removeRoot(path: string) {
-    setError(null);
+  async function removeRoot(platformId: string, path: string) {
+    clearError("platforms");
     try {
-      const next = await invoke<LibraryStatus>("library_remove_root", { path });
+      const next = await invoke<LibraryStatus>("library_remove_root", {
+        platform: platformId,
+        path,
+      });
       searchRequest.current += 1;
       setStatus(next);
     } catch (removeError) {
-      setError(String(removeError));
+      showError("platforms", removeError);
     }
   }
 
   async function saveCredentials() {
-    setError(null);
+    clearError("settings");
     try {
       await invoke("library_save_credentials", { input: creds });
-      setNotice("ScreenScraper credentials saved.");
+      showNotice("settings", "ScreenScraper credentials saved.");
       await refresh();
     } catch (saveError) {
-      setError(String(saveError));
+      showError("settings", saveError);
     }
   }
 
-  function beginRun(): number {
+  function beginRun(where: LibraryScreen): number {
     runId.current += 1;
     acceptProgress.current = true;
     setBusy(true);
-    setError(null);
+    clearError(where);
     return runId.current;
   }
 
@@ -236,18 +272,33 @@ export default function Library({
     setProgress(null);
   }
 
-  async function scan() {
-    const id = beginRun();
+  async function saveMameVersion(platformId: string, version: string) {
+    clearError("platforms");
+    const next = await invoke<LibraryStatus>("library_set_mame_version", {
+      platform: platformId,
+      version,
+    });
+    setStatus(next);
+    setVersionDrafts(versionDraftsFrom(next));
+    return next;
+  }
+
+  async function scan(platformId: string) {
+    const id = beginRun("platforms");
     setProgress({ message: "Scanning…" });
     try {
-      const stats = await invoke<DiscoverStats>("library_scan", { runId: id });
+      const stats = await invoke<DiscoverStats>("library_scan", {
+        platform: platformId,
+        runId: id,
+      });
       const stopped = stats.cancelled ? " Stopped before the remaining folders." : "";
-      setNotice(
+      showNotice(
+        "platforms",
         `Scan: ${stats.added} added, ${stats.changed} changed, ${stats.unchanged} unchanged, ${stats.removed} removed, ${stats.restored} restored.${stopped}`,
       );
       await refresh();
     } catch (scanError) {
-      setError(String(scanError));
+      showError("platforms", scanError);
       await refresh().catch(() => undefined);
     } finally {
       endRun();
@@ -255,17 +306,35 @@ export default function Library({
   }
 
   async function enrich() {
-    const id = beginRun();
-    setProgress({ message: "Starting ScreenScraper…" });
+    const platform = status?.platforms.find((item) => item.id === browsePlatform);
+    if (platform?.uses_mame_version) {
+      const version = (versionDrafts[platform.id] ?? "").trim();
+      if (!version) {
+        showError("browse", `Set the MAME version for ${platform.name} before scraping.`);
+        return;
+      }
+      try {
+        await saveMameVersion(platform.id, version);
+      } catch (saveError) {
+        showError("browse", saveError);
+        return;
+      }
+    }
+    const id = beginRun("browse");
+    setProgress({ message: "Scraping…" });
     try {
-      const stats = await invoke<EnrichStats>("library_enrich", { runId: id });
+      const stats = await invoke<EnrichStats>("library_enrich", {
+        platform: browsePlatform,
+        runId: id,
+      });
       const stopped = stats.cancelled ? " Stopped before the remaining files." : "";
-      setNotice(
+      showNotice(
+        "browse",
         `Scrape: ${stats.enriched} matched, ${stats.missing} not found, ${stats.failed} failed.${stopped}`,
       );
       await refresh();
     } catch (enrichError) {
-      setError(String(enrichError));
+      showError("browse", enrichError);
       await refresh().catch(() => undefined);
     } finally {
       endRun();
@@ -283,28 +352,38 @@ export default function Library({
     if (!confirmed) {
       return;
     }
-    setError(null);
+    clearError("settings");
     searchRequest.current += 1;
     try {
       const next = await invoke<LibraryStatus>("library_delete");
       searchRequest.current += 1;
       setStatus(next);
+      setVersionDrafts(versionDraftsFrom(next));
       setHits([]);
-      setNotice("Library index deleted.");
+      showNotice("settings", "Library index deleted.");
     } catch (deleteError) {
-      setError(String(deleteError));
+      showError("settings", deleteError);
     }
   }
 
   async function openSearch(title: string) {
     try {
-      await invoke("library_open_search", { title });
+      await invoke("library_open_search", { platform: browsePlatform, title });
     } catch (openError) {
-      setError(String(openError));
+      showError("browse", openError);
+    }
+  }
+
+  async function openLink(url: string) {
+    try {
+      await invoke("library_open_link", { url });
+    } catch (openError) {
+      showError("browse", openError);
     }
   }
 
   const locked = busy || exportBusy;
+  const browsed = status?.platforms.find((item) => item.id === browsePlatform) ?? null;
   const filePercent =
     progress?.fileLen && progress.fileLen > 0 && progress.filePos !== undefined
       ? Math.min(100, Math.round((progress.filePos / progress.fileLen) * 100))
@@ -362,36 +441,49 @@ export default function Library({
           )}
         </div>
       )}
-      {notice && <p className="hint">{notice}</p>}
-      {error && <p className="error">{error}</p>}
+      {notice?.screen === screen && <p className="hint">{notice.text}</p>}
+      {error?.screen === screen && <p className="error">{error.text}</p>}
 
       {screen === "platforms" && (
         <section className="panel">
           <h2 className="panel-title">ROM folders</h2>
           <p className="hint">
             Choose the folder for each platform before scraping. Scan reads those folders into the
-            index. Browse scrapes titles and covers.
+            index. Browse fills in titles.
           </p>
-          {PLATFORMS.map((platform) => {
-            const wired = platform.id === "snes";
-            return (
+          {!status && <p className="hint">Loading the library…</p>}
+          {(status?.platforms ?? []).map((platform) => (
               <div key={platform.id} className="platform-block">
                 <h3 className="panel-title">{platform.name}</h3>
                 <p className="hint">
-                  {wired && status
-                    ? `${status.present.toLocaleString()} files indexed, ${status.pending.toLocaleString()} waiting to scrape.`
-                    : wired
-                      ? "Loading the library…"
-                      : "Not available yet."}
+                  {status
+                    ? `${platform.present.toLocaleString()} files indexed, ${platform.pending.toLocaleString()} waiting to scrape.`
+                    : "Loading the library…"}
                 </p>
-                {wired && status && status.roots.length > 0 ? (
+                {platform.uses_mame_version && (
+                  <label>
+                    MAME version
+                    <input
+                      value={versionDrafts[platform.id] ?? ""}
+                      onChange={(event) =>
+                        setVersionDrafts({
+                          ...versionDrafts,
+                          [platform.id]: event.currentTarget.value,
+                        })
+                      }
+                      placeholder="0.289"
+                      disabled={locked}
+                    />
+                  </label>
+                )}
+                {platform.roots.length > 0 ? (
                   <ul className="root-list">
-                    {status.roots.map((path) => (
+                    {platform.roots.map((path) => (
                       <li key={path}>
                         <span>{path}</span>
                         <button
                           type="button"
-                          onClick={() => void removeRoot(path)}
+                          onClick={() => void removeRoot(platform.id, path)}
                           disabled={locked}
                         >
                           Remove
@@ -400,36 +492,70 @@ export default function Library({
                     ))}
                   </ul>
                 ) : (
-                  wired && <p className="hint">No folder yet.</p>
+                  <p className="hint">No folder yet.</p>
                 )}
                 <div className="actions">
+                  {platform.uses_mame_version && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void saveMameVersion(platform.id, versionDrafts[platform.id] ?? "").then(
+                          () => {
+                            clearError("browse");
+                            showNotice("platforms", "MAME version saved.");
+                          },
+                          (saveError: unknown) => showError("platforms", saveError),
+                        )
+                      }
+                      disabled={locked}
+                    >
+                      Save version
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => void pickRoot(platform.name)}
-                    disabled={locked || !wired}
+                    onClick={() => void pickRoot(platform.id, platform.name)}
+                    disabled={locked}
                   >
                     Add folder
                   </button>
                   <button
                     type="button"
-                    onClick={() => void scan()}
-                    disabled={locked || !wired || !status || status.roots.length === 0}
+                    onClick={() => void scan(platform.id)}
+                    disabled={locked || platform.roots.length === 0}
                   >
                     Scan
                   </button>
                 </div>
               </div>
-            );
-          })}
+            ))}
         </section>
       )}
 
       {screen === "browse" && (
         <section className="panel">
           <h2 className="panel-title">Games</h2>
+          <label>
+            Platform
+            <select
+              value={browsePlatform}
+              onChange={(event) => {
+                searchRequest.current += 1;
+                setHits([]);
+                setBrowsePlatform(event.currentTarget.value);
+              }}
+              disabled={locked}
+            >
+              {(status?.platforms ?? [{ id: "snes", name: "Super Nintendo" }]).map((platform) => (
+                <option key={platform.id} value={platform.id}>
+                  {platform.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <p className="hint">
-            {status
-              ? `${status.enriched.toLocaleString()} with details, ${status.pending.toLocaleString()} waiting to scrape.`
+            {browsed
+              ? `${browsed.enriched.toLocaleString()} with details, ${browsed.pending.toLocaleString()} waiting to scrape.`
               : "Loading the library…"}
           </p>
           <div className="actions">
@@ -437,7 +563,7 @@ export default function Library({
               type="button"
               className="primary"
               onClick={() => void enrich()}
-              disabled={locked || !status || status.pending === 0}
+              disabled={locked || !browsed || browsed.pending === 0}
             >
               Scrape
             </button>
@@ -467,10 +593,19 @@ export default function Library({
                 )}
                 <div className="game-card-body">
                   <strong>{hit.title}</strong>
-                  <p>{[hit.year, hit.publisher].filter(Boolean).join(" · ") || hit.name}</p>
+                  <p>
+                    {[hit.year, hit.publisher, conditionLabel(hit)]
+                      .filter(Boolean)
+                      .join(" · ") || hit.name}
+                  </p>
                   <button type="button" onClick={() => void openSearch(hit.title)}>
                     Google
                   </button>
+                  {hit.link && (
+                    <button type="button" onClick={() => void openLink(hit.link ?? "")}>
+                      Arcade Database
+                    </button>
+                  )}
                 </div>
               </article>
             ))}
@@ -484,11 +619,14 @@ export default function Library({
           <p className="hint">
             {status?.credentials_saved
               ? "Saved in the app data folder. Scraping uses these before environment variables."
-              : "Save a developer id and member login, or set the ROMS_CURATOR_SCREENSCRAPER_* variables."}
+              : "Dev Username and Dev Password are the API login. Member and Password are the login for the site."}
+          </p>
+          <p className="hint">
+            Leave the debug password out. ScreenScraper limits that password to 100 uses a day.
           </p>
           <div className="two-col">
             <label>
-              Developer id
+              Dev Username
               <input
                 value={creds.dev_id}
                 onChange={(event) => setCreds({ ...creds, dev_id: event.currentTarget.value })}
@@ -497,7 +635,7 @@ export default function Library({
               />
             </label>
             <label>
-              Developer password
+              Dev Password
               <input
                 type="password"
                 value={creds.dev_password}
@@ -509,7 +647,7 @@ export default function Library({
               />
             </label>
             <label>
-              User
+              Member
               <input
                 value={creds.user}
                 onChange={(event) => setCreds({ ...creds, user: event.currentTarget.value })}
@@ -548,4 +686,31 @@ export default function Library({
       )}
     </div>
   );
+}
+
+function versionDraftsFrom(status: LibraryStatus): Record<string, string> {
+  return Object.fromEntries(
+    status.platforms.map((platform) => [platform.id, platform.mame_version ?? ""]),
+  );
+}
+
+function conditionLabel(hit: BrowseHit): string | null {
+  switch (hit.condition) {
+    case "working":
+      return "Working";
+    case "not_working":
+      return "Not working";
+    case "bios":
+      return "BIOS";
+    case "system":
+      return "System";
+    default:
+      if (hit.playable === true) {
+        return "Working";
+      }
+      if (hit.playable === false) {
+        return "Not working";
+      }
+      return null;
+  }
 }

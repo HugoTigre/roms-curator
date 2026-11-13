@@ -7,6 +7,8 @@ use serde::Serialize;
 
 pub use super::paths::default_library_db_path;
 
+const SCHEMA_VERSION: i64 = 4;
+
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
@@ -14,7 +16,8 @@ CREATE TABLE IF NOT EXISTS schema_version (
 CREATE TABLE IF NOT EXISTS libraries (
     id INTEGER PRIMARY KEY,
     platform TEXT NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    config TEXT
 );
 CREATE TABLE IF NOT EXISTS roots (
     id INTEGER PRIMARY KEY,
@@ -40,7 +43,10 @@ CREATE TABLE IF NOT EXISTS games (
     publisher TEXT,
     provider TEXT NOT NULL,
     provider_id TEXT NOT NULL,
-    thumb_path TEXT
+    thumb_path TEXT,
+    playable INTEGER,
+    link TEXT,
+    condition TEXT
 );
 "#;
 
@@ -107,6 +113,10 @@ pub struct BrowseHit {
     pub publisher: Option<String>,
     pub thumb_path: Option<String>,
     pub needs_enrich: bool,
+    pub playable: Option<bool>,
+    pub link: Option<String>,
+    /// Export category for arcade: `working`, `not_working`, `bios`, or `system`.
+    pub condition: Option<String>,
 }
 
 /// Metadata stored after a successful enrichment.
@@ -119,11 +129,37 @@ pub struct GameRecord {
     pub provider: String,
     pub provider_id: String,
     pub thumb_path: Option<String>,
+    /// Arcade sets this from the MAME driver. Other platforms leave it empty.
+    pub playable: Option<bool>,
+    /// Curated page for this game, when the platform has one.
+    pub link: Option<String>,
+    /// Arcade export category: `working`, `not_working`, `bios`, or `system`.
+    pub condition: Option<String>,
 }
 
 /// Open connection to the collection library database.
 pub struct LibraryDb {
     conn: Connection,
+}
+
+fn ensure_column(
+    tx: &rusqlite::Transaction<'_>,
+    table: &str,
+    column: &str,
+    decl: &str,
+) -> Result<(), Box<dyn Error>> {
+    let present: i64 = tx.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |row| row.get(0),
+    )?;
+    if present == 0 {
+        tx.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 impl LibraryDb {
@@ -175,18 +211,26 @@ impl LibraryDb {
             .optional()?;
         match version {
             None => {
-                tx.execute("INSERT INTO schema_version (version) VALUES (2)", [])?;
-            }
-            Some(1) => {
                 tx.execute(
-                    "UPDATE schema_version SET version = 2 WHERE version = 1",
-                    [],
+                    "INSERT INTO schema_version (version) VALUES (?1)",
+                    [SCHEMA_VERSION],
                 )?;
             }
-            Some(2) => {}
+            Some(found @ 1..=SCHEMA_VERSION) => {
+                ensure_column(&tx, "libraries", "config", "TEXT")?;
+                ensure_column(&tx, "games", "playable", "INTEGER")?;
+                ensure_column(&tx, "games", "link", "TEXT")?;
+                ensure_column(&tx, "games", "condition", "TEXT")?;
+                if found != SCHEMA_VERSION {
+                    tx.execute(
+                        "UPDATE schema_version SET version = ?1 WHERE version = ?2",
+                        [SCHEMA_VERSION, found],
+                    )?;
+                }
+            }
             Some(version) => {
                 return Err(format!(
-                    "Unsupported library database version {version} (this build reads version 2)"
+                    "Unsupported library database version {version} (this build reads version {SCHEMA_VERSION})"
                 )
                 .into());
             }
@@ -291,6 +335,72 @@ impl LibraryDb {
         Ok(platform)
     }
 
+    /// MAME list version stored for this library, when the platform uses one.
+    pub fn mame_version(&self, library_id: i64) -> Result<Option<String>, Box<dyn Error>> {
+        let Some(value) = self.config_value(library_id)? else {
+            return Ok(None);
+        };
+        Ok(value
+            .get("mame_version")
+            .and_then(|item| item.as_str())
+            .map(str::to_string)
+            .filter(|text| !text.is_empty()))
+    }
+
+    /// Save or clear the MAME list version. `289` is stored as `0.289`.
+    pub fn set_mame_version(
+        &self,
+        library_id: i64,
+        version: Option<&str>,
+    ) -> Result<(), Box<dyn Error>> {
+        let stored = match version.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(version) => Some(crate::parse_mame_version(version)?.display()),
+            None => None,
+        };
+        let mut value = match self.config_value(library_id)? {
+            Some(serde_json::Value::Object(map)) => serde_json::Value::Object(map),
+            _ => serde_json::json!({}),
+        };
+        let Some(map) = value.as_object_mut() else {
+            return Err("Library settings are not an object".into());
+        };
+        match stored {
+            Some(version) => {
+                map.insert("mame_version".into(), serde_json::Value::String(version));
+            }
+            None => {
+                map.remove("mame_version");
+            }
+        }
+        let text = if map.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        };
+        self.conn.execute(
+            "UPDATE libraries SET config = ?1 WHERE id = ?2",
+            params![text, library_id],
+        )?;
+        Ok(())
+    }
+
+    fn config_value(&self, library_id: i64) -> Result<Option<serde_json::Value>, Box<dyn Error>> {
+        let text: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT config FROM libraries WHERE id = ?1",
+                [library_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("Library {library_id} was not found"))?;
+        let Some(text) = text else {
+            return Ok(None);
+        };
+        let value = serde_json::from_str(&text)
+            .map_err(|error| format!("Library settings are not valid: {error}"))?;
+        Ok(Some(value))
+    }
+
     pub(crate) fn pending_files(
         &self,
         library_id: i64,
@@ -326,15 +436,21 @@ impl LibraryDb {
     ) -> Result<(), Box<dyn Error>> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO games (file_id, title, year, publisher, provider, provider_id, thumb_path)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO games (
+                file_id, title, year, publisher, provider, provider_id, thumb_path, playable, link,
+                condition
+             )
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(file_id) DO UPDATE SET
                 title = excluded.title,
                 year = excluded.year,
                 publisher = excluded.publisher,
                 provider = excluded.provider,
                 provider_id = excluded.provider_id,
-                thumb_path = excluded.thumb_path",
+                thumb_path = excluded.thumb_path,
+                playable = excluded.playable,
+                link = excluded.link,
+                condition = excluded.condition",
             params![
                 file_id,
                 game.title,
@@ -342,7 +458,10 @@ impl LibraryDb {
                 game.publisher,
                 game.provider,
                 game.provider_id,
-                game.thumb_path
+                game.thumb_path,
+                game.playable.map(i64::from),
+                game.link,
+                game.condition
             ],
         )?;
         tx.execute("UPDATE files SET needs_enrich = 0 WHERE id = ?1", [file_id])?;
@@ -363,7 +482,8 @@ impl LibraryDb {
         let game = self
             .conn
             .query_row(
-                "SELECT file_id, title, year, publisher, provider, provider_id, thumb_path
+                "SELECT file_id, title, year, publisher, provider, provider_id, thumb_path,
+                        playable, link, condition
                  FROM games WHERE file_id = ?1",
                 [file_id],
                 |row| {
@@ -375,6 +495,9 @@ impl LibraryDb {
                         provider: row.get(4)?,
                         provider_id: row.get(5)?,
                         thumb_path: row.get(6)?,
+                        playable: optional_flag(row.get(7)?),
+                        link: row.get(8)?,
+                        condition: row.get(9)?,
                     })
                 },
             )
@@ -467,7 +590,8 @@ impl LibraryDb {
         let pattern = like_contains(query.trim());
         let mut stmt = self.conn.prepare(
             "SELECT files.id, files.relative_path, files.needs_enrich,
-                    games.title, games.year, games.publisher, games.thumb_path
+                    games.title, games.year, games.publisher, games.thumb_path,
+                    games.playable, games.link, games.condition
              FROM files
              JOIN roots ON roots.id = files.root_id
              LEFT JOIN games ON games.file_id = files.id
@@ -502,6 +626,9 @@ impl LibraryDb {
                 publisher: row.get(5)?,
                 thumb_path: row.get(6)?,
                 needs_enrich: row.get::<_, i64>(2)? != 0,
+                playable: optional_flag(row.get(7)?),
+                link: row.get(8)?,
+                condition: row.get(9)?,
             })
         })?;
         let mut hits = Vec::new();
@@ -522,6 +649,10 @@ impl LibraryDb {
         )?;
         Ok(count)
     }
+}
+
+fn optional_flag(value: Option<i64>) -> Option<bool> {
+    value.map(|flag| flag != 0)
 }
 
 fn like_contains(query: &str) -> String {
@@ -575,6 +706,9 @@ mod tests {
                 provider: "fake".into(),
                 provider_id: "1".into(),
                 thumb_path: None,
+                playable: None,
+                link: None,
+                condition: None,
             },
         )
         .unwrap();
@@ -622,6 +756,9 @@ mod tests {
                 provider: "fake".into(),
                 provider_id: "1".into(),
                 thumb_path: None,
+                playable: None,
+                link: None,
+                condition: None,
             },
         )
         .unwrap();
@@ -656,6 +793,74 @@ mod tests {
         let again = readonly.search(library, "_", 20).unwrap();
         assert_eq!(again.len(), 1);
         assert_eq!(again[0].name, "a_b.zip");
+    }
+
+    #[test]
+    fn open_reads_a_game_saved_in_a_version_2_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.sqlite");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+             INSERT INTO schema_version (version) VALUES (2);
+             CREATE TABLE libraries (
+                id INTEGER PRIMARY KEY,
+                platform TEXT NOT NULL,
+                name TEXT NOT NULL
+             );
+             CREATE TABLE roots (
+                id INTEGER PRIMARY KEY,
+                library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+                path TEXT NOT NULL,
+                UNIQUE(library_id, path)
+             );
+             CREATE TABLE files (
+                id INTEGER PRIMARY KEY,
+                root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+                relative_path TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                mtime_secs INTEGER NOT NULL,
+                state TEXT NOT NULL CHECK(state IN ('present', 'removed')),
+                needs_enrich INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(root_id, relative_path)
+             );
+             CREATE TABLE games (
+                file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                year TEXT,
+                publisher TEXT,
+                provider TEXT NOT NULL,
+                provider_id TEXT NOT NULL,
+                thumb_path TEXT
+             );
+             INSERT INTO libraries (id, platform, name) VALUES (1, 'snes', 'Super Nintendo');
+             INSERT INTO roots (id, library_id, path) VALUES (1, 1, '/roms');
+             INSERT INTO files (id, root_id, relative_path, size, mtime_secs, state, needs_enrich)
+                VALUES (7, 1, 'metroid.zip', 12, 0, 'present', 0);
+             INSERT INTO games (file_id, title, year, publisher, provider, provider_id)
+                VALUES (7, 'Super Metroid', '1994', 'Nintendo', 'screenscraper', '1');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut db = LibraryDb::open(&path).unwrap();
+        let game = db.game_for_file(7).unwrap().unwrap();
+        assert_eq!(game.title, "Super Metroid");
+        assert_eq!(game.year.as_deref(), Some("1994"));
+        assert_eq!(game.publisher.as_deref(), Some("Nintendo"));
+        assert_eq!(game.playable, None);
+        assert_eq!(game.link, None);
+        assert_eq!(game.condition, None);
+        let hits = db.search(1, "Metroid", 20).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "Super Metroid");
+        assert_eq!(hits[0].playable, None);
+        assert_eq!(hits[0].condition, None);
+        let version: i64 = db
+            .connection_mut()
+            .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
     }
 
     #[test]

@@ -4,9 +4,11 @@ use std::process::Command;
 
 use roms_curator::library::{
     default_library_db_path, delete_library_storage, discover_library_stopping,
-    enrich_library_reporting, library_credentials_path, library_thumb_cache_dir, BrowseHit,
-    DiscoverStats, EnrichStats, LibraryDb, LibraryOverview, ScreenScraper, ScreenScraperCreds,
+    enrich_library_reporting, library_credentials_path, library_thumb_cache_dir, platform,
+    ArcadeCatalog, BrowseHit, DiscoverStats, EnrichStats, LibraryDb, MetadataProvider,
+    ScreenScraper, ScreenScraperCreds,
 };
+use roms_curator::{default_metadata_cache_dir, ensure_metadata};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -19,6 +21,16 @@ pub struct LibraryStatus {
     pub db_path: String,
     pub exists: bool,
     pub credentials_saved: bool,
+    pub platforms: Vec<PlatformStatus>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PlatformStatus {
+    pub id: String,
+    pub name: String,
+    pub uses_mame_version: bool,
+    pub mame_version: Option<String>,
     pub roots: Vec<String>,
     pub present: i64,
     pub enriched: i64,
@@ -34,32 +46,19 @@ pub struct CredentialInput {
     pub password: String,
 }
 
-fn status_from(db_path: String, exists: bool, overview: LibraryOverview) -> LibraryStatus {
-    let credentials_saved = library_credentials_path()
+fn credentials_saved() -> bool {
+    library_credentials_path()
         .ok()
-        .is_some_and(|path| path.is_file());
-    LibraryStatus {
-        db_path,
-        exists,
-        credentials_saved,
-        roots: overview.roots,
-        present: overview.present,
-        enriched: overview.enriched,
-        pending: overview.pending,
-    }
+        .is_some_and(|path| path.is_file())
 }
 
 fn empty_status(db_path: String) -> LibraryStatus {
-    status_from(
+    LibraryStatus {
         db_path,
-        false,
-        LibraryOverview {
-            roots: Vec::new(),
-            present: 0,
-            enriched: 0,
-            pending: 0,
-        },
-    )
+        exists: false,
+        credentials_saved: credentials_saved(),
+        platforms: platform_rows(None).unwrap_or_default(),
+    }
 }
 
 fn read_status() -> Result<LibraryStatus, String> {
@@ -69,28 +68,89 @@ fn read_status() -> Result<LibraryStatus, String> {
         .map_err(|error| error.to_string())?
         .display()
         .to_string();
-    let Some(library_id) = db.find_library("snes").map_err(|error| error.to_string())? else {
-        return Ok(status_from(
-            path_text,
-            true,
-            LibraryOverview {
-                roots: Vec::new(),
-                present: 0,
-                enriched: 0,
-                pending: 0,
-            },
-        ));
-    };
-    let overview = db.overview(library_id).map_err(|error| error.to_string())?;
-    Ok(status_from(path_text, true, overview))
+    Ok(LibraryStatus {
+        db_path: path_text,
+        exists: true,
+        credentials_saved: credentials_saved(),
+        platforms: platform_rows(Some(&db))?,
+    })
 }
 
-fn ensure_snes(db: &LibraryDb) -> Result<i64, String> {
-    if let Some(id) = db.find_library("snes").map_err(|error| error.to_string())? {
+fn platform_rows(db: Option<&LibraryDb>) -> Result<Vec<PlatformStatus>, String> {
+    let mut rows = Vec::new();
+    for spec in platform::all() {
+        let (mame_version, roots, present, enriched, pending) = match db {
+            Some(db) => match db
+                .find_library(spec.id)
+                .map_err(|error| error.to_string())?
+            {
+                Some(library_id) => {
+                    let overview = db.overview(library_id).map_err(|error| error.to_string())?;
+                    let version = if spec.uses_mame_version {
+                        db.mame_version(library_id)
+                            .map_err(|error| error.to_string())?
+                    } else {
+                        None
+                    };
+                    (
+                        version,
+                        overview.roots,
+                        overview.present,
+                        overview.enriched,
+                        overview.pending,
+                    )
+                }
+                None => (None, Vec::new(), 0, 0, 0),
+            },
+            None => (None, Vec::new(), 0, 0, 0),
+        };
+        rows.push(PlatformStatus {
+            id: spec.id.to_string(),
+            name: spec.name.to_string(),
+            uses_mame_version: spec.uses_mame_version,
+            mame_version,
+            roots,
+            present,
+            enriched,
+            pending,
+        });
+    }
+    Ok(rows)
+}
+
+fn ensure_library(db: &LibraryDb, platform_id: &str) -> Result<i64, String> {
+    let spec = platform::require(platform_id)?;
+    if let Some(id) = db
+        .find_library(spec.id)
+        .map_err(|error| error.to_string())?
+    {
         return Ok(id);
     }
-    db.create_library("snes", "SNES")
+    db.create_library(spec.id, spec.name)
         .map_err(|error| error.to_string())
+}
+
+fn provider_for(
+    db: &LibraryDb,
+    library_id: i64,
+    platform_id: &str,
+) -> Result<Box<dyn MetadataProvider>, String> {
+    let spec = platform::require(platform_id)?;
+    match spec.id {
+        "snes" => Ok(Box::new(ScreenScraper::new(creds_for_enrich()?))),
+        "arcade" => {
+            let version = db
+                .mame_version(library_id)
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Set the MAME version for Arcade before scraping.".to_string())?;
+            let paths = ensure_metadata(&version, &default_metadata_cache_dir(), false)
+                .map_err(|error| error.to_string())?;
+            let catalog = ArcadeCatalog::load(&paths.mame_xml, &paths.catver)
+                .map_err(|error| error.to_string())?;
+            Ok(Box::new(catalog))
+        }
+        other => Err(format!("Scraping is not implemented for {other}.")),
+    }
 }
 
 fn creds_for_enrich() -> Result<ScreenScraperCreds, String> {
@@ -140,21 +200,43 @@ pub fn library_save_credentials(input: CredentialInput) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn library_add_root(path: String) -> Result<LibraryStatus, String> {
+pub fn library_add_root(platform: String, path: String) -> Result<LibraryStatus, String> {
     let db = LibraryDb::open_default().map_err(|error| error.to_string())?;
-    let library_id = ensure_snes(&db)?;
+    let library_id = ensure_library(&db, &platform)?;
     db.add_root(library_id, std::path::Path::new(&path))
         .map_err(|error| error.to_string())?;
     read_status()
 }
 
 #[tauri::command]
-pub fn library_remove_root(path: String) -> Result<LibraryStatus, String> {
+pub fn library_set_mame_version(
+    platform: String,
+    version: String,
+) -> Result<LibraryStatus, String> {
+    let spec = platform::require(&platform)?;
+    if !spec.uses_mame_version {
+        return Err(format!("{} does not use a MAME version.", spec.name));
+    }
     let db = LibraryDb::open_default().map_err(|error| error.to_string())?;
+    let library_id = ensure_library(&db, spec.id)?;
+    let version = if version.trim().is_empty() {
+        None
+    } else {
+        Some(version.as_str())
+    };
+    db.set_mame_version(library_id, version)
+        .map_err(|error| error.to_string())?;
+    read_status()
+}
+
+#[tauri::command]
+pub fn library_remove_root(platform: String, path: String) -> Result<LibraryStatus, String> {
+    let db = LibraryDb::open_default().map_err(|error| error.to_string())?;
+    let spec = platform::require(&platform)?;
     let library_id = db
-        .find_library("snes")
+        .find_library(spec.id)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Add a SNES folder first.".to_string())?;
+        .ok_or_else(|| format!("Add a {} folder first.", spec.name))?;
     let ids = db
         .remove_root(library_id, &path)
         .map_err(|error| error.to_string())?;
@@ -171,27 +253,31 @@ pub fn library_remove_root(path: String) -> Result<LibraryStatus, String> {
 pub async fn library_scan(
     app: AppHandle,
     state: State<'_, JobState>,
+    platform: String,
     run_id: u64,
 ) -> Result<DiscoverStats, String> {
     let cancel = state.start(run_id);
     let app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || scan_blocking(&app, &cancel))
-        .await
-        .map_err(|error| format!("Scan task failed: {error}"))?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || scan_blocking(&app, &platform, &cancel))
+            .await
+            .map_err(|error| format!("Scan task failed: {error}"))?;
     state.clear(run_id);
     result
 }
 
 fn scan_blocking(
     app: &AppHandle,
+    platform_id: &str,
     cancel: &roms_curator::CancelFlag,
 ) -> Result<DiscoverStats, String> {
-    emit_phase(app, 1, 2, "Scanning SNES folders");
+    let spec = platform::require(platform_id)?;
+    emit_phase(app, 1, 2, format!("Scanning {} folders", spec.name));
     let mut db = LibraryDb::open_default().map_err(|error| error.to_string())?;
     let library_id = db
-        .find_library("snes")
+        .find_library(spec.id)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Add a SNES folder first.".to_string())?;
+        .ok_or_else(|| format!("Add a {} folder first.", spec.name))?;
     let stats = discover_library_stopping(&mut db, library_id, Some(cancel))
         .map_err(|error| error.to_string())?;
     if stats.cancelled {
@@ -214,35 +300,39 @@ fn scan_blocking(
 pub async fn library_enrich(
     app: AppHandle,
     state: State<'_, JobState>,
+    platform: String,
     run_id: u64,
 ) -> Result<EnrichStats, String> {
     let cancel = state.start(run_id);
     let app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || enrich_blocking(&app, &cancel))
-        .await
-        .map_err(|error| format!("Enrich task failed: {error}"))?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || enrich_blocking(&app, &platform, &cancel))
+            .await
+            .map_err(|error| format!("Enrich task failed: {error}"))?;
     state.clear(run_id);
     result
 }
 
 fn enrich_blocking(
     app: &AppHandle,
+    platform_id: &str,
     cancel: &roms_curator::CancelFlag,
 ) -> Result<EnrichStats, String> {
-    let creds = creds_for_enrich()?;
-    let provider = ScreenScraper::new(creds);
+    let spec = platform::require(platform_id)?;
     let cache = library_thumb_cache_dir().map_err(|error| error.to_string())?;
     let mut db = LibraryDb::open_default().map_err(|error| error.to_string())?;
     let library_id = db
-        .find_library("snes")
+        .find_library(spec.id)
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Add a SNES folder first.".to_string())?;
+        .ok_or_else(|| format!("Add a {} folder first.", spec.name))?;
+    emit_phase(app, 1, 1, format!("Loading {}", spec.name));
+    let provider = provider_for(&db, library_id, spec.id)?;
     let app = app.clone();
     enrich_library_reporting(
         &mut db,
         library_id,
         &cache,
-        &provider,
+        provider.as_ref(),
         Some(cancel),
         &mut |pos, len, name| {
             emit_files(&app, 1, 1, pos, len, name);
@@ -252,14 +342,22 @@ fn enrich_blocking(
 }
 
 #[tauri::command]
-pub fn library_search(query: String, limit: u32) -> Result<Vec<BrowseHit>, String> {
+pub fn library_search(
+    platform: String,
+    query: String,
+    limit: u32,
+) -> Result<Vec<BrowseHit>, String> {
+    let spec = platform::require(&platform)?;
     let db_path = default_library_db_path().map_err(|error| error.to_string())?;
     let db = match LibraryDb::open_readonly(&db_path) {
         Ok(db) => db,
         Err(_) if !db_path.is_file() => return Ok(Vec::new()),
         Err(error) => return Err(error.to_string()),
     };
-    let Some(library_id) = db.find_library("snes").map_err(|error| error.to_string())? else {
+    let Some(library_id) = db
+        .find_library(spec.id)
+        .map_err(|error| error.to_string())?
+    else {
         return Ok(Vec::new());
     };
     db.search(library_id, &query, limit)
@@ -274,9 +372,20 @@ pub fn library_delete() -> Result<LibraryStatus, String> {
 }
 
 #[tauri::command]
-pub fn library_open_search(title: String) -> Result<(), String> {
-    let query = format!("{title} SNES");
+pub fn library_open_search(platform: String, title: String) -> Result<(), String> {
+    let spec = platform::require(&platform)?;
+    let query = format!("{title} {}", spec.name);
     let url = format!("https://www.google.com/search?q={}", url_query(&query));
+    open_url(&url)
+}
+
+#[tauri::command]
+pub fn library_open_link(url: String) -> Result<(), String> {
+    if !url.starts_with("https://adb.arcadeitalia.net/")
+        && !url.starts_with("http://adb.arcadeitalia.net/")
+    {
+        return Err("That link is not an Arcade Database page.".into());
+    }
     open_url(&url)
 }
 
