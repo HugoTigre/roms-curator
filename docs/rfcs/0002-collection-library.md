@@ -40,7 +40,7 @@ A scan walks each root's tree and compares it to the files already stored for th
 
 ## Enrich (per platform plugin)
 
-- **SNES:** ScreenScraper (filename/hash when available) → title, year, publisher/genre, description; download **one box cover** into cache; IGDB fallback later on miss.
+- **SNES:** ScreenScraper (file name, plus CRC32 and uncompressed size for a zip, or SHA1 and on-disk size for a loose ROM) → title, year, publisher, and **one box cover** in the cache. Genre and description come later. IGDB fallback later on a miss.
 - **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links; thumbnail from ScreenScraper when matched else placeholder.
 
 Enrich runs in **batches** with rate limits; skips rows already enriched unless file mtime changed or user forces refresh.
@@ -76,7 +76,7 @@ Enrich runs in **batches** with rate limits; skips rows already enriched unless 
 
 - [x] **LIB-01** `src/library/` + `rusqlite` schema + user-data DB path. Settings UI (show/delete) comes with the Library screen.
 - [x] **LIB-02** Incremental **discover**: new, changed, restored, and removed files. Platform-agnostic; SNES is the first folder we will point it at.
-- [ ] **LIB-03** **Enrich** SNES via ScreenScraper (credentials in settings): title, year, publisher, **thumbnail cache**.
+- [x] **LIB-03** **Enrich** SNES via ScreenScraper: title, year, publisher, one thumbnail in the user-data cache. Each lookup sends the file name plus a checksum and size (CRC32 and uncompressed size for a zip, SHA1 and on-disk size otherwise) and waits on the member's per-minute limit. Credentials are `ROMS_CURATOR_SCREENSCRAPER_DEV_ID`, `ROMS_CURATOR_SCREENSCRAPER_DEV_PASSWORD`, `ROMS_CURATOR_SCREENSCRAPER_USER`, and `ROMS_CURATOR_SCREENSCRAPER_PASSWORD` until the Library screen stores them.
 - [ ] **LIB-04** GUI Library: pick root, scan, **search + grid with thumb**.
 - [ ] **LIB-05** Export HTML from DB.
 - [ ] **LIB-06** Arcade platform plugin (listxml + links + thumb/placeholder).

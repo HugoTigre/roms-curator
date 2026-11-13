@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS files (
     UNIQUE(root_id, relative_path)
 );
 CREATE INDEX IF NOT EXISTS files_root_state ON files(root_id, state);
+CREATE TABLE IF NOT EXISTS games (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    year TEXT,
+    publisher TEXT,
+    provider TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    thumb_path TEXT
+);
 "#;
 
 /// Whether a scanned file is still in its root folder.
@@ -68,6 +77,26 @@ pub struct FileRow {
     pub mtime_secs: i64,
     pub state: FileState,
     pub needs_enrich: bool,
+}
+
+/// One present file still waiting for metadata.
+pub(crate) struct PendingFile {
+    pub id: i64,
+    pub path: PathBuf,
+    pub relative_path: String,
+    pub size: u64,
+}
+
+/// Metadata stored after a successful enrichment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameRecord {
+    pub file_id: i64,
+    pub title: String,
+    pub year: Option<String>,
+    pub publisher: Option<String>,
+    pub provider: String,
+    pub provider_id: String,
+    pub thumb_path: Option<String>,
 }
 
 /// Open connection to the collection library database.
@@ -114,12 +143,18 @@ impl LibraryDb {
             .optional()?;
         match version {
             None => {
-                tx.execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
+                tx.execute("INSERT INTO schema_version (version) VALUES (2)", [])?;
             }
-            Some(1) => {}
+            Some(1) => {
+                tx.execute(
+                    "UPDATE schema_version SET version = 2 WHERE version = 1",
+                    [],
+                )?;
+            }
+            Some(2) => {}
             Some(version) => {
                 return Err(format!(
-                    "Unsupported library database version {version} (this build reads version 1)"
+                    "Unsupported library database version {version} (this build reads version 2)"
                 )
                 .into());
             }
@@ -210,6 +245,109 @@ impl LibraryDb {
 
     pub(crate) fn connection_mut(&mut self) -> &mut Connection {
         &mut self.conn
+    }
+
+    pub(crate) fn library_platform(&self, library_id: i64) -> Result<String, Box<dyn Error>> {
+        let platform = self
+            .conn
+            .query_row(
+                "SELECT platform FROM libraries WHERE id = ?1",
+                [library_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("Library {library_id} was not found"))?;
+        Ok(platform)
+    }
+
+    pub(crate) fn pending_files(
+        &self,
+        library_id: i64,
+    ) -> Result<Vec<PendingFile>, Box<dyn Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT files.id, roots.path, files.relative_path, files.size
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             WHERE roots.library_id = ?1 AND files.state = 'present' AND files.needs_enrich = 1
+             ORDER BY files.id",
+        )?;
+        let rows = stmt.query_map([library_id], |row| {
+            let root = PathBuf::from(row.get::<_, String>(1)?);
+            let relative_path: String = row.get(2)?;
+            Ok(PendingFile {
+                id: row.get(0)?,
+                path: root.join(&relative_path),
+                relative_path,
+                size: row.get::<_, i64>(3)? as u64,
+            })
+        })?;
+        let mut files = Vec::new();
+        for row in rows {
+            files.push(row?);
+        }
+        Ok(files)
+    }
+
+    pub(crate) fn save_game(
+        &mut self,
+        file_id: i64,
+        game: &GameRecord,
+    ) -> Result<(), Box<dyn Error>> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO games (file_id, title, year, publisher, provider, provider_id, thumb_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(file_id) DO UPDATE SET
+                title = excluded.title,
+                year = excluded.year,
+                publisher = excluded.publisher,
+                provider = excluded.provider,
+                provider_id = excluded.provider_id,
+                thumb_path = excluded.thumb_path",
+            params![
+                file_id,
+                game.title,
+                game.year,
+                game.publisher,
+                game.provider,
+                game.provider_id,
+                game.thumb_path
+            ],
+        )?;
+        tx.execute("UPDATE files SET needs_enrich = 0 WHERE id = ?1", [file_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn mark_enriched_missing(&mut self, file_id: i64) -> Result<(), Box<dyn Error>> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM games WHERE file_id = ?1", [file_id])?;
+        tx.execute("UPDATE files SET needs_enrich = 0 WHERE id = ?1", [file_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Stored metadata for one file, if enrichment found a game.
+    pub fn game_for_file(&self, file_id: i64) -> Result<Option<GameRecord>, Box<dyn Error>> {
+        let game = self
+            .conn
+            .query_row(
+                "SELECT file_id, title, year, publisher, provider, provider_id, thumb_path
+                 FROM games WHERE file_id = ?1",
+                [file_id],
+                |row| {
+                    Ok(GameRecord {
+                        file_id: row.get(0)?,
+                        title: row.get(1)?,
+                        year: row.get(2)?,
+                        publisher: row.get(3)?,
+                        provider: row.get(4)?,
+                        provider_id: row.get(5)?,
+                        thumb_path: row.get(6)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(game)
     }
 
     /// Count files in a library with the given state.
