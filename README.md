@@ -6,101 +6,84 @@
 
 ---
 
-Curates a MAME merged ROM set into a smaller, launch-ready tree plus a game list for frontends.
+Desktop app for a merged MAME ROM set. It separates working ROMs from non-working ROMs.
 
-Implementation status: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md) (MAME export). Planned library index: [RFC 0002](docs/rfcs/0002-collection-library.md). Backlog: [TODO.md](docs/TODO.md). Releases: [releasing.md](docs/releasing.md).
-
-Possible usages might include:
-
-1. As an Application to copy a merged ROM set into the files selected games need, and keep everything else beside them
-
-1. As a Library if you want to categorize your entire collection
-and do with it what you will.
+- **roms** holds the working games and the files they need to launch. Point MAME at this folder.
+- **rest** holds the non-working and unused files.
+- **selected.txt** lists the working games, one name per line, for frontends.
 
 __Index__
 
-- [Requirement / Dependencies](#requirement--dependencies)
+- [Using the app](#using-the-app)
 - [How this works](#how-this-works)
-- [Application run instructions](#application-run-instructions)
-- [Build instructions](#build-instructions)
-- [Library usage instructions](#library-usage-instructions)
+- [Command line](#command-line)
 - [FAQ](#faq)
 - [Useful links](#useful-links)
 - [Help](#help)
-- [Desktop curator](#desktop-curator)
 
-## Requirement / Dependencies
+## Using the app
 
-This program needs MAME listxml and CatVer for the same ROM set version. You can
-point the CLI at files you already have, or pass **`--mame-version`** (for example
-`0.289`) and let the tool download and cache them.
+Install [Rust](https://rustup.rs/) and Node.js 26 or newer. From this repository:
 
-Manual download (optional):
+```bash
+npm install
+npm run tauri dev
+```
 
-- MAME ROM database (xml file)
-  - download MAME from [here](https://www.mamedev.org/release.html).
-    keep in mind that you need the version that corresponds to your ROM Set version. 
-  - then extract the database:
-    ```bash
-    mame.exe -listxml > mame-roms.xml
-    ```
-- ROM categories file
-  - MAME does not categorize ROMs (some exceptions),
-    to categorize ROMs we need a `MAME Support File` file which can
-    be downloaded [here](https://www.progettosnaps.net/support/).
-  - download the package for your ROMs Set version and extract the
-    `catver.ini` file.
+That opens the window. Installers and other ways to build: [build instructions](docs/build-instructions.md).
 
-Automatic download:
+### Export
+
+1. Stay on **1. Setup**.
+2. Enter the MAME set version that matches your ROMs, for example `0.289`.
+3. Choose the merged ROM folder and an empty folder for the export. If CHDs live in another folder, add that too.
+4. Click **Preview plan**. The first run downloads the MAME machine list and the category file for that version, then shows which games would be kept and which files are missing. Export is the step that copies files.
+5. On **2. Plan review**, click **Export** when the plan looks right. **3. Export result** shows what landed in the destination.
+
+The destination must be empty. The app only reads your original collection.
+
+On Setup you can also:
+
+- Turn on **Strict selection** to keep only games MAME rates fully working. The default also keeps games rated imperfect.
+- Turn on **Include games with missing ROM or CHD dependencies** to put incomplete games on the launch list. Leave it off and `selected.txt` lists games you can launch.
+- Turn on **Re-download listxml and CatVer** to replace the cached metadata for this version.
+- Fill **From** and **Through** to export a slice of machine names. Leave both empty for the full list. A kept game still brings along the parent, BIOS, and disk files it needs.
+
+**Cancel** stops a preview or an export. Files already copied stay in the destination. [Export recovery](docs/gui-export-recovery.md) covers partial runs.
+
+From the review screen, **Save Markdown report…** and **Save HTML preview…** write the plan without copying.
+
+## How this works
+
+The export reads the machine list (`listxml`) and categories (`catver.ini`) for your ROM set version, then splits the set. A working machine has driver status and emulation that are both good or imperfect, and every ROM and CHD it needs is in the source. Imperfect sound or graphics does not change that. Strict selection counts a machine as working only when both values are good. Preliminary, mechanical, BIOS, device, and non-arcade categories (computers, consoles, handhelds, and similar) are non-working and stay off the list. Arcade genres such as shooter, puzzle, and slots stay eligible.
+
+The copy writes three things under the destination:
+
+- **roms**: every file a working game needs. That is its merged archive (the parent archive when the game is a clone), BIOS and device archives, and the CHD directories it needs. Point MAME at this folder.
+- **rest**: the non-working and unused files. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no working game needs land here too. On a full export, `roms` and `rest` together hold the whole source, so the original collection can be deleted after a successful run. A **From** / **Through** slice leaves names outside that range in the source unless a working game needs them.
+- **selected.txt**: working machine names, one per line, written only after every copy succeeds. By default every required ROM and CHD must be in the source. Frontends use this file. MAME still reads only `roms`.
+
+Missing CHDs show up in the plan and hold a game off `selected.txt` until you add the disk or include incomplete games. When that game's ROM zip is in the source, the copy still takes it, and places it in `rest`.
+
+A merged zip is copied whole, so unselected clones stored inside it stay in the file under `roms`. A game whose zip is in `rest` still needs the parent archive in `roms`.
+
+The app caches listxml and CatVer under `~/.cache/roms-curator/metadata` on Linux and macOS, or `%LOCALAPPDATA%\roms-curator\metadata` on Windows. To supply those files yourself, download the matching MAME build from [mamedev.org](https://www.mamedev.org/release.html) and run `mame.exe -listxml > mame-roms.xml`, and take `catver.ini` from the support files for that ROM set on [progettosnaps.net](https://www.progettosnaps.net/support/). The command line can point at those files directly.
+
+## Command line
+
+The `roms-curator` command runs the same MAME export as the desktop app. Build it with the [build instructions](docs/build-instructions.md), or take `roms-curator-linux` / `roms-curator.exe` from the [GitHub releases](https://github.com/HugoTigre/roms-curator/releases).
 
 ```bash
 roms-curator --mame-version=0.289 --source-path=/roms --destination-path=/roms-new/
 ```
 
-Files are stored under a cache directory. The default root is
-`~/.cache/roms-curator/metadata` on Linux and macOS, or
-`%LOCALAPPDATA%\\roms-curator\\metadata` on Windows. Set the **full cache root**
-(not the XDG base alone) with `--metadata-cache-dir` or `ROMS_CURATOR_CACHE`.
-Use `--metadata-refresh=true` to replace cached files.
+Flags, dry runs, and saved plans: [application run instructions](docs/app-run-instructions.md).
 
-## How this works
-
-`roms-curator` reads `mame.xml` and `catver.ini`, then categorizes each machine.
-A runnable arcade machine is selected when its driver status and emulation are
-both good or imperfect. Imperfect sound or graphics does not change that.
-Pass **`--strict-emulation=true`** to keep only machines where both values are
-**good** (imperfect or preliminary machines drop out). Preliminary, mechanical,
-BIOS, device, and non-arcade CatVer groups (computers,
-consoles, handhelds, and similar) are not selected. Arcade genres such as
-shooter, puzzle, and slots stay eligible. From here it copies your files into
-two folders under `destination_dir`.
-
-It can also generate a report with all copied files and/or errors encountered.
-`--plan-path` writes a JSON plan of the copy first: which games are kept and why, which files are present or missing, how large they are, and any destination conflicts. The copy checks that plan against the disk before it writes.
-
-- **roms**: every file a selected game needs. That is its merged archive (the parent archive when the game is a clone), BIOS and device archives, and the CHD directories it needs. Point MAME at this folder.
-- **rest**: every other source file. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no selected game needs land here too. This folder is what makes it safe to delete the original collection.
-- **selected.txt**: launch-ready machine names (by default every required ROM and CHD must be in the source), one per line, written only after every copy succeeds. Use `--include-incomplete-games=true` to list games with missing dependencies too. Frontends use this file; MAME still reads only `roms`. The report path must not be `selected.txt`.
-
-Required CHDs go to `roms` when present for **launch-ready** games. Missing CHDs are listed under **Missing CHDs** and **hold back** a game from `selected.txt` until you add the disk or pass `--include-incomplete-games=true`. If the game’s ROM zip is in the source, it is still copied, but to **`rest`** (not `roms`), because held-back games are outside the launch export set.
-
-A merged zip is copied whole, so unselected clones stored in it stay inside the file in `roms`. MAME uses only the `roms` folder. `rest` is the remainder, and a game left there will not run on its own when its parent archive moved into `roms`.
-
-## Application run instructions
-
-See [here](docs/app-run-instructions.md)
-
-## Build instructions
-
-See [here](docs/build-instructions.md)
-
-## Library usage instructions
-
-See [here](docs/lib-usage-instructions.md)
+Other Rust programs can call the same export code: [Rust API](docs/lib-usage-instructions.md).
 
 ## FAQ
 
-See [here](docs/faq.md)
+[FAQ](docs/faq.md) — the original collection, an existing destination, speed, `selected.txt`, merged sets, and frontends.
 
 ## Useful links
 
@@ -115,6 +98,4 @@ Please feel free to open an [Issue](https://github.com/HugoTigre/roms-curator/is
 - Something is missing from the documentation material or hard to understand;
 - Have any improvement suggestions or feature request.
 
-## Desktop curator
-
-Build and run the Tauri app: [build instructions](docs/build-instructions.md). Export cancellation and partial runs: [gui-export-recovery.md](docs/gui-export-recovery.md).
+Project notes: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md), [releasing.md](docs/releasing.md).
