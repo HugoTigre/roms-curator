@@ -13,13 +13,17 @@
     "windows": [
       {
         "title": "Roms Curator",
-        "width": 880,
-        "height": 720,
+        "width": 1100,
+        "height": 800,
         "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$DATA/roms-curator/thumbs/**"]
+      }
     }
   },
   "bundle": {

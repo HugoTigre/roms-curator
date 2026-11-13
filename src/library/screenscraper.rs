@@ -10,10 +10,13 @@
 //! (or `maxrequestsperdmin`) after the first response that includes it.
 
 use std::error::Error;
-use std::io::Read;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::enrich::{GameMetadata, Lookup, MetadataProvider, RomChecksum, RomQuery};
@@ -24,7 +27,7 @@ const SNES_SYSTEM_ID: u32 = 4;
 const FALLBACK_INTERVAL: Duration = Duration::from_secs(12);
 
 /// Developer and member credentials. Both are required by ScreenScraper.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ScreenScraperCreds {
     pub dev_id: String,
     pub dev_password: String,
@@ -42,6 +45,74 @@ impl ScreenScraperCreds {
             password: required_env("ROMS_CURATOR_SCREENSCRAPER_PASSWORD")?,
         })
     }
+
+    /// Credentials saved by the Library screen, if the file exists.
+    pub fn load_stored() -> Result<Option<Self>, Box<dyn Error>> {
+        Self::load_stored_at(&super::paths::library_credentials_path()?)
+    }
+
+    pub fn load_stored_at(path: &Path) -> Result<Option<Self>, Box<dyn Error>> {
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let text = fs::read_to_string(path).map_err(|error| {
+            format!(
+                "Cannot read ScreenScraper credentials {}: {error}",
+                path.display()
+            )
+        })?;
+        let creds = serde_json::from_str(&text).map_err(|error| {
+            format!(
+                "ScreenScraper credentials {} are not valid: {error}",
+                path.display()
+            )
+        })?;
+        Ok(Some(creds))
+    }
+
+    /// Write credentials for later enrichment. The file is only readable by this user.
+    pub fn save_stored(&self) -> Result<(), Box<dyn Error>> {
+        self.save_stored_at(&super::paths::library_credentials_path()?)
+    }
+
+    pub fn save_stored_at(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+        for (label, value) in [
+            ("developer id", self.dev_id.as_str()),
+            ("developer password", self.dev_password.as_str()),
+            ("user", self.user.as_str()),
+            ("password", self.password.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(format!("ScreenScraper {label} is empty").into());
+            }
+        }
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        let json = serde_json::to_vec_pretty(self)?;
+        write_private(path, &json)?;
+        Ok(())
+    }
+}
+
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 fn required_env(name: &str) -> Result<String, Box<dyn Error>> {
@@ -470,6 +541,30 @@ mod tests {
         for status in [401, 403, 423, 426, 429, 430, 431, 500, 503] {
             assert_eq!(classify_cover_http(status), CoverHttp::Retry(status));
         }
+    }
+
+    #[test]
+    fn credentials_round_trip_without_writing_the_user_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("screenscraper.json");
+        let creds = ScreenScraperCreds {
+            dev_id: "dev".into(),
+            dev_password: "dev-secret".into(),
+            user: "member".into(),
+            password: "member-secret".into(),
+        };
+        creds.save_stored_at(&path).unwrap();
+        assert_eq!(
+            ScreenScraperCreds::load_stored_at(&path).unwrap(),
+            Some(creds)
+        );
+        let blank = ScreenScraperCreds {
+            dev_id: " ".into(),
+            dev_password: "x".into(),
+            user: "x".into(),
+            password: "x".into(),
+        };
+        assert!(blank.save_stored_at(&path).is_err());
     }
 
     #[test]

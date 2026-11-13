@@ -8,16 +8,23 @@ use std::path::{Path, PathBuf};
 use sha1::{Digest, Sha1};
 use zip::ZipArchive;
 
+use serde::Serialize;
+
+use crate::CancelFlag;
+
 use super::db::{GameRecord, LibraryDb};
 
 /// How many files one enrich pass updated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub struct EnrichStats {
     pub enriched: u64,
     /// The provider had no match. The file is not queued again.
     pub missing: u64,
     /// Stopped on the first request or I/O error. That file stays queued.
     pub failed: u64,
+    /// The user cancelled. Files not yet visited stay queued.
+    pub cancelled: bool,
 }
 
 /// One matched game. `thumbnail` is the raw image bytes, if the provider had a cover.
@@ -76,18 +83,39 @@ pub fn enrich_library(
     cache_dir: &Path,
     provider: &dyn MetadataProvider,
 ) -> Result<EnrichStats, Box<dyn Error>> {
+    enrich_library_reporting(db, library_id, cache_dir, provider, None, &mut |_, _, _| {})
+}
+
+/// Same as [`enrich_library`], plus cancel and per-file progress.
+///
+/// `on_file` receives the 1-based index, the pending total, and the relative path
+/// before that file is looked up.
+pub fn enrich_library_reporting(
+    db: &mut LibraryDb,
+    library_id: i64,
+    cache_dir: &Path,
+    provider: &dyn MetadataProvider,
+    cancel: Option<&CancelFlag>,
+    on_file: &mut dyn FnMut(u64, u64, &str),
+) -> Result<EnrichStats, Box<dyn Error>> {
     let platform = db.library_platform(library_id)?;
     if !provider.supports(&platform) {
         return Err(format!("Enrichment is not implemented for platform {platform}").into());
     }
     fs::create_dir_all(cache_dir)?;
     let pending = db.pending_files(library_id)?;
+    let total = pending.len() as u64;
     let mut stats = EnrichStats::default();
-    for file in pending {
+    for (index, file) in pending.into_iter().enumerate() {
+        if cancel.is_some_and(CancelFlag::poll) {
+            stats.cancelled = true;
+            return Ok(stats);
+        }
         let rom_name = Path::new(&file.relative_path)
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or(file.relative_path.as_str());
+        on_file((index as u64) + 1, total, &file.relative_path);
         let identity = rom_identity(&file.path, file.size)?;
         let rom = RomQuery {
             name: rom_name,
@@ -381,6 +409,39 @@ mod tests {
             .to_string();
         assert!(error.contains("fail.sfc"), "{error}");
         assert!(db.files_for_root(db.roots(library).unwrap()[0].0).unwrap()[0].needs_enrich);
+    }
+
+    #[test]
+    fn cancel_leaves_pending_files_queued() {
+        let (_db_dir, root, mut db, library) = library_with_game("game.sfc");
+        File::create(root.path().join("second.sfc"))
+            .unwrap()
+            .write_all(b"rom")
+            .unwrap();
+        discover_library(&mut db, library).unwrap();
+        let cancel = crate::CancelFlag::new();
+        cancel.cancel();
+        let cache = tempfile::tempdir().unwrap();
+        let provider = FakeProvider {
+            lookup: Lookup::Missing,
+        };
+        let stats = enrich_library_reporting(
+            &mut db,
+            library,
+            cache.path(),
+            &provider,
+            Some(&cancel),
+            &mut |_, _, _| {},
+        )
+        .unwrap();
+        assert!(stats.cancelled);
+        assert_eq!(stats.missing, 0);
+        let root_id = db.roots(library).unwrap()[0].0;
+        assert!(db
+            .files_for_root(root_id)
+            .unwrap()
+            .iter()
+            .all(|row| row.needs_enrich));
     }
 
     #[test]
