@@ -8,6 +8,8 @@ mod db;
 mod discover;
 mod enrich;
 mod paths;
+pub mod platform;
+mod platforms;
 mod screenscraper;
 
 pub use db::{
@@ -15,8 +17,10 @@ pub use db::{
 };
 pub use discover::{discover_library, discover_library_stopping, DiscoverStats};
 pub use enrich::{
-    enrich_library, enrich_library_reporting, EnrichStats, GameMetadata, Lookup, MetadataProvider,
-    RomChecksum, RomQuery,
+    enrich_library, enrich_library_reporting, EnrichStats, GameCondition, GameMetadata, Lookup,
+    MetadataProvider, RomChecksum, RomQuery,
 };
 pub use paths::{delete_library_storage, library_credentials_path, library_thumb_cache_dir};
+pub use platform::Platform;
+pub use platforms::ArcadeCatalog;
 pub use screenscraper::{ScreenScraper, ScreenScraperCreds};

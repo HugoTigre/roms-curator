@@ -77,9 +77,9 @@ impl ScreenScraperCreds {
 
     pub fn save_stored_at(&self, path: &Path) -> Result<(), Box<dyn Error>> {
         for (label, value) in [
-            ("developer id", self.dev_id.as_str()),
-            ("developer password", self.dev_password.as_str()),
-            ("user", self.user.as_str()),
+            ("dev username", self.dev_id.as_str()),
+            ("dev password", self.dev_password.as_str()),
+            ("member", self.user.as_str()),
             ("password", self.password.as_str()),
         ] {
             if value.trim().is_empty() {
@@ -199,7 +199,10 @@ impl ScreenScraper {
             .query("romtype", "rom")
             .query("romnom", rom.name)
             .query("romtaille", &rom.size.to_string());
-        let request = match rom.checksum {
+        let Some(checksum) = rom.checksum else {
+            return Err("ScreenScraper lookup is missing a ROM checksum".into());
+        };
+        let request = match checksum {
             RomChecksum::Sha1(sha1) => request.query("sha1", sha1),
             RomChecksum::Crc32(crc) => request.query("crc", crc),
         };
@@ -353,6 +356,9 @@ pub(crate) fn parse_jeu_infos(json: &Value) -> Result<Lookup, Box<dyn Error>> {
         year,
         publisher,
         thumbnail: thumbnail.map(|url| url.into_bytes()),
+        playable: None,
+        link: None,
+        condition: None,
     }))
 }
 

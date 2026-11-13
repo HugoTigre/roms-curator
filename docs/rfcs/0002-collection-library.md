@@ -16,7 +16,7 @@ MAME **set curation** (export) remains the primary feature. This RFC is the **co
 
 - Top-level GUI: **MAME export** vs **Library**.
 - Library screens: **Platforms** (ROM folders, then scan), **Browse** (search, covers, scrape), **Settings** (ScreenScraper, index path, delete).
-- User assigns **folder roots per platform** (one platform wired at a time in code).
+- User assigns **folder roots per platform**. The screen lists every platform in the registry.
 - Pipeline: **Discover** → **Enrich** → **Browse** (search) / **Export HTML**.
 - Every row: **Google search** link; curated deep links when mapped (e.g. adb for MAME).
 
@@ -36,13 +36,13 @@ A scan walks each root's tree and compares it to the files already stored for th
 | Order | Platform | Why |
 | --- | --- | --- |
 | **1** | **SNES** | Flat No-Intro-style zips on test volume; ScreenScraper system id well defined; proves **discover + incremental + API enrich + thumbnail + search** end-to-end. |
-| **2** | **Arcade (MAME)** | listxml/CatVer for text/playable; adb links; ScreenScraper arcade is weaker — thumbnails via ScreenScraper when match works, else placeholder + links. |
+| **2** | **Arcade (MAME)** | listxml/CatVer for text and playable; adb links. Covers stay a placeholder. |
 | **3** | **PC** | Later; messy layouts. |
 
 ## Enrich (per platform plugin)
 
 - **SNES:** ScreenScraper (file name, plus CRC32 and uncompressed size for a zip, or SHA1 and on-disk size for a loose ROM) → title, year, publisher, and **one box cover** in the cache. Genre and description come later. IGDB fallback later on a miss.
-- **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links; thumbnail from ScreenScraper when matched else placeholder.
+- **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links. Covers stay a placeholder.
 
 Enrich runs in **batches** with rate limits; skips rows already enriched unless file mtime changed or user forces refresh.
 
@@ -80,7 +80,7 @@ Enrich runs in **batches** with rate limits; skips rows already enriched unless 
 - [x] **LIB-03** **Enrich** SNES via ScreenScraper: title, year, publisher, one thumbnail in the user-data cache. Each lookup sends the file name plus a checksum and size (CRC32 and uncompressed size for a zip, SHA1 and on-disk size otherwise) and waits on the member's per-minute limit. The Library screen saves credentials in `screenscraper.json` under user data. The `ROMS_CURATOR_SCREENSCRAPER_*` variables are the fallback when that file is absent.
 - [x] **LIB-04** GUI **Library** (separate from MAME export): **Platforms** for ROM folders and scan, **Browse** for search, covers, and scrape, **Settings** for ScreenScraper and the index. SNES is the first platform.
 - [ ] **LIB-05** Export HTML from DB.
-- [ ] **LIB-06** Arcade platform plugin (listxml + links + thumb/placeholder).
+- [x] **LIB-06** Arcade platform plugin. Platforms come from one registry (`src/library/platform.rs`) that the Library screen lists. Arcade matches a `.zip` or `.7z` stem to listxml and CatVer: title, year, manufacturer, playable under the same rules as export, and an Arcade Database link. Covers stay a placeholder. The MAME version is saved on that platform and reuses the export metadata cache. CHD files are left unmatched.
 - [ ] **LIB-07** Additional platforms one at a time.
 
 ## Open later
