@@ -15,6 +15,7 @@ MAME **set curation** (export) remains the primary feature. This RFC is the **co
 ## User-facing behavior
 
 - Top-level GUI: **MAME export** vs **Library**.
+- Library screens: **Platforms** (ROM folders, then scan), **Browse** (search, covers, scrape), **Settings** (ScreenScraper, index path, delete).
 - User assigns **folder roots per platform** (one platform wired at a time in code).
 - Pipeline: **Discover** → **Enrich** → **Browse** (search) / **Export HTML**.
 - Every row: **Google search** link; curated deep links when mapped (e.g. adb for MAME).
@@ -76,8 +77,8 @@ Enrich runs in **batches** with rate limits; skips rows already enriched unless 
 
 - [x] **LIB-01** `src/library/` + `rusqlite` schema + user-data DB path. Settings UI (show/delete) comes with the Library screen.
 - [x] **LIB-02** Incremental **discover**: new, changed, restored, and removed files. Platform-agnostic; SNES is the first folder we will point it at.
-- [x] **LIB-03** **Enrich** SNES via ScreenScraper: title, year, publisher, one thumbnail in the user-data cache. Each lookup sends the file name plus a checksum and size (CRC32 and uncompressed size for a zip, SHA1 and on-disk size otherwise) and waits on the member's per-minute limit. Credentials are `ROMS_CURATOR_SCREENSCRAPER_DEV_ID`, `ROMS_CURATOR_SCREENSCRAPER_DEV_PASSWORD`, `ROMS_CURATOR_SCREENSCRAPER_USER`, and `ROMS_CURATOR_SCREENSCRAPER_PASSWORD` until the Library screen stores them.
-- [ ] **LIB-04** GUI Library: pick root, scan, **search + grid with thumb**.
+- [x] **LIB-03** **Enrich** SNES via ScreenScraper: title, year, publisher, one thumbnail in the user-data cache. Each lookup sends the file name plus a checksum and size (CRC32 and uncompressed size for a zip, SHA1 and on-disk size otherwise) and waits on the member's per-minute limit. The Library screen saves credentials in `screenscraper.json` under user data. The `ROMS_CURATOR_SCREENSCRAPER_*` variables are the fallback when that file is absent.
+- [x] **LIB-04** GUI **Library** (separate from MAME export): **Platforms** for ROM folders and scan, **Browse** for search, covers, and scrape, **Settings** for ScreenScraper and the index. SNES is the first platform.
 - [ ] **LIB-05** Export HTML from DB.
 - [ ] **LIB-06** Arcade platform plugin (listxml + links + thumb/placeholder).
 - [ ] **LIB-07** Additional platforms one at a time.

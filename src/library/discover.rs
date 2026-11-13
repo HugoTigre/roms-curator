@@ -8,11 +8,15 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::params;
 use same_file::Handle;
+use serde::Serialize;
+
+use crate::CancelFlag;
 
 use super::db::{FileState, LibraryDb};
 
 /// Result of one incremental scan of a library's roots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub struct DiscoverStats {
     pub added: u64,
     pub changed: u64,
@@ -20,6 +24,8 @@ pub struct DiscoverStats {
     pub removed: u64,
     /// Previously removed files that are on disk again.
     pub restored: u64,
+    /// The user cancelled. Roots not yet finished are left unchanged.
+    pub cancelled: bool,
 }
 
 struct SeenFile {
@@ -36,10 +42,25 @@ pub fn discover_library(
     db: &mut LibraryDb,
     library_id: i64,
 ) -> Result<DiscoverStats, Box<dyn Error>> {
+    discover_library_stopping(db, library_id, None)
+}
+
+/// Scan every root, stopping between directories when `cancel` is set.
+///
+/// Roots already written stay in the index. The root in progress is not
+/// applied, so a partial walk cannot mark the rest of its files removed.
+pub fn discover_library_stopping(
+    db: &mut LibraryDb,
+    library_id: i64,
+    cancel: Option<&CancelFlag>,
+) -> Result<DiscoverStats, Box<dyn Error>> {
     let roots = db.roots(library_id)?;
     let mut stats = DiscoverStats::default();
     for (root_id, root_path) in roots {
-        let seen = walk_files(&root_path)?;
+        let Some(seen) = walk_files(&root_path, cancel)? else {
+            stats.cancelled = true;
+            return Ok(stats);
+        };
         apply_root(db, root_id, &seen, &mut stats)?;
     }
     Ok(stats)
@@ -141,11 +162,17 @@ fn load_files(
     Ok(files)
 }
 
-fn walk_files(root: &Path) -> Result<HashMap<String, SeenFile>, Box<dyn Error>> {
+fn walk_files(
+    root: &Path,
+    cancel: Option<&CancelFlag>,
+) -> Result<Option<HashMap<String, SeenFile>>, Box<dyn Error>> {
     let mut seen = HashMap::new();
     let mut stack = vec![root.to_path_buf()];
     let mut visited = HashSet::new();
     while let Some(dir) = stack.pop() {
+        if cancel.is_some_and(CancelFlag::poll) {
+            return Ok(None);
+        }
         if !visited.insert(directory_id(&dir)?) {
             continue;
         }
@@ -183,7 +210,7 @@ fn walk_files(root: &Path) -> Result<HashMap<String, SeenFile>, Box<dyn Error>> 
             }
         }
     }
-    Ok(seen)
+    Ok(Some(seen))
 }
 
 fn record_file(
@@ -425,5 +452,37 @@ mod tests {
         path.push(OsString::from_vec(vec![0xff, 0xfe]));
         let error = relative_key(root, &path).unwrap_err().to_string();
         assert!(error.contains("Unsupported ROM name"), "{error}");
+    }
+
+    #[test]
+    fn cancel_between_directories_keeps_finished_roots() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let (_db_dir, mut db) = temp_db();
+        let first_root = tempfile::tempdir().unwrap();
+        let second_root = tempfile::tempdir().unwrap();
+        File::create(first_root.path().join("one.zip")).unwrap();
+        File::create(second_root.path().join("two.zip")).unwrap();
+        let library = db.create_library("snes", "SNES").unwrap();
+        db.add_root(library, first_root.path()).unwrap();
+        db.add_root(library, second_root.path()).unwrap();
+
+        let cancel = CancelFlag::new();
+        let polls = Arc::new(AtomicUsize::new(0));
+        let polls_for_hook = Arc::clone(&polls);
+        let cancel_for_hook = cancel.clone();
+        cancel.on_each_poll(move || {
+            if polls_for_hook.fetch_add(1, Ordering::Relaxed) >= 1 {
+                cancel_for_hook.cancel();
+            }
+        });
+
+        let stats = discover_library_stopping(&mut db, library, Some(&cancel)).unwrap();
+        assert!(stats.cancelled);
+        assert_eq!(stats.added, 1);
+        let roots = db.roots(library).unwrap();
+        assert_eq!(db.files_for_root(roots[0].0).unwrap().len(), 1);
+        assert!(db.files_for_root(roots[1].0).unwrap().is_empty());
     }
 }

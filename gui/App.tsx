@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
+import Library from "./Library";
 
 interface PlanPreviewSummary {
   mame_build: string;
@@ -333,6 +334,9 @@ function App() {
   const [excludedQuery, setExcludedQuery] = useState("");
   const [heldBackQuery, setHeldBackQuery] = useState("");
   const [screen, setScreen] = useState<Screen>("setup");
+  const [mode, setMode] = useState<"export" | "library">("export");
+  const [librarySeen, setLibrarySeen] = useState(false);
+  const [libraryBusy, setLibraryBusy] = useState(false);
   const [reviewListsReady, setReviewListsReady] = useState(false);
   const [isReviewPending, startReviewTransition] = useTransition();
   const [planExportNotes, setPlanExportNotes] = useState<string[]>([]);
@@ -803,15 +807,42 @@ function App() {
     review.summary.selected_games > 0 &&
     (review.summary.missing_media > 0 || review.summary.unresolved > 0);
 
+  const areaLocked = busy || libraryBusy;
+
   return (
-    <main className="app">
+    <main className={mode === "library" ? "app app-wide" : "app"}>
       <header>
         <h1>Roms Curator</h1>
         <p className="lede">
-          Set paths and preferences, preview the plan, then export when you are ready.
+          {mode === "library"
+            ? "Point each platform at its ROM folders, then scrape and search."
+            : "Set paths and preferences, preview the plan, then export when you are ready."}
         </p>
       </header>
 
+      <nav className="mode-tabs" aria-label="Area">
+        <button
+          type="button"
+          className={mode === "export" ? "active" : undefined}
+          onClick={() => setMode("export")}
+          disabled={areaLocked}
+        >
+          MAME export
+        </button>
+        <button
+          type="button"
+          className={mode === "library" ? "active" : undefined}
+          onClick={() => {
+            setLibrarySeen(true);
+            setMode("library");
+          }}
+          disabled={areaLocked}
+        >
+          Library
+        </button>
+      </nav>
+
+      <div hidden={mode !== "export"}>
       <nav className="screen-tabs" aria-label="Workflow">
         <button
           type="button"
@@ -1500,6 +1531,16 @@ function App() {
           </button>
         </section>
         </>
+      )}
+      </div>
+      {librarySeen && (
+        <div hidden={mode !== "library"}>
+          <Library
+            active={mode === "library"}
+            exportBusy={busy}
+            onBusyChange={setLibraryBusy}
+          />
+        </div>
       )}
     </main>
   );

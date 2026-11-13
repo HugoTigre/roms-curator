@@ -2,7 +2,8 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
+use serde::Serialize;
 
 pub use super::paths::default_library_db_path;
 
@@ -87,6 +88,27 @@ pub(crate) struct PendingFile {
     pub size: u64,
 }
 
+/// Counts and folders for one platform library.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LibraryOverview {
+    pub roots: Vec<String>,
+    pub present: i64,
+    pub enriched: i64,
+    pub pending: i64,
+}
+
+/// One present file in a browse or search result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BrowseHit {
+    pub file_id: i64,
+    pub name: String,
+    pub title: String,
+    pub year: Option<String>,
+    pub publisher: Option<String>,
+    pub thumb_path: Option<String>,
+    pub needs_enrich: bool,
+}
+
 /// Metadata stored after a successful enrichment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameRecord {
@@ -122,6 +144,16 @@ impl LibraryDb {
 
     pub fn open_default() -> Result<Self, Box<dyn Error>> {
         Self::open(&default_library_db_path()?)
+    }
+
+    /// Open an existing database for queries. A missing file is left missing.
+    pub fn open_readonly(path: &Path) -> Result<Self, Box<dyn Error>> {
+        if !path.is_file() {
+            return Err(format!("Library database {} is missing", path.display()).into());
+        }
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        Ok(LibraryDb { conn })
     }
 
     pub fn path(&self) -> Result<PathBuf, Box<dyn Error>> {
@@ -350,6 +382,135 @@ impl LibraryDb {
         Ok(game)
     }
 
+    /// Library id for `platform`, when a library row exists.
+    pub fn find_library(&self, platform: &str) -> Result<Option<i64>, Box<dyn Error>> {
+        let id = self
+            .conn
+            .query_row(
+                "SELECT id FROM libraries WHERE platform = ?1 ORDER BY id LIMIT 1",
+                [platform],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
+    /// Folder paths and file counts for one library.
+    pub fn overview(&self, library_id: i64) -> Result<LibraryOverview, Box<dyn Error>> {
+        let roots = self
+            .roots(library_id)?
+            .into_iter()
+            .map(|(_, path)| path.display().to_string())
+            .collect();
+        let present = self.count_files(library_id, FileState::Present)?;
+        let pending: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM files
+             JOIN roots ON roots.id = files.root_id
+             WHERE roots.library_id = ?1 AND files.state = 'present' AND files.needs_enrich = 1",
+            [library_id],
+            |row| row.get(0),
+        )?;
+        let enriched: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM games
+             JOIN files ON files.id = games.file_id
+             JOIN roots ON roots.id = files.root_id
+             WHERE roots.library_id = ?1 AND files.state = 'present'",
+            [library_id],
+            |row| row.get(0),
+        )?;
+        Ok(LibraryOverview {
+            roots,
+            present,
+            enriched,
+            pending,
+        })
+    }
+
+    /// Remove one folder and the files indexed under it. Returns those file ids
+    /// so the caller can drop their cached covers.
+    pub fn remove_root(&self, library_id: i64, path: &str) -> Result<Vec<i64>, Box<dyn Error>> {
+        let root_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT id FROM roots WHERE library_id = ?1 AND path = ?2",
+                params![library_id, path],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(root_id) = root_id else {
+            return Err(format!("Library folder is not registered: {path}").into());
+        };
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM files WHERE root_id = ?1")?;
+        let rows = stmt.query_map([root_id], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        self.conn
+            .execute("DELETE FROM roots WHERE id = ?1", [root_id])?;
+        Ok(ids)
+    }
+
+    /// Present files whose name, title, year, or publisher matches `query`.
+    ///
+    /// An empty query returns the first matches in title order. `limit` is
+    /// clamped to 1..=200.
+    pub fn search(
+        &self,
+        library_id: i64,
+        query: &str,
+        limit: u32,
+    ) -> Result<Vec<BrowseHit>, Box<dyn Error>> {
+        let limit = limit.clamp(1, 200);
+        let pattern = like_contains(query.trim());
+        let mut stmt = self.conn.prepare(
+            "SELECT files.id, files.relative_path, files.needs_enrich,
+                    games.title, games.year, games.publisher, games.thumb_path
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE roots.library_id = ?1 AND files.state = 'present'
+               AND (
+                    ?2 = '%'
+                    OR files.relative_path LIKE ?2 ESCAPE '\\'
+                    OR IFNULL(games.title, '') LIKE ?2 ESCAPE '\\'
+                    OR IFNULL(games.publisher, '') LIKE ?2 ESCAPE '\\'
+                    OR IFNULL(games.year, '') LIKE ?2 ESCAPE '\\'
+               )
+             ORDER BY COALESCE(NULLIF(games.title, ''), files.relative_path) COLLATE NOCASE,
+                      files.id
+             LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![library_id, pattern, limit], |row| {
+            let relative_path: String = row.get(1)?;
+            let name = Path::new(&relative_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&relative_path)
+                .to_string();
+            let stored_title: Option<String> = row.get(3)?;
+            let title = stored_title
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| name.clone());
+            Ok(BrowseHit {
+                file_id: row.get(0)?,
+                name,
+                title,
+                year: row.get(4)?,
+                publisher: row.get(5)?,
+                thumb_path: row.get(6)?,
+                needs_enrich: row.get::<_, i64>(2)? != 0,
+            })
+        })?;
+        let mut hits = Vec::new();
+        for row in rows {
+            hits.push(row?);
+        }
+        Ok(hits)
+    }
+
     /// Count files in a library with the given state.
     pub fn count_files(&self, library_id: i64, state: FileState) -> Result<i64, Box<dyn Error>> {
         let count = self.conn.query_row(
@@ -360,5 +521,148 @@ impl LibraryDb {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+}
+
+fn like_contains(query: &str) -> String {
+    if query.is_empty() {
+        return "%".to_string();
+    }
+    let mut escaped = String::new();
+    for ch in query.chars() {
+        if ch == '\\' || ch == '%' || ch == '_' {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    format!("%{escaped}%")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::discover_library;
+    use std::fs::File;
+    use std::io::Write;
+
+    #[test]
+    fn search_matches_title_and_skips_removed_files() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for name in ["kept.zip", "other.zip"] {
+            File::create(root.path().join(name))
+                .unwrap()
+                .write_all(b"rom")
+                .unwrap();
+        }
+        let mut db = LibraryDb::open(&db_dir.path().join("library.sqlite")).unwrap();
+        let library = db.create_library("snes", "SNES").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+        let root_id = db.roots(library).unwrap()[0].0;
+        let files = db.files_for_root(root_id).unwrap();
+        let kept = files
+            .iter()
+            .find(|row| row.relative_path == "kept.zip")
+            .unwrap();
+        db.save_game(
+            kept.id,
+            &GameRecord {
+                file_id: kept.id,
+                title: "Super Metroid".into(),
+                year: Some("1994".into()),
+                publisher: Some("Nintendo".into()),
+                provider: "fake".into(),
+                provider_id: "1".into(),
+                thumb_path: None,
+            },
+        )
+        .unwrap();
+        std::fs::remove_file(root.path().join("other.zip")).unwrap();
+        discover_library(&mut db, library).unwrap();
+
+        let hits = db.search(library, "metroid", 20).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "Super Metroid");
+        assert_eq!(hits[0].year.as_deref(), Some("1994"));
+        assert!(!hits[0].needs_enrich);
+
+        let by_file = db.search(library, "kept.zip", 20).unwrap();
+        assert_eq!(by_file.len(), 1);
+        assert!(db.search(library, "other.zip", 20).unwrap().is_empty());
+
+        let overview = db.overview(library).unwrap();
+        assert_eq!(overview.present, 1);
+        assert_eq!(overview.enriched, 1);
+        assert_eq!(overview.pending, 0);
+    }
+
+    #[test]
+    fn remove_root_deletes_indexed_files_and_returns_their_ids() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        File::create(root.path().join("game.zip"))
+            .unwrap()
+            .write_all(b"rom")
+            .unwrap();
+        let mut db = LibraryDb::open(&db_dir.path().join("library.sqlite")).unwrap();
+        let library = db.create_library("snes", "SNES").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+        let (root_id, root_path) = db.roots(library).unwrap().remove(0);
+        let files = db.files_for_root(root_id).unwrap();
+        let file_id = files[0].id;
+        db.save_game(
+            file_id,
+            &GameRecord {
+                file_id,
+                title: "Game".into(),
+                year: None,
+                publisher: None,
+                provider: "fake".into(),
+                provider_id: "1".into(),
+                thumb_path: None,
+            },
+        )
+        .unwrap();
+
+        let path = root_path.to_str().unwrap();
+        let mut ids = db.remove_root(library, path).unwrap();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![file_id]);
+        assert!(db.roots(library).unwrap().is_empty());
+        assert!(db.files_for_root(root_id).unwrap().is_empty());
+        assert!(db.game_for_file(file_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn search_for_a_literal_underscore_does_not_match_another_character() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for name in ["a_b.zip", "axb.zip"] {
+            File::create(root.path().join(name)).unwrap();
+        }
+        let db_path = db_dir.path().join("library.sqlite");
+        let mut db = LibraryDb::open(&db_path).unwrap();
+        let library = db.create_library("snes", "SNES").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+
+        let hits = db.search(library, "_", 20).unwrap();
+        let names: Vec<_> = hits.into_iter().map(|hit| hit.name).collect();
+        assert_eq!(names, vec!["a_b.zip".to_string()]);
+
+        let readonly = LibraryDb::open_readonly(&db_path).unwrap();
+        let again = readonly.search(library, "_", 20).unwrap();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].name, "a_b.zip");
+    }
+
+    #[test]
+    fn readonly_open_leaves_a_missing_database_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.sqlite");
+        assert!(LibraryDb::open_readonly(&path).is_err());
+        assert!(!path.exists());
     }
 }
