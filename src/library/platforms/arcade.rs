@@ -1,7 +1,9 @@
 //! Arcade text from a local MAME listxml and CatVer file.
 //!
 //! A `.zip` or `.7z` is the machine named by its file stem. Other files, including
-//! CHD dumps, are left unmatched. Covers stay empty until a picture source exists.
+//! CHD dumps, are left unmatched. When download covers is on, a zip also asks
+//! ScreenScraper (MAME, system id 75) for the picture. The MAME list still
+//! supplies the title, year, manufacturer, and playable flag.
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -21,6 +23,10 @@ use crate::parse_categories;
 use crate::RomCategories;
 
 use super::super::enrich::{GameCondition, GameMetadata, Lookup, MetadataProvider, RomQuery};
+use super::super::screenscraper::ScreenScraper;
+
+/// ScreenScraper system id for MAME.
+const MAME_SYSTEM_ID: u32 = 75;
 
 pub struct ArcadeCatalog {
     games: HashMap<String, ArcadeGame>,
@@ -64,6 +70,87 @@ impl ArcadeCatalog {
             )),
         })
     }
+}
+
+/// Arcade text from the MAME list, with an optional ScreenScraper cover.
+pub struct ArcadeSource {
+    catalog: ArcadeCatalog,
+    covers: Option<ScreenScraper>,
+    keep_cover: bool,
+}
+
+impl ArcadeSource {
+    pub fn new(catalog: ArcadeCatalog, covers: Option<ScreenScraper>) -> Self {
+        Self {
+            catalog,
+            covers,
+            keep_cover: false,
+        }
+    }
+
+    /// A later image pass, or a text pass while covers stay enabled, must not
+    /// delete a picture this lookup did not replace.
+    pub fn keep_existing_cover(mut self) -> Self {
+        self.keep_cover = true;
+        self
+    }
+}
+
+impl MetadataProvider for ArcadeSource {
+    fn supports(&self, platform: &str) -> bool {
+        platform == "arcade"
+    }
+
+    fn wants_content_identity(&self) -> bool {
+        self.covers.is_some()
+    }
+
+    fn identify_file(&self, file_name: &str) -> bool {
+        self.covers.is_some() && is_zip_name(file_name)
+    }
+
+    fn lookup_without_identity(&self) -> bool {
+        true
+    }
+
+    fn keeps_existing_cover(&self) -> bool {
+        self.keep_cover
+    }
+
+    fn lookup(&self, platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>> {
+        if platform != "arcade" {
+            return Err(format!("Arcade enrichment is not implemented for {platform}").into());
+        }
+        let mut lookup = self.catalog.lookup_name(rom.name);
+        if let (Lookup::Found(metadata), Some(covers)) = (&mut lookup, &self.covers) {
+            if rom.checksum.is_some() {
+                attach_cover(metadata, covers.cover_for(MAME_SYSTEM_ID, rom), rom.name);
+            }
+        }
+        Ok(lookup)
+    }
+}
+
+fn attach_cover(
+    metadata: &mut GameMetadata,
+    cover: Result<Option<Vec<u8>>, Box<dyn Error>>,
+    file_name: &str,
+) {
+    match cover {
+        Ok(thumbnail) => metadata.thumbnail = thumbnail,
+        Err(error) => {
+            super::super::trace::line(format!(
+                "{file_name}: ScreenScraper cover failed ({error}). Keeping the MAME title."
+            ));
+        }
+    }
+}
+
+fn is_zip_name(file_name: &str) -> bool {
+    Path::new(file_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
 }
 
 impl MetadataProvider for ArcadeCatalog {
@@ -423,6 +510,15 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_cover_keeps_the_mame_title() {
+        let catalog = catalog();
+        let mut game = found(&catalog, "pacman.zip");
+        attach_cover(&mut game, Err("quota".into()), "pacman.zip");
+        assert_eq!(game.title, "Pac-Man");
+        assert!(game.thumbnail.is_none());
+    }
+
+    #[test]
     fn enrich_names_a_zip_without_reading_it_as_an_archive() {
         use crate::library::{discover_library, enrich_library, LibraryDb};
 
@@ -490,5 +586,26 @@ mod tests {
         let game = found(&catalog, "ddungeon.zip");
         assert_eq!(game.title, "Dungeons & Dragons");
         assert_eq!(game.publisher.as_deref(), Some("Atari & Capcom"));
+    }
+
+    #[test]
+    fn cover_lookup_hashes_zip_files_only() {
+        use super::super::super::screenscraper::ScreenScraperCreds;
+
+        let idle = ArcadeSource::new(catalog(), None);
+        assert!(!MetadataProvider::identify_file(&idle, "galaga.zip"));
+        let creds = ScreenScraperCreds {
+            dev_id: "dev".into(),
+            dev_password: "dev-secret".into(),
+            user: "member".into(),
+            password: "member-secret".into(),
+        };
+        let covers = ArcadeSource::new(
+            catalog(),
+            Some(ScreenScraper::new(creds).download_covers(true)),
+        );
+        assert!(MetadataProvider::identify_file(&covers, "galaga.zip"));
+        assert!(!MetadataProvider::identify_file(&covers, "galaga.7z"));
+        assert!(!MetadataProvider::identify_file(&covers, "galaga.chd"));
     }
 }

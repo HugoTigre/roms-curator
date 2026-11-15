@@ -103,6 +103,21 @@ pub struct LibraryOverview {
     pub pending: i64,
 }
 
+/// One scraped file that still has no game row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnmappedFile {
+    pub file_id: i64,
+    pub name: String,
+    pub relative_path: String,
+}
+
+/// Unmapped files for one platform. `files` is the first 2000.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnmappedList {
+    pub total: i64,
+    pub files: Vec<UnmappedFile>,
+}
+
 /// One present file in a browse or search result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BrowseHit {
@@ -117,6 +132,9 @@ pub struct BrowseHit {
     pub link: Option<String>,
     /// Export category for arcade: `working`, `not_working`, `bios`, or `system`.
     pub condition: Option<String>,
+    /// `igdb`, `screenscraper`, or `mame` once a row is saved.
+    pub provider: Option<String>,
+    pub provider_id: Option<String>,
 }
 
 /// Metadata stored after a successful enrichment.
@@ -429,6 +447,126 @@ impl LibraryDb {
         Ok(files)
     }
 
+    /// Ids this scrape should visit, in a stable order.
+    ///
+    /// `file_ids` set visits those present files. Otherwise a normal scrape
+    /// visits files still marked `needs_enrich`, and a cover pass visits games
+    /// that do not have a saved picture yet.
+    pub fn scrape_ids(
+        &self,
+        library_id: i64,
+        file_ids: Option<&[i64]>,
+        missing_covers_only: bool,
+    ) -> Result<Vec<i64>, Box<dyn Error>> {
+        if let Some(ids) = file_ids {
+            let mut ordered = Vec::new();
+            for id in ids {
+                if !ordered.contains(id) {
+                    ordered.push(*id);
+                }
+            }
+            if ordered.is_empty() {
+                return Ok(Vec::new());
+            }
+            let mut stmt = self.conn.prepare(
+                "SELECT 1 FROM files
+                 JOIN roots ON roots.id = files.root_id
+                 WHERE roots.library_id = ?1 AND files.id = ?2 AND files.state = 'present'",
+            )?;
+            for id in &ordered {
+                let found: Option<i64> = stmt
+                    .query_row(params![library_id, id], |row| row.get(0))
+                    .optional()?;
+                if found.is_none() {
+                    return Err("One of those games is no longer in this library.".into());
+                }
+            }
+            return Ok(ordered);
+        }
+        let sql = if missing_covers_only {
+            "SELECT files.id FROM files
+             JOIN roots ON roots.id = files.root_id
+             JOIN games ON games.file_id = files.id
+             WHERE roots.library_id = ?1 AND files.state = 'present'
+               AND (games.thumb_path IS NULL OR games.thumb_path = '')
+             ORDER BY files.id"
+        } else {
+            "SELECT files.id FROM files
+             JOIN roots ON roots.id = files.root_id
+             WHERE roots.library_id = ?1 AND files.state = 'present' AND files.needs_enrich = 1
+             ORDER BY files.id"
+        };
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map([library_id], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for id in rows {
+            ids.push(id?);
+        }
+        Ok(ids)
+    }
+
+    /// Present files for an explicit scrape, in the order requested.
+    ///
+    /// Already enriched files are included so a chosen game can be looked up again.
+    /// Duplicate ids are scraped once.
+    pub(crate) fn present_files_by_id(
+        &self,
+        library_id: i64,
+        ids: &[i64],
+    ) -> Result<Vec<PendingFile>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Err("Choose a game to scrape.".into());
+        }
+        if ids.len() > 200 {
+            return Err("Scrape at most 200 games at a time.".into());
+        }
+        let mut ordered = Vec::with_capacity(ids.len());
+        for id in ids {
+            if !ordered.contains(id) {
+                ordered.push(*id);
+            }
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT roots.path, files.relative_path, files.size
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             WHERE roots.library_id = ?1 AND files.id = ?2 AND files.state = 'present'",
+        )?;
+        let mut files = Vec::with_capacity(ordered.len());
+        for id in ordered {
+            let row = stmt
+                .query_row(params![library_id, id], |row| {
+                    let root = PathBuf::from(row.get::<_, String>(0)?);
+                    let relative_path: String = row.get(1)?;
+                    Ok(PendingFile {
+                        id,
+                        path: root.join(&relative_path),
+                        relative_path,
+                        size: row.get::<_, i64>(2)? as u64,
+                    })
+                })
+                .optional()?;
+            let Some(file) = row else {
+                return Err("One of those games is no longer in this library.".into());
+            };
+            files.push(file);
+        }
+        Ok(files)
+    }
+
+    /// The file is still in a scanned folder.
+    pub fn require_present_file(&self, file_id: i64) -> Result<(), Box<dyn Error>> {
+        let present: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM files WHERE id = ?1 AND state = 'present'",
+            [file_id],
+            |row| row.get(0),
+        )?;
+        if present == 0 {
+            return Err("That game is no longer in this library.".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn save_game(
         &mut self,
         file_id: i64,
@@ -591,7 +729,8 @@ impl LibraryDb {
         let mut stmt = self.conn.prepare(
             "SELECT files.id, files.relative_path, files.needs_enrich,
                     games.title, games.year, games.publisher, games.thumb_path,
-                    games.playable, games.link, games.condition
+                    games.playable, games.link, games.condition,
+                    games.provider, games.provider_id
              FROM files
              JOIN roots ON roots.id = files.root_id
              LEFT JOIN games ON games.file_id = files.id
@@ -629,6 +768,8 @@ impl LibraryDb {
                 playable: optional_flag(row.get(7)?),
                 link: row.get(8)?,
                 condition: row.get(9)?,
+                provider: row.get(10)?,
+                provider_id: row.get(11)?,
             })
         })?;
         let mut hits = Vec::new();
@@ -648,6 +789,51 @@ impl LibraryDb {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Present files that were scraped and still have no game.
+    ///
+    /// Files still waiting (`needs_enrich`) are not included. They have not
+    /// been looked up yet.
+    pub fn unmapped_files(&self, library_id: i64) -> Result<UnmappedList, Box<dyn Error>> {
+        const LIMIT: i64 = 2000;
+        let total: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE roots.library_id = ?1 AND files.state = 'present'
+               AND files.needs_enrich = 0 AND games.file_id IS NULL",
+            [library_id],
+            |row| row.get(0),
+        )?;
+        let mut stmt = self.conn.prepare(
+            "SELECT files.id, files.relative_path
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE roots.library_id = ?1 AND files.state = 'present'
+               AND files.needs_enrich = 0 AND games.file_id IS NULL
+             ORDER BY files.relative_path COLLATE NOCASE, files.id
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![library_id, LIMIT], |row| {
+            let relative_path: String = row.get(1)?;
+            let name = Path::new(&relative_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&relative_path)
+                .to_string();
+            Ok(UnmappedFile {
+                file_id: row.get(0)?,
+                name,
+                relative_path,
+            })
+        })?;
+        let mut files = Vec::new();
+        for row in rows {
+            files.push(row?);
+        }
+        Ok(UnmappedList { total, files })
     }
 }
 
@@ -869,5 +1055,49 @@ mod tests {
         let path = dir.path().join("library.sqlite");
         assert!(LibraryDb::open_readonly(&path).is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn unmapped_lists_scraped_files_with_no_game() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for name in ["kept.zip", "missed.zip", "waiting.zip"] {
+            File::create(root.path().join(name)).unwrap();
+        }
+        let mut db = LibraryDb::open(&dir.path().join("library.sqlite")).unwrap();
+        let library = db.create_library("pc", "PC").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+        let files = db.files_for_root(db.roots(library).unwrap()[0].0).unwrap();
+        let kept = files
+            .iter()
+            .find(|row| row.relative_path == "kept.zip")
+            .unwrap();
+        let missed = files
+            .iter()
+            .find(|row| row.relative_path == "missed.zip")
+            .unwrap();
+        db.save_game(
+            kept.id,
+            &GameRecord {
+                file_id: kept.id,
+                title: "Kept".into(),
+                year: None,
+                publisher: None,
+                provider: "fake".into(),
+                provider_id: "1".into(),
+                thumb_path: None,
+                playable: None,
+                link: None,
+                condition: None,
+            },
+        )
+        .unwrap();
+        db.mark_enriched_missing(missed.id).unwrap();
+
+        let unmapped = db.unmapped_files(library).unwrap();
+        assert_eq!(unmapped.total, 1);
+        assert_eq!(unmapped.files.len(), 1);
+        assert_eq!(unmapped.files[0].name, "missed.zip");
     }
 }

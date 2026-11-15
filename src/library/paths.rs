@@ -24,9 +24,19 @@ pub fn library_credentials_path() -> Result<PathBuf, Box<dyn Error>> {
     Ok(user_data_dir()?.join("screenscraper.json"))
 }
 
+/// IGDB Client ID and Client Secret saved by the Library screen.
+pub fn library_igdb_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(user_data_dir()?.join("igdb.json"))
+}
+
+/// Library preferences, including whether a scrape downloads covers.
+pub fn library_prefs_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(user_data_dir()?.join("library.json"))
+}
+
 /// Delete the index, its SQLite sidecars, and cached covers.
 ///
-/// Saved ScreenScraper credentials are left in place.
+/// Saved ScreenScraper and IGDB credentials are left in place.
 pub fn delete_library_storage() -> Result<(), Box<dyn Error>> {
     let db = default_library_db_path()?;
     remove_file_if_exists(&db)?;

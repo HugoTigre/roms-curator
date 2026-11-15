@@ -9,7 +9,7 @@ MAME **set curation** (export) remains the primary feature. This RFC is the **co
 - **One SQLite index** (`rusqlite`) under **application user data** (path shown in UI; user can delete DB).
 - **Discover is incremental for enrichment** — each scan still walks the configured roots and loads the rows for those roots. It records new, changed, restored, and removed files. Unchanged files stay in the index and are not queued for enrichment again.
 - **Browse is not useful without a thumbnail** — at least **one cover image per game** in the GUI (cached on disk under user data, not embedded in SQLite blobs).
-- **Free defaults:** [ScreenScraper](https://www.screenscraper.fr/) (+ dev registration) for console/computer metadata and covers; LaunchBox / EmuMovies **later**, opt-in only.
+- **Free defaults:** [ScreenScraper](https://www.screenscraper.fr/) (+ dev registration) for console metadata and covers, and for PC when IGDB has no exact title; [IGDB](https://www.igdb.com/) first for PC Windows titles; LaunchBox / EmuMovies **later**, opt-in only.
 - **Testing:** ignore paths like `MAME 0.288 CHDs (merged)` until arcade+CHD library work is scoped separately.
 
 ## User-facing behavior
@@ -36,24 +36,26 @@ A scan walks each root's tree and compares it to the files already stored for th
 | Order | Platform | Why |
 | --- | --- | --- |
 | **1** | **SNES** | Flat No-Intro-style zips on test volume; ScreenScraper system id well defined; proves **discover + incremental + API enrich + thumbnail + search** end-to-end. |
-| **2** | **Arcade (MAME)** | listxml/CatVer for text and playable; adb links. Covers stay a placeholder. |
-| **3** | **PC** | Later; messy layouts. |
+| **2** | **Arcade (MAME)** | listxml/CatVer for text and playable; adb links. Covers are a second ScreenScraper pass (system 75) when Download covers is on. |
+| **3** | **PC** | Shipped. IGDB is the first lookup for a Windows title. ScreenScraper is the fallback when IGDB has no exact match, or when only ScreenScraper credentials are saved. |
 
 ## Enrich (per platform plugin)
 
 - **SNES:** ScreenScraper (file name, plus CRC32 and uncompressed size for a zip, or SHA1 and on-disk size for a loose ROM) → title, year, publisher, and **one box cover** in the cache. Genre and description come later. IGDB fallback later on a miss.
-- **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links. Covers stay a placeholder.
+- **Arcade:** match stem to cached **listxml** (+ CatVer); emulation status; adb + Google links. That pass does not call ScreenScraper, so the whole set can finish. When Download covers is on, a second pass asks ScreenScraper for pictures. A missing archive hash or a failed cover request keeps the MAME title.
+- **PC:** clean the file name and ask IGDB for an exact Windows title first. ScreenScraper is used only after that miss, and only when its credentials are saved. A person can map a file to an IGDB game by hand when the automatic title does not match (for example `2` and `II`).
 
 Enrich runs in **batches** with rate limits; skips rows already enriched unless file mtime changed or user forces refresh.
 
 ## Online providers
 
-**Policy:** Core flows work with **free** ScreenScraper + IGDB (fallback) + local listxml (arcade). Optional: Hasheous (free), LaunchBox local DB/Images, EmuMovies — not required for others.
+**Policy:** Core flows work with **free** ScreenScraper for consoles, IGDB first for PC, ScreenScraper as the PC fallback, and local listxml for arcade text. Optional: Hasheous (free), LaunchBox local DB/Images, EmuMovies — not required for others.
 
 | Role | Provider |
 | --- | --- |
-| Console/computer metadata + **thumbnail** | ScreenScraper (primary) |
-| Fallback metadata | IGDB |
+| Console metadata + **thumbnail** | ScreenScraper (primary) |
+| PC metadata + **thumbnail** | IGDB first; ScreenScraper when IGDB has no exact Windows title |
+| Arcade cover | ScreenScraper (system 75), a separate pass when Download covers is on |
 | Arcade text / playable | MAME listxml + CatVer (local) |
 | Arcade links | adb.arcadeitalia URLs |
 | Hash → id (later) | Hasheous |
@@ -80,8 +82,9 @@ Enrich runs in **batches** with rate limits; skips rows already enriched unless 
 - [x] **LIB-03** **Enrich** SNES via ScreenScraper: title, year, publisher, one thumbnail in the user-data cache. Each lookup sends the file name plus a checksum and size (CRC32 and uncompressed size for a zip, SHA1 and on-disk size otherwise) and waits on the member's per-minute limit. The Library screen saves credentials in `screenscraper.json` under user data. The `ROMS_CURATOR_SCREENSCRAPER_*` variables are the fallback when that file is absent.
 - [x] **LIB-04** GUI **Library** (separate from MAME export): **Platforms** for ROM folders and scan, **Browse** for search, covers, and scrape, **Settings** for ScreenScraper and the index. SNES is the first platform.
 - [ ] **LIB-05** Export HTML from DB.
-- [x] **LIB-06** Arcade platform plugin. Platforms come from one registry (`src/library/platform.rs`) that the Library screen lists. Arcade matches a `.zip` or `.7z` stem to listxml and CatVer: title, year, manufacturer, playable under the same rules as export, and an Arcade Database link. Covers stay a placeholder. The MAME version is saved on that platform and reuses the export metadata cache. CHD files are left unmatched.
-- [ ] **LIB-07** Additional platforms one at a time.
+- [x] **LIB-06** Arcade platform plugin. Platforms come from one registry (`src/library/platform.rs`) that the Library screen lists. Arcade matches a `.zip` or `.7z` stem to listxml and CatVer: title, year, manufacturer, playable under the same rules as export, and an Arcade Database link. Covers are a second ScreenScraper pass (system 75) when Download covers is on. Before a ScreenScraper scrape, the app compares the number of games with the remaining daily allowance and asks whether to continue or stop at that allowance. The MAME version is saved on that platform and reuses the export metadata cache. CHD files are left unmatched.
+- [x] **LIB-07** PC platform. File names are cleaned and matched exactly. IGDB is asked first for Windows; ScreenScraper is used when IGDB has no exact title or when IGDB credentials are absent. A person can map a file to an IGDB game by hand.
+- [ ] Further platforms, one at a time.
 
 ## Open later
 

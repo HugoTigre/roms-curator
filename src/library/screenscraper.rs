@@ -1,4 +1,7 @@
-//! [ScreenScraper](https://www.screenscraper.fr/) lookup for SNES.
+//! [ScreenScraper](https://www.screenscraper.fr/) lookup for SNES and PC.
+//!
+//! Arcade text stays on the local MAME list. Arcade covers call
+//! [`ScreenScraper::cover_for`] with the MAME system id.
 //!
 //! Credentials come from the environment until the Library screen stores them:
 //! `ROMS_CURATOR_SCREENSCRAPER_DEV_ID`, `ROMS_CURATOR_SCREENSCRAPER_DEV_PASSWORD`,
@@ -20,9 +23,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::enrich::{GameMetadata, Lookup, MetadataProvider, RomChecksum, RomQuery};
+use super::pc_names::{pc_search_text, titles_match};
+use super::prefs::{LibraryPrefs, ScreenScraperQuota};
 
 const JEU_INFOS: &str = "https://www.screenscraper.fr/api2/jeuInfos.php";
+const JEU_RECHERCHE: &str = "https://www.screenscraper.fr/api2/jeuRecherche.php";
 const SNES_SYSTEM_ID: u32 = 4;
+/// Microsoft Windows. DOS is 135 and Windows 3.x is 136.
+const PC_WINDOWS_SYSTEM_ID: u32 = 138;
 /// Pace used until a response reports the member's per-minute allowance.
 const FALLBACK_INTERVAL: Duration = Duration::from_secs(12);
 
@@ -132,6 +140,9 @@ pub struct ScreenScraper {
     creds: ScreenScraperCreds,
     agent: ureq::Agent,
     pace: Mutex<Pace>,
+    download_covers: bool,
+    /// `snes` matches a checksum. `pc` matches a cleaned file name.
+    platform: &'static str,
 }
 
 impl ScreenScraper {
@@ -152,7 +163,21 @@ impl ScreenScraper {
                 interval: FALLBACK_INTERVAL,
                 ready_at: None,
             }),
+            download_covers: true,
+            platform: "snes",
         }
+    }
+
+    /// Match Windows games by file name instead of a ROM checksum.
+    pub fn for_pc(mut self) -> Self {
+        self.platform = "pc";
+        self
+    }
+
+    /// When false, lookups still store text and skip the cover download.
+    pub fn download_covers(mut self, enabled: bool) -> Self {
+        self.download_covers = enabled;
+        self
     }
 
     fn wait_turn(&self) {
@@ -230,7 +255,264 @@ impl ScreenScraper {
         let json: Value =
             serde_json::from_str(&text).map_err(|error| format!("ScreenScraper JSON: {error}"))?;
         self.note_rate(&json);
+        remember_quota(&json);
         Ok(Some(json))
+    }
+
+    /// Box art for a ROM ScreenScraper already knows by checksum. A miss is
+    /// `Ok(None)` so the caller can keep metadata from another source.
+    pub(crate) fn cover_for(
+        &self,
+        system_id: u32,
+        rom: &RomQuery,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
+        if !self.download_covers || rom.checksum.is_none() {
+            return Ok(None);
+        }
+        let Some(json) = self.jeu_infos(system_id, rom)? else {
+            return Ok(None);
+        };
+        let Lookup::Found(mut metadata) = parse_jeu_infos(&json)? else {
+            return Ok(None);
+        };
+        let Some(url_bytes) = metadata.thumbnail.take() else {
+            return Ok(None);
+        };
+        let url = String::from_utf8(url_bytes)
+            .map_err(|_| "ScreenScraper cover URL is not UTF-8".to_string())?;
+        self.download_thumbnail(&url)
+    }
+
+    fn jeu_recherche(&self, system_id: u32, query: &str) -> Result<Option<Value>, Box<dyn Error>> {
+        self.wait_turn();
+        let parsed = self.fetch_recherche(system_id, query);
+        self.finish_request();
+        parsed
+    }
+
+    fn fetch_recherche(
+        &self,
+        system_id: u32,
+        query: &str,
+    ) -> Result<Option<Value>, Box<dyn Error>> {
+        let response = self
+            .agent
+            .get(JEU_RECHERCHE)
+            .query("devid", &self.creds.dev_id)
+            .query("devpassword", &self.creds.dev_password)
+            .query("softname", "roms-curator")
+            .query("output", "json")
+            .query("ssid", &self.creds.user)
+            .query("sspassword", &self.creds.password)
+            .query("systemeid", &system_id.to_string())
+            .query("recherche", query)
+            .call();
+        let parsed = read_jeu_response(response)?;
+        if let Some(json) = &parsed {
+            self.note_rate(json);
+        }
+        Ok(parsed)
+    }
+
+    fn jeu_by_id(
+        &self,
+        system_id: u32,
+        game_id: &str,
+        rom_name: &str,
+    ) -> Result<Option<Value>, Box<dyn Error>> {
+        self.wait_turn();
+        let parsed = self.fetch_by_id(system_id, game_id, rom_name);
+        self.finish_request();
+        parsed
+    }
+
+    fn fetch_by_id(
+        &self,
+        system_id: u32,
+        game_id: &str,
+        rom_name: &str,
+    ) -> Result<Option<Value>, Box<dyn Error>> {
+        let response = self
+            .agent
+            .get(JEU_INFOS)
+            .query("devid", &self.creds.dev_id)
+            .query("devpassword", &self.creds.dev_password)
+            .query("softname", "roms-curator")
+            .query("output", "json")
+            .query("ssid", &self.creds.user)
+            .query("sspassword", &self.creds.password)
+            .query("systemeid", &system_id.to_string())
+            .query("gameid", game_id)
+            .query("romtype", "rom")
+            .query("romnom", rom_name)
+            .call();
+        let parsed = match response {
+            Ok(response) => read_ok_json(response)?,
+            Err(ureq::Error::Status(status, _response)) if blocks_scrape(status) => {
+                return Err(rejected_request(status).into());
+            }
+            Err(ureq::Error::Status(_, _response)) => None,
+            Err(ureq::Error::Transport(transport)) => {
+                return Err(transport_failure("request", &transport).into());
+            }
+        };
+        if let Some(json) = &parsed {
+            self.note_rate(json);
+        }
+        Ok(parsed)
+    }
+
+    fn finish_lookup(&self, mut lookup: Lookup) -> Result<Lookup, Box<dyn Error>> {
+        if let Lookup::Found(metadata) = &mut lookup {
+            if self.download_covers {
+                if let Some(url_bytes) = metadata.thumbnail.take() {
+                    let url = String::from_utf8(url_bytes)
+                        .map_err(|_| "ScreenScraper cover URL is not UTF-8".to_string())?;
+                    metadata.thumbnail = self.download_thumbnail(&url)?;
+                }
+            } else {
+                metadata.thumbnail = None;
+            }
+        }
+        Ok(lookup)
+    }
+
+    fn lookup_pc(&self, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>> {
+        let Some(query) = pc_search_text(rom.name) else {
+            super::trace::line(format!(
+                "{}: the file name has nothing to search.",
+                rom.name
+            ));
+            return Ok(Lookup::Missing);
+        };
+        let Some(json) = self.jeu_recherche(PC_WINDOWS_SYSTEM_ID, &query)? else {
+            super::trace::line(format!(
+                "{query}: ScreenScraper had no exact Windows title."
+            ));
+            return Ok(Lookup::Missing);
+        };
+        blocking_erreur(&json)?;
+        let Some(jeu) = choose_pc_game(&json, &query) else {
+            super::trace::line(format!(
+                "{query}: ScreenScraper had no exact Windows title."
+            ));
+            return Ok(Lookup::Missing);
+        };
+        let mut lookup = metadata_from_jeu(jeu)?;
+        let needs_cover = self.download_covers
+            && matches!(&lookup, Lookup::Found(metadata) if metadata.thumbnail.is_none());
+        if needs_cover {
+            if let Some(game_id) = jeu_id(jeu) {
+                if let Some(detailed) = self.jeu_by_id(PC_WINDOWS_SYSTEM_ID, &game_id, rom.name)? {
+                    if let Lookup::Found(metadata) = parse_jeu_infos(&detailed)? {
+                        lookup = Lookup::Found(metadata);
+                    }
+                }
+            }
+        }
+        self.finish_lookup(lookup)
+    }
+}
+
+fn read_jeu_response(
+    response: Result<ureq::Response, ureq::Error>,
+) -> Result<Option<Value>, Box<dyn Error>> {
+    let response = match response {
+        Ok(response) => response,
+        Err(ureq::Error::Status(status, _response)) => {
+            return match classify_jeu_http(status) {
+                JeuHttp::Missing => Ok(None),
+                JeuHttp::Ok | JeuHttp::Rejected(_) => Err(rejected_request(status).into()),
+            };
+        }
+        Err(ureq::Error::Transport(transport)) => {
+            return Err(transport_failure("request", &transport).into());
+        }
+    };
+    read_ok_json(response)
+}
+
+fn read_ok_json(response: ureq::Response) -> Result<Option<Value>, Box<dyn Error>> {
+    match classify_jeu_http(response.status()) {
+        JeuHttp::Missing => return Ok(None),
+        JeuHttp::Rejected(status) => return Err(rejected_request(status).into()),
+        JeuHttp::Ok => {}
+    }
+    let text = response
+        .into_string()
+        .map_err(|_| "ScreenScraper returned a body that is not text".to_string())?;
+    let json: Value =
+        serde_json::from_str(&text).map_err(|error| format!("ScreenScraper JSON: {error}"))?;
+    remember_quota(&json);
+    Ok(Some(json))
+}
+
+/// A ScreenScraper `erreur` other than a miss fails the lookup.
+///
+/// Treating it as a miss would clear a game that was already saved.
+fn blocking_erreur(json: &Value) -> Result<(), Box<dyn Error>> {
+    let response = json.get("response").unwrap_or(json);
+    let Some(error) = response.get("erreur").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let folded = error.to_ascii_lowercase();
+    if folded.contains("introuvable") || folded.contains("not found") {
+        return Ok(());
+    }
+    Err(format!("ScreenScraper: {error}").into())
+}
+
+fn blocks_scrape(status: u16) -> bool {
+    matches!(status, 401 | 403 | 423 | 426 | 429 | 430 | 431) || (500..600).contains(&status)
+}
+
+fn choose_pc_game<'a>(json: &'a Value, query: &str) -> Option<&'a Value> {
+    let response = json.get("response").unwrap_or(json);
+    if let Some(error) = response.get("erreur").and_then(Value::as_str) {
+        let folded = error.to_ascii_lowercase();
+        if folded.contains("introuvable") || folded.contains("not found") {
+            return None;
+        }
+    }
+    jeu_candidates(response).into_iter().find(|jeu| {
+        jeu_titles(jeu)
+            .iter()
+            .any(|title| titles_match(query, title))
+    })
+}
+
+fn jeu_candidates(response: &Value) -> Vec<&Value> {
+    let Some(jeux) = response.get("jeux").or_else(|| response.get("jeu")) else {
+        return Vec::new();
+    };
+    match jeux {
+        Value::Array(items) => items.iter().collect(),
+        Value::Object(map) if map.contains_key("id") || map.contains_key("noms") => vec![jeux],
+        Value::Object(map) => map.values().collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn jeu_titles(jeu: &Value) -> Vec<String> {
+    let mut titles = Vec::new();
+    if let Some(text) = jeu.get("nom").and_then(Value::as_str) {
+        titles.push(text.to_string());
+    }
+    if let Some(entries) = jeu.get("noms").and_then(Value::as_array) {
+        for entry in entries {
+            if let Some(text) = entry.get("text").and_then(Value::as_str) {
+                titles.push(text.to_string());
+            }
+        }
+    }
+    titles
+}
+
+fn jeu_id(jeu: &Value) -> Option<String> {
+    match jeu.get("id")? {
+        Value::String(text) if !text.is_empty() => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
     }
 }
 
@@ -281,27 +563,26 @@ fn classify_cover_http(status: u16) -> CoverHttp {
 
 impl MetadataProvider for ScreenScraper {
     fn supports(&self, platform: &str) -> bool {
-        platform == "snes"
+        platform == self.platform
+    }
+
+    fn wants_content_identity(&self) -> bool {
+        self.platform != "pc"
     }
 
     fn lookup(&self, platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>> {
-        if platform != "snes" {
+        if platform != self.platform {
             return Err(
                 format!("ScreenScraper enrichment is not implemented for {platform}").into(),
             );
         }
+        if self.platform == "pc" {
+            return self.lookup_pc(rom);
+        }
         let Some(json) = self.jeu_infos(SNES_SYSTEM_ID, rom)? else {
             return Ok(Lookup::Missing);
         };
-        let mut lookup = parse_jeu_infos(&json)?;
-        if let Lookup::Found(metadata) = &mut lookup {
-            if let Some(url_bytes) = metadata.thumbnail.take() {
-                let url = String::from_utf8(url_bytes)
-                    .map_err(|_| "ScreenScraper cover URL is not UTF-8".to_string())?;
-                metadata.thumbnail = self.download_thumbnail(&url)?;
-            }
-        }
-        Ok(lookup)
+        self.finish_lookup(parse_jeu_infos(&json)?)
     }
 }
 
@@ -310,12 +591,12 @@ impl MetadataProvider for ScreenScraper {
 /// `GameMetadata.thumbnail` holds the cover URL until the client downloads it.
 pub(crate) fn parse_jeu_infos(json: &Value) -> Result<Lookup, Box<dyn Error>> {
     let response = json.get("response").unwrap_or(json);
+    blocking_erreur(json)?;
     if let Some(error) = response.get("erreur").and_then(Value::as_str) {
         let folded = error.to_ascii_lowercase();
         if folded.contains("introuvable") || folded.contains("not found") {
             return Ok(Lookup::Missing);
         }
-        return Err(format!("ScreenScraper: {error}").into());
     }
     let Some(jeu) = response.get("jeu") else {
         return Ok(Lookup::Missing);
@@ -323,6 +604,10 @@ pub(crate) fn parse_jeu_infos(json: &Value) -> Result<Lookup, Box<dyn Error>> {
     if jeu.is_null() {
         return Ok(Lookup::Missing);
     }
+    metadata_from_jeu(jeu)
+}
+
+fn metadata_from_jeu(jeu: &Value) -> Result<Lookup, Box<dyn Error>> {
     let Some(title) = preferred_text(jeu.get("noms"), &["wor", "us", "eu", "ss", "jp"])
         .or_else(|| jeu.get("nom").and_then(Value::as_str).map(str::to_string))
     else {
@@ -365,10 +650,52 @@ pub(crate) fn parse_jeu_infos(json: &Value) -> Result<Lookup, Box<dyn Error>> {
 /// Member allowance from `ssuser`. The live field is `maxrequestspermin`; the
 /// written API doc still says `maxrequestsperdmin`.
 fn requests_per_minute(json: &Value) -> Option<u32> {
+    user_number(json, &["maxrequestspermin", "maxrequestsperdmin"]).filter(|limit| *limit > 0)
+}
+
+/// Read the allowance ScreenScraper returns on `ssuser`. Absent fields stay unknown.
+pub(crate) fn quota_from_response(json: &Value) -> ScreenScraperQuota {
+    ScreenScraperQuota {
+        max_per_minute: user_number(json, &["maxrequestspermin", "maxrequestsperdmin"]),
+        max_per_day: user_number(json, &["maxrequestsperday"]),
+        used_today: user_number(json, &["requeststoday"]),
+        max_misses_per_day: user_number(json, &["maxrequestskoperday"]),
+        misses_today: user_number(json, &["requestskotoday"]),
+        max_threads: user_number(json, &["maxthreads"]),
+        max_download_kbps: user_number(json, &["maxdownloadspeed"]),
+    }
+}
+
+fn remember_quota(json: &Value) {
+    let incoming = quota_from_response(json);
+    if incoming == ScreenScraperQuota::default() {
+        return;
+    }
+    let Ok(mut prefs) = LibraryPrefs::load() else {
+        return;
+    };
+    prefs.screenscraper = merge_quota(prefs.screenscraper, incoming);
+    let _ = prefs.save();
+}
+
+/// Keep saved allowance fields this response did not include.
+fn merge_quota(saved: ScreenScraperQuota, incoming: ScreenScraperQuota) -> ScreenScraperQuota {
+    ScreenScraperQuota {
+        max_per_minute: incoming.max_per_minute.or(saved.max_per_minute),
+        max_per_day: incoming.max_per_day.or(saved.max_per_day),
+        used_today: incoming.used_today.or(saved.used_today),
+        max_misses_per_day: incoming.max_misses_per_day.or(saved.max_misses_per_day),
+        misses_today: incoming.misses_today.or(saved.misses_today),
+        max_threads: incoming.max_threads.or(saved.max_threads),
+        max_download_kbps: incoming.max_download_kbps.or(saved.max_download_kbps),
+    }
+}
+
+fn user_number(json: &Value, keys: &[&str]) -> Option<u32> {
     let response = json.get("response").unwrap_or(json);
     let user = response.get("ssuser").or_else(|| json.get("ssuser"))?;
-    for key in ["maxrequestspermin", "maxrequestsperdmin"] {
-        let Some(value) = user.get(key) else {
+    for key in keys {
+        let Some(value) = user.get(*key) else {
             continue;
         };
         let parsed = match value {
@@ -378,7 +705,7 @@ fn requests_per_minute(json: &Value) -> Option<u32> {
                 .and_then(|number| u32::try_from(number).ok()),
             _ => None,
         };
-        if parsed.is_some_and(|limit| limit > 0) {
+        if parsed.is_some() {
             return parsed;
         }
     }
@@ -580,5 +907,77 @@ mod tests {
         assert_eq!(requests_per_minute(&live), Some(10));
         assert_eq!(requests_per_minute(&documented), Some(5));
         assert_eq!(requests_per_minute(&json!({})), None);
+    }
+
+    #[test]
+    fn pc_search_keeps_only_an_obvious_title() {
+        let json = json!({
+            "response": {
+                "jeux": [
+                    {"id": "9", "noms": [{"region": "wor", "text": "Return to Monkey Island"}]},
+                    {"id": "4", "noms": [{"region": "ss", "text": "Sea of Stars"}]}
+                ]
+            }
+        });
+        let chosen = choose_pc_game(&json, "Sea of Stars").unwrap();
+        assert_eq!(chosen.get("id").and_then(Value::as_str), Some("4"));
+        assert!(choose_pc_game(&json, "Return").is_none());
+    }
+
+    #[test]
+    fn quota_erreur_fails_the_lookup_instead_of_a_miss() {
+        let quota = json!({"response": {"erreur": "API closed for the day"}});
+        let error = blocking_erreur(&quota).unwrap_err().to_string();
+        assert!(error.contains("API closed for the day"), "{error}");
+        assert!(blocking_erreur(&json!({"response": {"erreur": "Jeu introuvable"}})).is_ok());
+    }
+
+    #[test]
+    fn quota_update_keeps_fields_this_response_omits() {
+        let saved = ScreenScraperQuota {
+            max_per_minute: Some(12),
+            max_per_day: Some(20000),
+            used_today: Some(4),
+            max_misses_per_day: Some(2000),
+            misses_today: Some(1),
+            max_threads: Some(1),
+            max_download_kbps: Some(128),
+        };
+        let incoming = quota_from_response(&json!({
+            "response": {"ssuser": {"maxrequestspermin": "30"}}
+        }));
+        let merged = merge_quota(saved, incoming);
+        assert_eq!(merged.max_per_minute, Some(30));
+        assert_eq!(merged.max_per_day, Some(20000));
+        assert_eq!(merged.used_today, Some(4));
+        assert_eq!(merged.max_misses_per_day, Some(2000));
+        assert_eq!(merged.misses_today, Some(1));
+        assert_eq!(merged.max_threads, Some(1));
+        assert_eq!(merged.max_download_kbps, Some(128));
+    }
+
+    #[test]
+    fn quota_leaves_missing_fields_unknown() {
+        let json = json!({
+            "response": {
+                "ssuser": {
+                    "maxrequestspermin": "10",
+                    "maxrequestsperday": 20000,
+                    "requeststoday": "4"
+                }
+            }
+        });
+        let quota = quota_from_response(&json);
+        assert_eq!(quota.max_per_minute, Some(10));
+        assert_eq!(quota.max_per_day, Some(20000));
+        assert_eq!(quota.used_today, Some(4));
+        assert_eq!(quota.max_misses_per_day, None);
+        assert_eq!(quota.misses_today, None);
+        assert_eq!(quota.max_threads, None);
+        assert_eq!(quota.max_download_kbps, None);
+        assert_eq!(
+            quota_from_response(&json!({})),
+            ScreenScraperQuota::default()
+        );
     }
 }

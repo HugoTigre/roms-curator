@@ -9,7 +9,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
-import Library from "./Library";
+import Library, { type LibraryScreen } from "./Library";
+import Menu from "./Menu";
 
 interface PlanPreviewSummary {
   mame_build: string;
@@ -335,6 +336,7 @@ function App() {
   const [heldBackQuery, setHeldBackQuery] = useState("");
   const [screen, setScreen] = useState<Screen>("setup");
   const [mode, setMode] = useState<"export" | "library">("export");
+  const [libraryScreen, setLibraryScreen] = useState<LibraryScreen>("platforms");
   const [librarySeen, setLibrarySeen] = useState(false);
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [reviewListsReady, setReviewListsReady] = useState(false);
@@ -810,64 +812,131 @@ function App() {
   const areaLocked = busy || libraryBusy;
 
   return (
-    <main className={mode === "library" ? "app app-wide" : "app"}>
-      <header>
-        <h1>Roms Curator</h1>
-        <p className="lede">
-          {mode === "library"
-            ? "Point each platform at its ROM folders, then scrape and search."
-            : "Set paths and preferences, preview the plan, then export when you are ready."}
-        </p>
-      </header>
-
-      <nav className="mode-tabs" aria-label="Area">
-        <button
-          type="button"
-          className={mode === "export" ? "active" : undefined}
-          onClick={() => setMode("export")}
-          disabled={areaLocked}
-        >
-          MAME export
-        </button>
-        <button
-          type="button"
-          className={mode === "library" ? "active" : undefined}
-          onClick={() => {
-            setLibrarySeen(true);
-            setMode("library");
-          }}
-          disabled={areaLocked}
-        >
-          Library
-        </button>
+    <main className="shell">
+      <nav className="menu-bar" aria-label="Menus">
+        <Menu label="Library">
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "browse" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("browse");
+              setMode("library");
+            }}
+          >
+            Browse
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "unmapped" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("unmapped");
+              setMode("library");
+            }}
+          >
+            Unmapped
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "platforms" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("platforms");
+              setMode("library");
+            }}
+          >
+            Platforms
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "settings" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("settings");
+              setMode("library");
+            }}
+          >
+            Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "limits" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("limits");
+              setMode("library");
+            }}
+          >
+            ScreenScraper limits
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "library" && libraryScreen === "logs" ? "active" : undefined}
+            disabled={areaLocked && mode !== "library"}
+            onClick={() => {
+              setLibrarySeen(true);
+              setLibraryScreen("logs");
+              setMode("library");
+            }}
+          >
+            Logs
+          </button>
+        </Menu>
+        <Menu label="Export">
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "export" && screen === "setup" ? "active" : undefined}
+            disabled={areaLocked && mode !== "export"}
+            onClick={() => {
+              setMode("export");
+              setScreen("setup");
+            }}
+          >
+            Setup
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "export" && screen === "review" ? "active" : undefined}
+            disabled={!review || isReviewPending || (areaLocked && mode !== "export")}
+            onClick={() => {
+              setMode("export");
+              goToReview();
+            }}
+          >
+            Plan review
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={mode === "export" && screen === "export" ? "active" : undefined}
+            disabled={!exportResult || (areaLocked && mode !== "export")}
+            onClick={() => {
+              if (!exportResult) return;
+              setMode("export");
+              setScreen("export");
+            }}
+          >
+            Export result
+          </button>
+        </Menu>
       </nav>
 
-      <div hidden={mode !== "export"}>
-      <nav className="screen-tabs" aria-label="Workflow">
-        <button
-          type="button"
-          className={screen === "setup" ? "active" : undefined}
-          onClick={() => setScreen("setup")}
-        >
-          1. Setup
-        </button>
-        <button
-          type="button"
-          className={screen === "review" ? "active" : undefined}
-          onClick={goToReview}
-          disabled={!review || isReviewPending}
-        >
-          2. Plan review
-        </button>
-        <button
-          type="button"
-          className={screen === "export" ? "active" : undefined}
-          onClick={() => exportResult && setScreen("export")}
-          disabled={!exportResult}
-        >
-          3. Export result
-        </button>
-      </nav>
+      <div className="shell-body">
+      <div className="app" hidden={mode !== "export"}>
 
       {screen === "setup" && (
         <>
@@ -1534,14 +1603,16 @@ function App() {
       )}
       </div>
       {librarySeen && (
-        <div hidden={mode !== "library"}>
+        <div className="library-slot" hidden={mode !== "library"}>
           <Library
             active={mode === "library"}
             exportBusy={busy}
+            screen={libraryScreen}
             onBusyChange={setLibraryBusy}
           />
         </div>
       )}
+      </div>
     </main>
   );
 }

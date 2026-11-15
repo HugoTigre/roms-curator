@@ -146,7 +146,9 @@ pub async fn review_export_plan(
     input: ExportInput,
     run_id: u64,
 ) -> Result<PlanReviewResult, String> {
-    let cancel = state.start(run_id);
+    let cancel = state
+        .start(run_id, crate::job::JobKind::Export)
+        .map_err(str::to_string)?;
     let app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         review_export_plan_blocking(&app, input, Some(&cancel))
@@ -164,7 +166,9 @@ pub async fn execute_export(
     request: ExecuteExportRequest,
     run_id: u64,
 ) -> Result<ExportResult, String> {
-    let cancel = state.start(run_id);
+    let cancel = state
+        .start(run_id, crate::job::JobKind::Export)
+        .map_err(str::to_string)?;
     let app = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         execute_export_blocking(&app, request, Some(&cancel))
