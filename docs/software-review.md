@@ -1,6 +1,6 @@
 # roms-curator software review (summary)
 
-**Historical.** Static review of **0.1.5** (2 Nov 2026). The refactor is tracked in [RFC 0001](rfcs/0001-repair-and-simplify.md). For how to use the tool today, see the [README](../README.md).
+**Historical.** Static review of **0.1.5** (2 Nov 2026). The refactor has shipped. For how to use the tool today, see the [README](../README.md).
 
 ## What we wanted
 
@@ -29,7 +29,7 @@ Games on the **list** are separate from **bytes on disk**. Whole-archive copy fo
 
 ## What shipped since
 
-RFC 0001 implemented the table above: safe copy, `Catalog` + dependencies/disks, `roms`/`rest`, version-2 plans, launch-ready `selected.txt`, reports, metadata fetch, streaming XML, GUI. Full **0.289** export has been run successfully; launcher smoke tests remain optional.
+That refactor shipped: safe copy, `Catalog` + dependencies/disks, `roms`/`rest`, version-2 plans, launch-ready `selected.txt`, reports, metadata fetch, streaming XML, and the GUI. A full **0.289** export has been run successfully. Launcher smoke tests remain optional and are listed in [TODO](TODO.md).
 
 ## Alternatives considered (not chosen)
 

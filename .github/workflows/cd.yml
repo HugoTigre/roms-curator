@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,7 +18,54 @@ env:
 
 jobs:
   checks:
-    uses: ./.github/workflows/ci.yml
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    # A release commit changes Cargo.toml, so main CI runs the GUI job for up to 30 minutes after the changes job and runner queue.
+    timeout-minutes: 90
+    steps:
+      - name: Wait for the main CI run on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$GITHUB_SHA"
+          echo "Waiting for the push CI run on main for $sha"
+          missing=0
+          for _ in $(seq 1 160); do
+            row=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --commit "$sha" \
+              --workflow ci.yml \
+              --event push \
+              --limit 20 \
+              --json databaseId,status,conclusion,headBranch,createdAt,url \
+              --jq '[.[] | select(.headBranch == "main")] | sort_by(.createdAt) | last // empty')
+            if [[ -z "$row" ]]; then
+              missing=$((missing + 1))
+              if (( missing >= 20 )); then
+                echo "No CI run for this commit on main"
+                exit 1
+              fi
+              echo "No push CI run on main yet"
+              sleep 30
+              continue
+            fi
+            status=$(jq -r '.status' <<<"$row")
+            conclusion=$(jq -r '.conclusion' <<<"$row")
+            url=$(jq -r '.url' <<<"$row")
+            echo "CI $status ${conclusion} $url"
+            if [[ "$status" != "completed" ]]; then
+              sleep 30
+              continue
+            fi
+            if [[ "$conclusion" == "success" ]]; then
+              exit 0
+            fi
+            echo "CI finished with $conclusion"
+            exit 1
+          done
+          echo "Timed out waiting for CI on $sha"
+          exit 1
 
   build:
     needs: checks
