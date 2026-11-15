@@ -42,7 +42,7 @@ pub fn discover_library(
     db: &mut LibraryDb,
     library_id: i64,
 ) -> Result<DiscoverStats, Box<dyn Error>> {
-    discover_library_stopping(db, library_id, None)
+    discover_library_stopping(db, library_id, None, &mut |_| {})
 }
 
 /// Scan every root, stopping between directories when `cancel` is set.
@@ -53,6 +53,7 @@ pub fn discover_library_stopping(
     db: &mut LibraryDb,
     library_id: i64,
     cancel: Option<&CancelFlag>,
+    on_note: &mut dyn FnMut(&str),
 ) -> Result<DiscoverStats, Box<dyn Error>> {
     let roots = db.roots(library_id)?;
     let mut stats = DiscoverStats::default();
@@ -61,7 +62,7 @@ pub fn discover_library_stopping(
             stats.cancelled = true;
             return Ok(stats);
         };
-        apply_root(db, root_id, &seen, &mut stats)?;
+        apply_root(db, root_id, &seen, &mut stats, on_note)?;
     }
     Ok(stats)
 }
@@ -71,6 +72,7 @@ fn apply_root(
     root_id: i64,
     seen: &HashMap<String, SeenFile>,
     stats: &mut DiscoverStats,
+    on_note: &mut dyn FnMut(&str),
 ) -> Result<(), Box<dyn Error>> {
     let tx = db.connection_mut().transaction()?;
     let existing = load_files(&tx, root_id)?;
@@ -95,17 +97,24 @@ fn apply_root(
                     file.mtime_secs
                 ])?;
                 stats.added += 1;
+                on_note(&format!("Scan: added {relative_path}. Waiting to scrape."));
             }
             Some(row) => {
                 let same_bytes = row.size == file.size && row.mtime_secs == file.mtime_secs;
                 if row.state == FileState::Removed {
                     update_present.execute(params![file.size as i64, file.mtime_secs, row.id])?;
                     stats.restored += 1;
+                    on_note(&format!(
+                        "Scan: restored {relative_path}. Waiting to scrape."
+                    ));
                 } else if same_bytes {
                     stats.unchanged += 1;
                 } else {
                     update_present.execute(params![file.size as i64, file.mtime_secs, row.id])?;
                     stats.changed += 1;
+                    on_note(&format!(
+                        "Scan: changed {relative_path}. Waiting to scrape."
+                    ));
                 }
             }
         }
@@ -117,6 +126,9 @@ fn apply_root(
         }
         mark_removed.execute([row.id])?;
         stats.removed += 1;
+        on_note(&format!(
+            "Scan: removed {relative_path}. It stays out of Browse."
+        ));
     }
     drop(insert);
     drop(update_present);
@@ -478,11 +490,51 @@ mod tests {
             }
         });
 
-        let stats = discover_library_stopping(&mut db, library, Some(&cancel)).unwrap();
+        let stats =
+            discover_library_stopping(&mut db, library, Some(&cancel), &mut |_| {}).unwrap();
         assert!(stats.cancelled);
         assert_eq!(stats.added, 1);
         let roots = db.roots(library).unwrap();
         assert_eq!(db.files_for_root(roots[0].0).unwrap().len(), 1);
         assert!(db.files_for_root(roots[1].0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn renaming_a_file_adds_the_new_name_and_hides_the_old_one() {
+        let (_db_dir, mut db) = temp_db();
+        let root = tempfile::tempdir().unwrap();
+        let library = db.create_library("pc", "PC").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        let old_path = root.path().join("KillTheShadow.zip");
+        File::create(&old_path).unwrap().write_all(b"rom").unwrap();
+        discover_library(&mut db, library).unwrap();
+
+        fs::rename(&old_path, root.path().join("Kill The Shadow.zip")).unwrap();
+        let mut notes = Vec::new();
+        let stats = discover_library_stopping(&mut db, library, None, &mut |note| {
+            notes.push(note.to_string());
+        })
+        .unwrap();
+
+        assert_eq!(stats.added, 1);
+        assert_eq!(stats.removed, 1);
+        assert_eq!(stats.unchanged, 0);
+        assert_eq!(
+            enrich_flag(&db, library, "KillTheShadow.zip"),
+            (FileState::Removed, false)
+        );
+        assert_eq!(
+            enrich_flag(&db, library, "Kill The Shadow.zip"),
+            (FileState::Present, true)
+        );
+        let hits = db.search(library, "Kill", 20).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "Kill The Shadow.zip");
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("added Kill The Shadow.zip")));
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("removed KillTheShadow.zip")));
     }
 }

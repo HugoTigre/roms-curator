@@ -2,4 +2,4 @@
 
 mod arcade;
 
-pub use arcade::ArcadeCatalog;
+pub use arcade::{ArcadeCatalog, ArcadeSource};

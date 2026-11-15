@@ -23,6 +23,11 @@ const PLATFORMS: &[Platform] = &[
         name: "Arcade",
         uses_mame_version: true,
     },
+    Platform {
+        id: "pc",
+        name: "PC",
+        uses_mame_version: false,
+    },
 ];
 
 pub fn all() -> &'static [Platform] {

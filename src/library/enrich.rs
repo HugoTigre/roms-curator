@@ -14,8 +14,14 @@ use crate::CancelFlag;
 
 use super::db::{GameRecord, LibraryDb};
 
+/// Progress and log callbacks for one enrich pass.
+pub struct EnrichCallbacks<'a> {
+    pub on_file: &'a mut dyn FnMut(u64, u64, &str),
+    pub on_note: &'a mut dyn FnMut(&str),
+}
+
 /// How many files one enrich pass updated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct EnrichStats {
     pub enriched: u64,
@@ -25,6 +31,23 @@ pub struct EnrichStats {
     pub failed: u64,
     /// The user cancelled. Files not yet visited stay queued.
     pub cancelled: bool,
+    /// The queued games do not fit in the ScreenScraper allowance. Nothing
+    /// past this point was looked up. The caller asks before continuing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_pause: Option<QuotaPause>,
+    /// Files this pass finished, in scrape order. Empty when the command
+    /// stopped to ask about the allowance before looking anything up.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub visited_file_ids: Vec<i64>,
+}
+
+/// A scrape stopped because the remaining games exceed the known allowance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct QuotaPause {
+    pub games_left: u64,
+    /// Games that still fit. Zero means the allowance is already used up.
+    pub fits: u64,
+    pub remaining_file_ids: Vec<i64>,
 }
 
 /// One matched game. `thumbnail` is the raw image bytes, if the provider had a cover.
@@ -107,7 +130,19 @@ pub trait MetadataProvider {
     fn wants_content_identity(&self) -> bool {
         true
     }
+    /// Per-file override. Arcade cover lookups hash zip files and skip CHD dumps.
+    fn identify_file(&self, _file_name: &str) -> bool {
+        self.wants_content_identity()
+    }
     fn lookup(&self, platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>>;
+    /// When true, a file that cannot be hashed is still looked up by name.
+    fn lookup_without_identity(&self) -> bool {
+        false
+    }
+    /// When true, a match with no new image leaves a cover that was already saved.
+    fn keeps_existing_cover(&self) -> bool {
+        false
+    }
 }
 
 /// Enrich every present file still marked `needs_enrich`.
@@ -120,27 +155,44 @@ pub fn enrich_library(
     cache_dir: &Path,
     provider: &dyn MetadataProvider,
 ) -> Result<EnrichStats, Box<dyn Error>> {
-    enrich_library_reporting(db, library_id, cache_dir, provider, None, &mut |_, _, _| {})
+    enrich_library_reporting(
+        db,
+        library_id,
+        cache_dir,
+        provider,
+        None,
+        None,
+        &mut EnrichCallbacks {
+            on_file: &mut |_, _, _| {},
+            on_note: &mut |_| {},
+        },
+    )
 }
 
-/// Same as [`enrich_library`], plus cancel and per-file progress.
+/// Same as [`enrich_library`], plus cancel, per-file progress, and an optional file list.
 ///
-/// `on_file` receives the 1-based index, the pending total, and the relative path
-/// before that file is looked up.
+/// `file_ids` set looks up those present files again and replaces the saved row.
+/// `file_ids` omitted looks up every file still marked `needs_enrich` and skips the rest.
+/// `on_file` receives the 1-based index, the total, and the relative path before lookup.
+/// `on_note` receives one plain-text line for each attempt and result.
 pub fn enrich_library_reporting(
     db: &mut LibraryDb,
     library_id: i64,
     cache_dir: &Path,
     provider: &dyn MetadataProvider,
+    file_ids: Option<&[i64]>,
     cancel: Option<&CancelFlag>,
-    on_file: &mut dyn FnMut(u64, u64, &str),
+    report: &mut EnrichCallbacks<'_>,
 ) -> Result<EnrichStats, Box<dyn Error>> {
     let platform = db.library_platform(library_id)?;
     if !provider.supports(&platform) {
         return Err(format!("Enrichment is not implemented for platform {platform}").into());
     }
     fs::create_dir_all(cache_dir)?;
-    let pending = db.pending_files(library_id)?;
+    let pending = match file_ids {
+        Some(ids) => db.present_files_by_id(library_id, ids)?,
+        None => db.pending_files(library_id)?,
+    };
     let total = pending.len() as u64;
     let mut stats = EnrichStats::default();
     for (index, file) in pending.into_iter().enumerate() {
@@ -152,9 +204,28 @@ pub fn enrich_library_reporting(
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or(file.relative_path.as_str());
-        on_file((index as u64) + 1, total, &file.relative_path);
-        let content = if provider.wants_content_identity() {
-            Some(rom_identity(&file.path, file.size)?)
+        (report.on_file)((index as u64) + 1, total, &file.relative_path);
+        let previous = db.game_for_file(file.id)?;
+        let content = if provider.identify_file(rom_name) {
+            match rom_identity(&file.path, file.size) {
+                Ok(identity) => Some(identity),
+                Err(error) => {
+                    if provider.lookup_without_identity() {
+                        (report.on_note)(&format!(
+                            "{rom_name}: could not read the archive ({error}). Looking up the name without a cover."
+                        ));
+                        None
+                    } else {
+                        (report.on_note)(&format!("{rom_name}: stopped. {error}"));
+                        stats.failed += 1;
+                        return Err(format!(
+                            "Enrichment stopped on {} ({error}). {stats}",
+                            file.relative_path
+                        )
+                        .into());
+                    }
+                }
+            }
         } else {
             None
         };
@@ -163,10 +234,51 @@ pub fn enrich_library_reporting(
             size: content.as_ref().map(|item| item.size).unwrap_or(file.size),
             checksum: content.as_ref().map(|item| &item.checksum),
         };
+        super::trace::clear();
         match provider.lookup(&platform, &rom) {
             Ok(Lookup::Found(metadata)) => {
-                let thumb_path =
-                    write_thumbnail(cache_dir, file.id, metadata.thumbnail.as_deref())?;
+                flush_trace(report.on_note);
+                let has_new_cover = metadata
+                    .thumbnail
+                    .as_ref()
+                    .is_some_and(|bytes| !bytes.is_empty());
+                let kept_cover = !has_new_cover
+                    && provider.keeps_existing_cover()
+                    && previous
+                        .as_ref()
+                        .is_some_and(|game| game.thumb_path.is_some());
+                let cover = if has_new_cover {
+                    "Cover saved."
+                } else if kept_cover {
+                    "Cover kept."
+                } else {
+                    "No cover."
+                };
+                let replacement = previous
+                    .as_ref()
+                    .map(|old| {
+                        format!(
+                            " Replaced {} {}.",
+                            source_name(&old.provider),
+                            old.provider_id
+                        )
+                    })
+                    .unwrap_or_default();
+                (report.on_note)(&format!(
+                    "{rom_name}: {} matched \"{}\" ({}). {cover}{replacement}",
+                    source_name(&metadata.provider),
+                    metadata.title,
+                    metadata.provider_id
+                ));
+                let thumb_path = if has_new_cover {
+                    write_thumbnail(cache_dir, file.id, metadata.thumbnail.as_deref())?
+                        .map(|path| path.display().to_string())
+                } else if provider.keeps_existing_cover() {
+                    previous.as_ref().and_then(|game| game.thumb_path.clone())
+                } else {
+                    write_thumbnail(cache_dir, file.id, None)?;
+                    None
+                };
                 db.save_game(
                     file.id,
                     &GameRecord {
@@ -176,7 +288,7 @@ pub fn enrich_library_reporting(
                         publisher: metadata.publisher,
                         provider: metadata.provider,
                         provider_id: metadata.provider_id,
-                        thumb_path: thumb_path.map(|path| path.display().to_string()),
+                        thumb_path,
                         playable: metadata.playable,
                         link: metadata.link,
                         condition: metadata
@@ -187,11 +299,20 @@ pub fn enrich_library_reporting(
                 stats.enriched += 1;
             }
             Ok(Lookup::Missing) => {
+                flush_trace(report.on_note);
+                let removed = if previous.is_some() {
+                    " Removed the saved row."
+                } else {
+                    ""
+                };
+                (report.on_note)(&format!("{rom_name}: not found.{removed}"));
                 remove_cached_thumbnails(cache_dir, file.id)?;
                 db.mark_enriched_missing(file.id)?;
                 stats.missing += 1;
             }
             Err(error) => {
+                flush_trace(report.on_note);
+                (report.on_note)(&format!("{rom_name}: stopped. {error}"));
                 stats.failed += 1;
                 return Err(format!(
                     "Enrichment stopped on {} ({error}). {stats}",
@@ -202,6 +323,65 @@ pub fn enrich_library_reporting(
         }
     }
     Ok(stats)
+}
+
+/// Save one chosen game and its cover. Used when the user maps a file by hand.
+pub fn store_metadata(
+    db: &mut LibraryDb,
+    cache_dir: &Path,
+    file_id: i64,
+    metadata: &GameMetadata,
+) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(cache_dir)?;
+    let thumb_path = write_thumbnail(cache_dir, file_id, metadata.thumbnail.as_deref())?;
+    db.save_game(
+        file_id,
+        &GameRecord {
+            file_id,
+            title: metadata.title.clone(),
+            year: metadata.year.clone(),
+            publisher: metadata.publisher.clone(),
+            provider: metadata.provider.clone(),
+            provider_id: metadata.provider_id.clone(),
+            thumb_path: thumb_path.map(|path| path.display().to_string()),
+            playable: metadata.playable,
+            link: metadata.link.clone(),
+            condition: metadata
+                .condition
+                .map(|condition| condition.as_str().to_string()),
+        },
+    )?;
+    Ok(())
+}
+
+fn flush_trace(on_note: &mut dyn FnMut(&str)) {
+    for line in super::trace::take() {
+        on_note(&line);
+    }
+}
+
+fn source_name(provider: &str) -> &str {
+    match provider {
+        "igdb" => "IGDB",
+        "screenscraper" => "ScreenScraper",
+        "mame" => "MAME list",
+        other => other,
+    }
+}
+
+/// Pages the Library screen is allowed to open from a saved game link.
+pub fn allowed_game_page(url: &str) -> bool {
+    let igdb = url
+        .strip_prefix("https://www.igdb.com/games/")
+        .is_some_and(|slug| {
+            !slug.is_empty()
+                && !slug.contains('/')
+                && slug
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        });
+    igdb || url.starts_with("https://adb.arcadeitalia.net/")
+        || url.starts_with("http://adb.arcadeitalia.net/")
 }
 
 fn write_thumbnail(
@@ -483,8 +663,12 @@ mod tests {
             library,
             cache.path(),
             &provider,
+            None,
             Some(&cancel),
-            &mut |_, _, _| {},
+            &mut EnrichCallbacks {
+                on_file: &mut |_, _, _| {},
+                on_note: &mut |_| {},
+            },
         )
         .unwrap();
         assert!(stats.cancelled);
@@ -495,6 +679,123 @@ mod tests {
             .unwrap()
             .iter()
             .all(|row| row.needs_enrich));
+    }
+
+    fn found(title: &str) -> FakeProvider {
+        FakeProvider {
+            lookup: Lookup::Found(GameMetadata {
+                provider: "fake".into(),
+                provider_id: "1".into(),
+                title: title.into(),
+                year: None,
+                publisher: None,
+                thumbnail: None,
+                playable: None,
+                link: None,
+                condition: None,
+            }),
+        }
+    }
+
+    #[test]
+    fn chosen_files_are_scraped_and_the_rest_stay_queued() {
+        let (_db_dir, root, mut db, library) = library_with_game("one.sfc");
+        File::create(root.path().join("two.sfc"))
+            .unwrap()
+            .write_all(b"rom")
+            .unwrap();
+        discover_library(&mut db, library).unwrap();
+        let root_id = db.roots(library).unwrap()[0].0;
+        let two = db
+            .files_for_root(root_id)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.relative_path == "two.sfc")
+            .unwrap()
+            .id;
+        let cache = tempfile::tempdir().unwrap();
+        let stats = enrich_library_reporting(
+            &mut db,
+            library,
+            cache.path(),
+            &found("Chosen"),
+            Some(&[two]),
+            None,
+            &mut EnrichCallbacks {
+                on_file: &mut |_, _, _| {},
+                on_note: &mut |_| {},
+            },
+        )
+        .unwrap();
+        assert_eq!(stats.enriched, 1);
+        let rows = db.files_for_root(root_id).unwrap();
+        let one = rows
+            .iter()
+            .find(|row| row.relative_path == "one.sfc")
+            .unwrap();
+        let chosen = rows
+            .iter()
+            .find(|row| row.relative_path == "two.sfc")
+            .unwrap();
+        assert!(one.needs_enrich);
+        assert!(db.game_for_file(one.id).unwrap().is_none());
+        assert!(!chosen.needs_enrich);
+        assert_eq!(
+            db.game_for_file(chosen.id).unwrap().unwrap().title,
+            "Chosen"
+        );
+    }
+
+    #[test]
+    fn chosen_file_can_be_scraped_again_after_it_was_finished() {
+        let (_db_dir, _root, mut db, library) = library_with_game("game.sfc");
+        let cache = tempfile::tempdir().unwrap();
+        enrich_library(&mut db, library, cache.path(), &found("First")).unwrap();
+        let file_id = db.files_for_root(db.roots(library).unwrap()[0].0).unwrap()[0].id;
+        let skipped = enrich_library(&mut db, library, cache.path(), &found("Second")).unwrap();
+        assert_eq!(skipped.enriched, 0);
+        let mut notes = Vec::new();
+        let stats = enrich_library_reporting(
+            &mut db,
+            library,
+            cache.path(),
+            &found("Second"),
+            Some(&[file_id]),
+            None,
+            &mut EnrichCallbacks {
+                on_file: &mut |_, _, _| {},
+                on_note: &mut |note| notes.push(note.to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(stats.enriched, 1);
+        assert_eq!(db.game_for_file(file_id).unwrap().unwrap().title, "Second");
+        assert!(
+            notes.iter().any(|note| note.contains("Replaced fake 1.")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn chosen_file_missing_from_the_library_is_rejected() {
+        let (_db_dir, _root, mut db, library) = library_with_game("game.sfc");
+        let cache = tempfile::tempdir().unwrap();
+        let error = enrich_library_reporting(
+            &mut db,
+            library,
+            cache.path(),
+            &found("Nope"),
+            Some(&[999_999]),
+            None,
+            &mut EnrichCallbacks {
+                on_file: &mut |_, _, _| {},
+                on_note: &mut |_| {},
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("no longer in this library"), "{error}");
+        assert!(db.files_for_root(db.roots(library).unwrap()[0].0).unwrap()[0].needs_enrich);
     }
 
     #[test]
@@ -524,6 +825,60 @@ mod tests {
         assert_ne!(size, fs::metadata(&zip_path).unwrap().len());
     }
 
+    #[test]
+    fn unreadable_zip_is_looked_up_by_name_when_the_provider_allows_it() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("broken.zip"), b"not a zip").unwrap();
+        fs::write(root.path().join("next.sfc"), b"rom").unwrap();
+        let mut db = LibraryDb::open(&db_dir.path().join("library.sqlite")).unwrap();
+        let library = db.create_library("snes", "SNES").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        let stats = enrich_library(&mut db, library, cache.path(), &NameOnly).unwrap();
+        assert_eq!((stats.enriched, stats.failed), (2, 0));
+        let titles: Vec<_> = db
+            .search(library, "", 10)
+            .unwrap()
+            .into_iter()
+            .map(|hit| hit.name)
+            .collect();
+        assert!(titles.contains(&"broken.zip".to_string()), "{titles:?}");
+        assert!(titles.contains(&"next.sfc".to_string()), "{titles:?}");
+    }
+
+    struct NameOnly;
+
+    impl MetadataProvider for NameOnly {
+        fn supports(&self, platform: &str) -> bool {
+            platform == "snes"
+        }
+
+        fn identify_file(&self, file_name: &str) -> bool {
+            file_name.ends_with(".zip")
+        }
+
+        fn lookup_without_identity(&self) -> bool {
+            true
+        }
+
+        fn lookup(&self, _platform: &str, rom: &RomQuery) -> Result<Lookup, Box<dyn Error>> {
+            assert!(rom.checksum.is_none() || rom.name == "next.sfc");
+            Ok(Lookup::Found(GameMetadata {
+                provider: "fake".into(),
+                provider_id: rom.name.to_string(),
+                title: rom.name.to_string(),
+                year: None,
+                publisher: None,
+                thumbnail: None,
+                playable: None,
+                link: None,
+                condition: None,
+            }))
+        }
+    }
+
     struct Capture<'a>(&'a std::sync::Mutex<Option<(u64, RomChecksum)>>);
 
     impl MetadataProvider for Capture<'_> {
@@ -538,6 +893,20 @@ mod tests {
             *self.0.lock().unwrap() = Some((rom.size, checksum.clone()));
             Ok(Lookup::Missing)
         }
+    }
+
+    #[test]
+    fn saved_links_open_igdb_and_arcade_database_pages() {
+        assert!(super::allowed_game_page(
+            "https://www.igdb.com/games/the-drifter"
+        ));
+        assert!(super::allowed_game_page(
+            "https://adb.arcadeitalia.net/dettaglio_mame.php?game_name=pacman"
+        ));
+        assert!(!super::allowed_game_page(
+            "https://www.igdb.com/games/../admin"
+        ));
+        assert!(!super::allowed_game_page("https://example.com/the-drifter"));
     }
 
     fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
