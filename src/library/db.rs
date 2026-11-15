@@ -118,6 +118,16 @@ pub struct UnmappedList {
     pub files: Vec<UnmappedFile>,
 }
 
+/// One page of browse results, in title order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BrowsePage {
+    pub hits: Vec<BrowseHit>,
+    /// Present files that match the query, including ones outside this page.
+    pub total: i64,
+    /// Index of the first hit. Always a multiple of the page size.
+    pub offset: i64,
+}
+
 /// One present file in a browse or search result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BrowseHit {
@@ -716,37 +726,79 @@ impl LibraryDb {
 
     /// Present files whose name, title, year, or publisher matches `query`.
     ///
-    /// An empty query returns the first matches in title order. `limit` is
-    /// clamped to 1..=200.
+    /// An empty query returns matches in title order. `limit` is clamped to
+    /// 1..=200. `offset` selects the page and is snapped to a page boundary.
+    /// `anchor` replaces `offset` with the page that contains that file, so a
+    /// renamed game stays on screen. A missing or filtered-out anchor stays on
+    /// the requested page.
     pub fn search(
         &self,
         library_id: i64,
         query: &str,
         limit: u32,
-    ) -> Result<Vec<BrowseHit>, Box<dyn Error>> {
+        offset: i64,
+        anchor: Option<i64>,
+    ) -> Result<BrowsePage, Box<dyn Error>> {
         let limit = limit.clamp(1, 200);
         let pattern = like_contains(query.trim());
-        let mut stmt = self.conn.prepare(
+        let limit_i = i64::from(limit);
+        let anchored = match anchor {
+            Some(file_id) => self.search_offset(library_id, &pattern, file_id, limit)?,
+            None => None,
+        };
+        let mut offset = match anchored {
+            Some(page) => page,
+            None => offset.max(0) / limit_i * limit_i,
+        };
+        let (mut hits, window_total) = self.search_page(library_id, &pattern, limit, offset)?;
+        let total = if let Some(total) = window_total {
+            total
+        } else if offset == 0 {
+            0
+        } else {
+            let total = self.search_total(library_id, &pattern)?;
+            if total > 0 && offset >= total {
+                offset = (total - 1) / limit_i * limit_i;
+                let (next_hits, next_total) =
+                    self.search_page(library_id, &pattern, limit, offset)?;
+                hits = next_hits;
+                next_total.unwrap_or(total)
+            } else {
+                total
+            }
+        };
+        Ok(BrowsePage {
+            hits,
+            total,
+            offset,
+        })
+    }
+
+    /// One page of browse matches. The total is present when the page has a row.
+    fn search_page(
+        &self,
+        library_id: i64,
+        pattern: &str,
+        limit: u32,
+        offset: i64,
+    ) -> Result<(Vec<BrowseHit>, Option<i64>), Box<dyn Error>> {
+        let sql = format!(
             "SELECT files.id, files.relative_path, files.needs_enrich,
                     games.title, games.year, games.publisher, games.thumb_path,
                     games.playable, games.link, games.condition,
-                    games.provider, games.provider_id
+                    games.provider, games.provider_id,
+                    COUNT(*) OVER () AS match_count
              FROM files
              JOIN roots ON roots.id = files.root_id
              LEFT JOIN games ON games.file_id = files.id
-             WHERE roots.library_id = ?1 AND files.state = 'present'
-               AND (
-                    ?2 = '%'
-                    OR files.relative_path LIKE ?2 ESCAPE '\\'
-                    OR IFNULL(games.title, '') LIKE ?2 ESCAPE '\\'
-                    OR IFNULL(games.publisher, '') LIKE ?2 ESCAPE '\\'
-                    OR IFNULL(games.year, '') LIKE ?2 ESCAPE '\\'
-               )
+             WHERE {match_clause}
              ORDER BY COALESCE(NULLIF(games.title, ''), files.relative_path) COLLATE NOCASE,
                       files.id
-             LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(params![library_id, pattern, limit], |row| {
+             LIMIT ?3 OFFSET ?4",
+            match_clause = browse_match("?2"),
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![library_id, pattern, limit, offset], |row| {
             let relative_path: String = row.get(1)?;
             let name = Path::new(&relative_path)
                 .file_name()
@@ -757,26 +809,101 @@ impl LibraryDb {
             let title = stored_title
                 .filter(|title| !title.is_empty())
                 .unwrap_or_else(|| name.clone());
-            Ok(BrowseHit {
-                file_id: row.get(0)?,
-                name,
-                title,
-                year: row.get(4)?,
-                publisher: row.get(5)?,
-                thumb_path: row.get(6)?,
-                needs_enrich: row.get::<_, i64>(2)? != 0,
-                playable: optional_flag(row.get(7)?),
-                link: row.get(8)?,
-                condition: row.get(9)?,
-                provider: row.get(10)?,
-                provider_id: row.get(11)?,
-            })
+            let total: i64 = row.get(12)?;
+            Ok((
+                BrowseHit {
+                    file_id: row.get(0)?,
+                    name,
+                    title,
+                    year: row.get(4)?,
+                    publisher: row.get(5)?,
+                    thumb_path: row.get(6)?,
+                    needs_enrich: row.get::<_, i64>(2)? != 0,
+                    playable: optional_flag(row.get(7)?),
+                    link: row.get(8)?,
+                    condition: row.get(9)?,
+                    provider: row.get(10)?,
+                    provider_id: row.get(11)?,
+                },
+                total,
+            ))
         })?;
         let mut hits = Vec::new();
+        let mut total = None;
         for row in rows {
-            hits.push(row?);
+            let (hit, match_count) = row?;
+            total = Some(match_count);
+            hits.push(hit);
         }
-        Ok(hits)
+        Ok((hits, total))
+    }
+
+    /// How many present files match the browse query.
+    fn search_total(&self, library_id: i64, pattern: &str) -> Result<i64, Box<dyn Error>> {
+        let sql = format!(
+            "SELECT COUNT(*)
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE {match_clause}",
+            match_clause = browse_match("?2"),
+        );
+        let total = self
+            .conn
+            .query_row(&sql, params![library_id, pattern], |row| row.get(0))?;
+        Ok(total)
+    }
+
+    /// Page start for the file, counted in the same order as [`Self::search`].
+    ///
+    /// The page size is `limit`. A file with 160 names before it is on the
+    /// third page of 80, so this returns 160. An unknown file returns `None`.
+    fn search_offset(
+        &self,
+        library_id: i64,
+        pattern: &str,
+        anchor: i64,
+        limit: u32,
+    ) -> Result<Option<i64>, Box<dyn Error>> {
+        let present = format!(
+            "SELECT COALESCE(NULLIF(games.title, ''), files.relative_path)
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE {match_clause} AND files.id = ?2",
+            match_clause = browse_match("?3"),
+        );
+        let sort_key: Option<String> = self
+            .conn
+            .query_row(&present, params![library_id, anchor, pattern], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        let Some(sort_key) = sort_key else {
+            return Ok(None);
+        };
+        let before_sql = format!(
+            "SELECT COUNT(*)
+             FROM files
+             JOIN roots ON roots.id = files.root_id
+             LEFT JOIN games ON games.file_id = files.id
+             WHERE {match_clause}
+               AND (
+                    COALESCE(NULLIF(games.title, ''), files.relative_path) < ?3 COLLATE NOCASE
+                    OR (
+                        COALESCE(NULLIF(games.title, ''), files.relative_path) = ?3 COLLATE NOCASE
+                        AND files.id < ?4
+                    )
+               )",
+            match_clause = browse_match("?2"),
+        );
+        let before: i64 = self.conn.query_row(
+            &before_sql,
+            params![library_id, pattern, sort_key, anchor],
+            |row| row.get(0),
+        )?;
+        let limit = i64::from(limit.max(1));
+        Ok(Some(before / limit * limit))
     }
 
     /// Count files in a library with the given state.
@@ -855,6 +982,20 @@ fn like_contains(query: &str) -> String {
     format!("%{escaped}%")
 }
 
+/// Shared browse filter. `pattern` is the bound LIKE placeholder (`?2` or `?3`).
+fn browse_match(pattern: &str) -> String {
+    format!(
+        "roots.library_id = ?1 AND files.state = 'present'
+           AND (
+                {pattern} = '%'
+                OR files.relative_path LIKE {pattern} ESCAPE '\\'
+                OR IFNULL(games.title, '') LIKE {pattern} ESCAPE '\\'
+                OR IFNULL(games.publisher, '') LIKE {pattern} ESCAPE '\\'
+                OR IFNULL(games.year, '') LIKE {pattern} ESCAPE '\\'
+           )"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -901,20 +1042,89 @@ mod tests {
         std::fs::remove_file(root.path().join("other.zip")).unwrap();
         discover_library(&mut db, library).unwrap();
 
-        let hits = db.search(library, "metroid", 20).unwrap();
+        let hits = db.search(library, "metroid", 20, 0, None).unwrap().hits;
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].title, "Super Metroid");
         assert_eq!(hits[0].year.as_deref(), Some("1994"));
         assert!(!hits[0].needs_enrich);
 
-        let by_file = db.search(library, "kept.zip", 20).unwrap();
+        let by_file = db.search(library, "kept.zip", 20, 0, None).unwrap().hits;
         assert_eq!(by_file.len(), 1);
-        assert!(db.search(library, "other.zip", 20).unwrap().is_empty());
+        assert!(db
+            .search(library, "other.zip", 20, 0, None)
+            .unwrap()
+            .hits
+            .is_empty());
 
         let overview = db.overview(library).unwrap();
         assert_eq!(overview.present, 1);
         assert_eq!(overview.enriched, 1);
         assert_eq!(overview.pending, 0);
+    }
+
+    #[test]
+    fn search_anchor_keeps_a_renamed_game_in_the_window() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for name in ["a.zip", "b.zip", "c.zip"] {
+            File::create(root.path().join(name)).unwrap();
+        }
+        let mut db = LibraryDb::open(&db_dir.path().join("library.sqlite")).unwrap();
+        let library = db.create_library("amiga", "Amiga").unwrap();
+        db.add_root(library, root.path()).unwrap();
+        discover_library(&mut db, library).unwrap();
+        let root_id = db.roots(library).unwrap()[0].0;
+        let files = db.files_for_root(root_id).unwrap();
+        let renamed = files
+            .iter()
+            .find(|row| row.relative_path == "a.zip")
+            .unwrap();
+        db.save_game(
+            renamed.id,
+            &GameRecord {
+                file_id: renamed.id,
+                title: "Zelda".into(),
+                year: None,
+                publisher: None,
+                provider: "fake".into(),
+                provider_id: "1".into(),
+                thumb_path: None,
+                playable: None,
+                link: None,
+                condition: None,
+            },
+        )
+        .unwrap();
+
+        let first = db.search(library, "", 2, 0, None).unwrap();
+        assert_eq!(first.total, 3);
+        assert_eq!(first.offset, 0);
+        assert_eq!(
+            first
+                .hits
+                .iter()
+                .map(|hit| hit.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b.zip", "c.zip"]
+        );
+        let followed = db.search(library, "", 2, 0, Some(renamed.id)).unwrap();
+        assert_eq!(followed.total, 3);
+        assert_eq!(followed.offset, 2);
+        assert!(followed.hits.iter().any(|hit| hit.file_id == renamed.id));
+        assert_eq!(
+            followed.hits.last().map(|hit| hit.title.as_str()),
+            Some("Zelda")
+        );
+        let past_end = db.search(library, "", 2, 99, None).unwrap();
+        assert_eq!(past_end.offset, 2);
+        assert_eq!(past_end.hits.len(), 1);
+        let unknown = db.search(library, "", 2, 2, Some(-1)).unwrap();
+        assert_eq!(unknown.offset, 2);
+        assert_eq!(unknown.hits.len(), 1);
+        let filtered = db.search(library, "c.zip", 2, 0, Some(renamed.id)).unwrap();
+        assert_eq!(filtered.offset, 0);
+        assert_eq!(filtered.hits.len(), 1);
+        assert!(filtered.hits.iter().all(|hit| hit.file_id != renamed.id));
     }
 
     #[test]
@@ -971,12 +1181,12 @@ mod tests {
         db.add_root(library, root.path()).unwrap();
         discover_library(&mut db, library).unwrap();
 
-        let hits = db.search(library, "_", 20).unwrap();
+        let hits = db.search(library, "_", 20, 0, None).unwrap().hits;
         let names: Vec<_> = hits.into_iter().map(|hit| hit.name).collect();
         assert_eq!(names, vec!["a_b.zip".to_string()]);
 
         let readonly = LibraryDb::open_readonly(&db_path).unwrap();
-        let again = readonly.search(library, "_", 20).unwrap();
+        let again = readonly.search(library, "_", 20, 0, None).unwrap().hits;
         assert_eq!(again.len(), 1);
         assert_eq!(again[0].name, "a_b.zip");
     }
@@ -1037,7 +1247,7 @@ mod tests {
         assert_eq!(game.playable, None);
         assert_eq!(game.link, None);
         assert_eq!(game.condition, None);
-        let hits = db.search(1, "Metroid", 20).unwrap();
+        let hits = db.search(1, "Metroid", 20, 0, None).unwrap().hits;
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].title, "Super Metroid");
         assert_eq!(hits[0].playable, None);

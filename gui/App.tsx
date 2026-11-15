@@ -335,9 +335,9 @@ function App() {
   const [excludedQuery, setExcludedQuery] = useState("");
   const [heldBackQuery, setHeldBackQuery] = useState("");
   const [screen, setScreen] = useState<Screen>("setup");
-  const [mode, setMode] = useState<"export" | "library">("export");
-  const [libraryScreen, setLibraryScreen] = useState<LibraryScreen>("platforms");
-  const [librarySeen, setLibrarySeen] = useState(false);
+  const [mode, setMode] = useState<"export" | "library">("library");
+  const [libraryScreen, setLibraryScreen] = useState<LibraryScreen>("browse");
+  const [librarySeen, setLibrarySeen] = useState(true);
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [reviewListsReady, setReviewListsReady] = useState(false);
   const [isReviewPending, startReviewTransition] = useTransition();

@@ -839,8 +839,9 @@ mod tests {
         let stats = enrich_library(&mut db, library, cache.path(), &NameOnly).unwrap();
         assert_eq!((stats.enriched, stats.failed), (2, 0));
         let titles: Vec<_> = db
-            .search(library, "", 10)
+            .search(library, "", 10, 0, None)
             .unwrap()
+            .hits
             .into_iter()
             .map(|hit| hit.name)
             .collect();

@@ -17,8 +17,8 @@ mod screenscraper;
 mod trace;
 
 pub use db::{
-    default_library_db_path, BrowseHit, FileRow, FileState, GameRecord, LibraryDb, LibraryOverview,
-    UnmappedFile, UnmappedList,
+    default_library_db_path, BrowseHit, BrowsePage, FileRow, FileState, GameRecord, LibraryDb,
+    LibraryOverview, UnmappedFile, UnmappedList,
 };
 pub use discover::{discover_library, discover_library_stopping, DiscoverStats};
 pub use enrich::{

@@ -143,6 +143,8 @@ pub struct ScreenScraper {
     download_covers: bool,
     /// `snes` matches a checksum. `pc` matches a cleaned file name.
     platform: &'static str,
+    /// ScreenScraper system id sent with a checksum lookup.
+    system_id: u32,
 }
 
 impl ScreenScraper {
@@ -165,12 +167,20 @@ impl ScreenScraper {
             }),
             download_covers: true,
             platform: "snes",
+            system_id: SNES_SYSTEM_ID,
         }
     }
 
     /// Match Windows games by file name instead of a ROM checksum.
     pub fn for_pc(mut self) -> Self {
         self.platform = "pc";
+        self
+    }
+
+    /// Checksum lookup for one ScreenScraper system, such as Game Boy.
+    pub fn for_system(mut self, platform: &'static str, system_id: u32) -> Self {
+        self.platform = platform;
+        self.system_id = system_id;
         self
     }
 
@@ -579,7 +589,7 @@ impl MetadataProvider for ScreenScraper {
         if self.platform == "pc" {
             return self.lookup_pc(rom);
         }
-        let Some(json) = self.jeu_infos(SNES_SYSTEM_ID, rom)? else {
+        let Some(json) = self.jeu_infos(self.system_id, rom)? else {
             return Ok(Lookup::Missing);
         };
         self.finish_lookup(parse_jeu_infos(&json)?)
