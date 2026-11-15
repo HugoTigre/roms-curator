@@ -894,7 +894,7 @@ function App() {
             Logs
           </button>
         </Menu>
-        <Menu label="Export">
+        <Menu label="Curate MAME">
           <button
             type="button"
             role="menuitem"
