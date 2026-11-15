@@ -171,4 +171,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/roms-curator-linux dist/roms-curator.exe LICENSE --verify-tag --generate-notes --title "$RELEASE_TAG"
+        run: |
+          notes="Release ${RELEASE_TAG}."
+          if [[ -f "docs/releases/${RELEASE_TAG}.md" ]]; then
+            notes=$(cat "docs/releases/${RELEASE_TAG}.md")
+          fi
+          gh release create "$RELEASE_TAG" dist/roms-curator-linux dist/roms-curator.exe LICENSE --verify-tag --title "$RELEASE_TAG" --notes "$notes"

@@ -20,7 +20,7 @@ Before publication:
 - Both binaries must be present and Cargo's publication dry-run must pass.
 - The repository's `CRATES_TOKEN` secret must permit publishing the new version.
 
-The workflow publishes the crate to crates.io and creates a GitHub release with `roms-curator-linux`, `roms-curator.exe` and LICENSE. Only the publishing job has repository write permission. CI has no registry credentials.
+The workflow publishes the crate to crates.io and creates a GitHub release with `roms-curator-linux`, `roms-curator.exe` and LICENSE. Release notes come from `docs/releases/vX.Y.Z.md` when that file is on the tagged commit. Commit messages are not listed. Only the publishing job has repository write permission. CI has no registry credentials.
 
 ### GUI release delivery
 
@@ -39,7 +39,8 @@ The release workflow uses Cargo and a small inline Bash check for the version. I
 1. Change Cargo.toml to a new unpublished version and update Cargo.lock with Cargo.
 2. Merge that change to main after CI passes.
 3. Update your local main to the intended commit.
-4. Create and push the matching tag. For version 0.2.0:
+4. Add `docs/releases/vX.Y.Z.md` with the notes you want on the GitHub release, and merge it before tagging.
+5. Create and push the matching tag. For version 0.2.0:
 
 ```sh
 git tag -a v0.2.0 -m "Release 0.2.0"

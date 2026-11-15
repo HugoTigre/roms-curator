@@ -6,11 +6,9 @@
 
 ---
 
-Desktop app for ROM collections. It curates a merged MAME set into a folder you can launch, and it keeps a library of the other machines you point it at.
+Take a merged MAME ROM set and copy the working games into a folder you can point MAME at. Everything else goes in a second folder, so the original set can be set aside after a full run.
 
-- **roms** holds the working games and the files they need to launch. Point MAME at this folder.
-- **rest** holds the non-working and unused files.
-- **selected.txt** lists the working games, one name per line, for frontends.
+The desktop app can also keep a small catalog of other machines. That catalog is optional. Curating a MAME set is what this is for.
 
 __Index__
 
@@ -46,7 +44,7 @@ The destination must be empty. The app only reads your original collection.
 On Setup you can also:
 
 - Turn on **Strict selection** to keep only games MAME rates fully working. The default also keeps games rated imperfect.
-- Turn on **Include games with missing ROM or CHD dependencies** to put incomplete games on the launch list. Leave it off and `selected.txt` lists games you can launch.
+- Turn on **Include games with missing ROM or CHD dependencies** to keep incomplete games with the working ones. Leave it off and those games stay out of the working folder.
 - Turn on **Re-download listxml and CatVer** to replace the cached metadata for this version.
 - Fill **From** and **Through** to export a slice of machine names. Leave both empty for the full list. A kept game still brings along the parent, BIOS, and disk files it needs.
 
@@ -56,24 +54,18 @@ From the review screen, **Save Markdown report…** and **Save HTML preview…**
 
 ## Library
 
-The window opens on **Library → Browse**. This index is separate from a MAME export. It does not copy or delete your ROM files.
-
-1. Open **Platforms**, pick a machine, add its folder, and scan.
-2. **Browse** searches that platform. Scrape fills in the title, year, publisher, and a cover when one is available.
-3. **Unmapped** lists files the last scrape did not match.
-4. **Settings** holds the ScreenScraper account, cover downloads, and the index. PC lookups use IGDB first.
+Optional. **Library** is a searchable list of other ROM folders, with titles and covers when a scrape finds them. Add a folder under **Platforms**, then look through **Browse**. It does not copy or delete those files, and it is separate from a MAME export.
 
 ## How this works
 
 The export reads the machine list (`listxml`) and categories (`catver.ini`) for your ROM set version, then splits the set. A working machine has driver status and emulation that are both good or imperfect, and every ROM and CHD it needs is in the source. Imperfect sound or graphics does not change that. Strict selection counts a machine as working only when both values are good. Preliminary, mechanical, BIOS, device, and non-arcade categories (computers, consoles, handhelds, and similar) are non-working and stay off the list. Arcade genres such as shooter, puzzle, and slots stay eligible.
 
-The copy writes three things under the destination:
+The copy writes two folders under the destination:
 
 - **roms**: every file a working game needs. That is its merged archive (the parent archive when the game is a clone), BIOS and device archives, and the CHD directories it needs. Point MAME at this folder.
 - **rest**: the non-working and unused files. A clone's own zip lands here, because its bytes live in the parent archive. Disk directories no working game needs land here too. On a full export, `roms` and `rest` together hold the whole source, so the original collection can be deleted after a successful run. A **From** / **Through** slice leaves names outside that range in the source unless a working game needs them.
-- **selected.txt**: working machine names, one per line, written only after every copy succeeds. By default every required ROM and CHD must be in the source. Frontends use this file. MAME still reads only `roms`.
 
-Missing CHDs show up in the plan and hold a game off `selected.txt` until you add the disk or include incomplete games. When that game's ROM zip is in the source, the copy still takes it, and places it in `rest`.
+Missing CHDs show up in the plan and hold a game out of `roms` until you add the disk or include incomplete games. When that game's ROM zip is in the source, the copy still takes it, and places it in `rest`.
 
 A merged zip is copied whole, so unselected clones stored inside it stay in the file under `roms`. A game whose zip is in `rest` still needs the parent archive in `roms`.
 
@@ -93,7 +85,7 @@ Other Rust programs can call the same export code: [Rust API](docs/lib-usage-ins
 
 ## FAQ
 
-[FAQ](docs/faq.md) — the original collection, an existing destination, speed, `selected.txt`, merged sets, and frontends.
+[FAQ](docs/faq.md) — the original collection, an existing destination, speed, merged sets, and which MAME version to use.
 
 ## Useful links
 

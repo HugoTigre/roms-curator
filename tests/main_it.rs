@@ -90,7 +90,7 @@ fn should_validate_missing_mame_xml_path() {
     let assert = cmd.assert();
 
     assert.stderr(predicate::str::contains(
-        "Helper utility to manage Sets of ROMs. Currently only works for MAME ROMs",
+        "Copy the working games out of a merged MAME set.",
     ));
 
     // should warn that file needs to be a .xml
