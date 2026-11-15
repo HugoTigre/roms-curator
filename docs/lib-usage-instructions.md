@@ -1,4 +1,4 @@
-# Library usage
+# Rust API
 
 ## Quick start
 

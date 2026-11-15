@@ -4,19 +4,19 @@ CI validates ordinary changes. CD publishes only when you deliberately push a ma
 
 ## CI
 
-`.github/workflows/ci.yml` runs for PRs targeting main, pushes to main, manual runs and calls from CD. A path filter skips Rust and GUI jobs when unrelated files change (for example docs-only); edits to `ci.yml` or `cd.yml` still run the affected jobs. Rust checks cover formatting and Clippy on Linux and build/tests on Linux, Windows and macOS. The GUI job runs when the app stack or shared library changes. On GUI PRs, CI runs fmt, Clippy, check, test, and a release **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on main pushes, manual CI, and CD only when the GUI job runs (GUI-related paths changed). Cargo and npm dependencies are cached on repeat runs. Rust is selected by `rust-toolchain.toml`; Cargo.lock keeps dependency resolution consistent.
+`.github/workflows/ci.yml` runs for PRs targeting main, pushes to main, and manual runs. A path filter skips Rust and GUI jobs when unrelated files change (for example docs-only); edits to `ci.yml` or `cd.yml` still run the affected jobs. Rust checks cover formatting and Clippy on Linux and build/tests on Linux, Windows and macOS. The GUI job runs when the app stack or shared library changes. On GUI PRs, CI runs fmt, Clippy, check, test, and a release **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on main pushes and manual CI only when the GUI job runs (GUI-related paths changed). Cargo and npm dependencies are cached on repeat runs. Rust is selected by `rust-toolchain.toml`; Cargo.lock keeps dependency resolution consistent.
 
 Actions use readable major-version references, such as `actions/checkout@v7`. Dependabot checks GitHub Actions and Cargo updates weekly. Full commit pins are optional extra protection against an action tag changing; this project uses major tags for simpler maintenance.
 
 ## Release rules
 
-`.github/workflows/cd.yml` runs only for pushed tags matching `v[0-9]*`. It has three jobs: run CI checks, build optimized Linux/Windows binaries, then publish.
+`.github/workflows/cd.yml` runs only for pushed tags matching `v[0-9]*`. It has three jobs: wait for the CI run already recorded for that commit on main, build optimized Linux/Windows binaries, then publish. Pushing the tag is the only publish switch. A tag pushed while that CI run is still going waits for it. A failed or missing run stops the release.
 
 Before publication:
 
 - The tag must be a stable `vMAJOR.MINOR.PATCH` version matching Cargo.toml, such as `v0.2.0`.
 - The tagged commit must already be on origin/main history.
-- CI and both native release builds must pass.
+- The push CI run for that commit must have succeeded, and both native release builds must pass.
 - Both binaries must be present and Cargo's publication dry-run must pass.
 - The repository's `CRATES_TOKEN` secret must permit publishing the new version.
 
@@ -26,7 +26,7 @@ The workflow publishes the crate to crates.io and creates a GitHub release with 
 
 **Decision (GUI-03):**
 
-- **CI** runs the Linux GUI checks when GUI-related paths change. PRs use **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on main, manual CI, and release (CD) when that job runs. Artifacts are validated in CI but not uploaded automatically yet.
+- **CI** runs the Linux GUI checks when GUI-related paths change. PRs use **`tauri build --no-bundle`**; the full **`npm run tauri build`** (installers) runs on main and manual CI when that job runs. Artifacts are validated in CI but not uploaded automatically yet.
 - **Signing** (Windows Authenticode, Apple notarization) and **in-app updates** are deferred until the first GUI release ships; document any manual signing steps when attaching GUI installers to a tag.
 - **GitHub release assets** for the curator app (`.deb` / AppImage / `.msi` / `.dmg`) will be added to CD in the same tag as the CLI binaries when GUI is included in an intentional release. Until then, build installers locally with `npm run tauri build` and attach them manually if needed.
 
@@ -52,7 +52,7 @@ The next release targets **0.2.0** because these changes break source compatibil
 
 - **`ExportConfig`** replaces ad-hoc `Args` helpers; validate before plan/copy.
 - **`run` → `Catalog`** with dependency-aware **`copy_roms`** into **`roms`** / **`rest`**, version-2 **plans**, and **`selected.txt`** (launch-ready names by default).
-- Selection/plan/CHD behavior is summarized in [RFC 0001](rfcs/0001-repair-and-simplify.md) and [library usage](lib-usage-instructions.md).
+- Selection/plan/CHD behavior is summarized in the [README](../README.md) and the [Rust API](lib-usage-instructions.md).
 
 Library API detail lives in `cargo doc` and the source; this file covers CI/CD only.
 

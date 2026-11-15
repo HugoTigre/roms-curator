@@ -6,7 +6,7 @@
 
 ---
 
-Desktop app for a merged MAME ROM set. It separates working ROMs from non-working ROMs.
+Desktop app for ROM collections. It curates a merged MAME set into a folder you can launch, and it keeps a library of the other machines you point it at.
 
 - **roms** holds the working games and the files they need to launch. Point MAME at this folder.
 - **rest** holds the non-working and unused files.
@@ -15,6 +15,7 @@ Desktop app for a merged MAME ROM set. It separates working ROMs from non-workin
 __Index__
 
 - [Using the app](#using-the-app)
+- [Library](#library)
 - [How this works](#how-this-works)
 - [Command line](#command-line)
 - [FAQ](#faq)
@@ -32,13 +33,13 @@ npm run tauri dev
 
 That opens the window. Installers and other ways to build: [build instructions](docs/build-instructions.md).
 
-### Export
+### Curate MAME
 
-1. Stay on **1. Setup**.
+1. Open **Curate MAME**, then **Setup**.
 2. Enter the MAME set version that matches your ROMs, for example `0.289`.
 3. Choose the merged ROM folder and an empty folder for the export. If CHDs live in another folder, add that too.
 4. Click **Preview plan**. The first run downloads the MAME machine list and the category file for that version, then shows which games would be kept and which files are missing. Export is the step that copies files.
-5. On **2. Plan review**, click **Export** when the plan looks right. **3. Export result** shows what landed in the destination.
+5. On **Plan review**, click **Export** when the plan looks right. **Export result** shows what landed in the destination.
 
 The destination must be empty. The app only reads your original collection.
 
@@ -52,6 +53,15 @@ On Setup you can also:
 **Cancel** stops a preview or an export. Files already copied stay in the destination. [Export recovery](docs/gui-export-recovery.md) covers partial runs.
 
 From the review screen, **Save Markdown report…** and **Save HTML preview…** write the plan without copying.
+
+## Library
+
+The window opens on **Library → Browse**. This index is separate from a MAME export. It does not copy or delete your ROM files.
+
+1. Open **Platforms**, pick a machine, add its folder, and scan.
+2. **Browse** searches that platform. Scrape fills in the title, year, publisher, and a cover when one is available.
+3. **Unmapped** lists files the last scrape did not match.
+4. **Settings** holds the ScreenScraper account, cover downloads, and the index. PC lookups use IGDB first.
 
 ## How this works
 
@@ -98,4 +108,4 @@ Please feel free to open an [Issue](https://github.com/HugoTigre/roms-curator/is
 - Something is missing from the documentation material or hard to understand;
 - Have any improvement suggestions or feature request.
 
-Project notes: [RFC 0001](docs/rfcs/0001-repair-and-simplify.md), [releasing.md](docs/releasing.md).
+Project notes: [releasing](docs/releasing.md).
