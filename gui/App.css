@@ -651,35 +651,43 @@ button.primary {
 
 .browse-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
 .browse-bar select {
-  flex: 0 1 16rem;
-  width: 16rem;
+  flex: 0 1 19rem;
+  width: 19rem;
   min-width: 8rem;
+  max-width: 100%;
 }
 
 .browse-bar input.browse-search {
   flex: 1 1 auto;
   width: auto;
-  min-width: 8rem;
+  min-width: 6rem;
 }
 
-.browse-bar .align-end {
-  margin-left: auto;
-}
-
-.browse-views {
+.browse-pager {
   display: flex;
-  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 0.35rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: 100%;
 }
 
-.browse-views button.active {
-  background: #2e3d5c;
-  border-color: #5a82f5;
+.browse-pager-range {
+  color: #c8ced8;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.browse-pager button {
+  padding-inline: 0.55rem;
 }
 
 .browse-results.game-browser {
@@ -860,6 +868,11 @@ button.game-list-copy:focus-visible {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.game-card.active {
+  border-color: #5a82f5;
+  box-shadow: inset 0 0 0 1px #5a82f5;
 }
 
 .game-card img,

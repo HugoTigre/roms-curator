@@ -106,6 +106,12 @@ interface BrowseHit {
   provider_id: string | null;
 }
 
+interface BrowsePage {
+  hits: BrowseHit[];
+  total: number;
+  offset: number;
+}
+
 interface ProgressView {
   message: string;
   filePos?: number;
@@ -116,7 +122,7 @@ type ProgressEvent =
   | { kind: "phase"; step: number; total: number; message: string }
   | { kind: "files"; step: number; total: number; pos: number; len: number; message: string };
 
-const SEARCH_LIMIT = 80;
+const SEARCH_LIMIT = 100;
 const LOG_LIMIT = 500;
 
 export type LibraryScreen = "platforms" | "browse" | "settings" | "limits" | "unmapped" | "logs";
@@ -171,6 +177,10 @@ export default function Library({
     client_secret: "",
   });
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageQuery, setPageQuery] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [pageOffset, setPageOffset] = useState(0);
   const [browsePlatform, setBrowsePlatform] = useState(
     () => readStored(BROWSE_PLATFORM_KEY) || "snes",
   );
@@ -200,7 +210,6 @@ export default function Library({
   const runId = useRef(0);
   const searchRequest = useRef(0);
   const screenRef = useRef(screen);
-  const listRef = useRef<HTMLDivElement>(null);
   const logListRef = useRef<HTMLUListElement>(null);
   const mapDialogRef = useRef<HTMLDialogElement>(null);
   const quotaDialogRef = useRef<HTMLDialogElement>(null);
@@ -208,6 +217,10 @@ export default function Library({
   const [quotaPrompt, setQuotaPrompt] = useState<QuotaPause | null>(null);
   const unmappedSelectAllRef = useRef<HTMLInputElement>(null);
   const focusDetail = useRef(false);
+  const followFileId = useRef<number | null>(null);
+  const pageTurn = useRef<"start" | "end" | null>(null);
+  const queryDelay = useRef("");
+  const browseRef = useRef<HTMLDivElement>(null);
   screenRef.current = screen;
 
   function clearError(where: LibraryScreen) {
@@ -356,36 +369,73 @@ export default function Library({
       return;
     }
     const request = ++searchRequest.current;
+    const anchor = followFileId.current;
+    followFileId.current = null;
+    const delay = queryDelay.current === query ? 0 : 200;
+    queryDelay.current = query;
     const handle = window.setTimeout(() => {
-      void invoke<BrowseHit[]>("library_search", {
+      void invoke<BrowsePage>("library_search", {
         platform: browsePlatform,
         query,
         limit: SEARCH_LIMIT,
+        offset: pageQuery * SEARCH_LIMIT,
+        anchor,
       })
-        .then((rows) => {
+        .then((result) => {
           if (request === searchRequest.current) {
+            const rows = result.hits;
             setHits(rows);
+            setTotal(result.total);
+            setPageOffset(result.offset);
+            const loaded = Math.floor(result.offset / SEARCH_LIMIT);
+            setPage((current) => (current === loaded ? current : loaded));
+            setPageQuery((current) => (current === loaded ? current : loaded));
             const visible = new Set(rows.map((row) => row.file_id));
             setSelectedIds((current) => current.filter((id) => visible.has(id)));
-            setDetailId((current) =>
-              current !== null && visible.has(current) ? current : (rows[0]?.file_id ?? null),
-            );
+            if (anchor !== null && visible.has(anchor)) {
+              pageTurn.current = null;
+              focusDetail.current = true;
+              setDetailId(anchor);
+            } else if (pageTurn.current) {
+              const edge = pageTurn.current;
+              pageTurn.current = null;
+              const target =
+                edge === "end" ? rows[rows.length - 1]?.file_id : rows[0]?.file_id;
+              if (target !== undefined) {
+                focusDetail.current = true;
+                setDetailId(target);
+              }
+            } else {
+              setDetailId((current) =>
+                current !== null && visible.has(current) ? current : (rows[0]?.file_id ?? null),
+              );
+            }
           }
         })
         .catch((searchError: unknown) => {
           if (request === searchRequest.current) {
+            pageTurn.current = null;
+            setPageQuery(page);
             showError("browse", searchError);
           }
         });
-    }, 200);
+    }, delay);
     return () => window.clearTimeout(handle);
-  }, [active, browsePlatform, query, status]);
+  }, [active, browsePlatform, query, status, pageQuery]);
 
   async function refresh() {
     const next = await invoke<LibraryStatus>("library_status");
     searchRequest.current += 1;
     setStatus(next);
     setDownloadCovers(next.download_covers);
+  }
+
+  function showPage(next: number, edge: "start" | "end" = "start") {
+    const last = Math.max(0, Math.ceil(total / SEARCH_LIMIT) - 1);
+    const clamped = Math.min(last, Math.max(0, next));
+    if (clamped === pageQuery) return;
+    pageTurn.current = edge;
+    setPageQuery(clamped);
   }
 
   async function pickRoot(platformId: string, platformName: string) {
@@ -475,6 +525,9 @@ export default function Library({
       setUnmappedSelected((current) => current.filter((id) => id !== mapFile.file_id));
       setMapHits([]);
       setMapFile(null);
+      if (screenRef.current === "browse") {
+        followFileId.current = mapFile.file_id;
+      }
       setThumbRev((current) => current + 1);
       setUnmappedReload((current) => current + 1);
       await refresh();
@@ -655,6 +708,18 @@ export default function Library({
     if (id === null) {
       return;
     }
+    const rememberCursor = () => {
+      if (where !== "browse") {
+        return;
+      }
+      const followed =
+        detailId !== null && (!fileIds || fileIds.includes(detailId))
+          ? detailId
+          : fileIds?.[0];
+      if (followed !== undefined) {
+        followFileId.current = followed;
+      }
+    };
     setProgress({ message: "Scraping…" });
     try {
       const platform = status?.platforms.find((item) => item.id === platformId);
@@ -696,6 +761,7 @@ export default function Library({
         );
       }
       setThumbRev((current) => current + 1);
+      rememberCursor();
       await refresh();
       if (where === "unmapped") {
         setUnmappedSelected([]);
@@ -703,6 +769,7 @@ export default function Library({
       }
     } catch (enrichError) {
       showError(where, enrichError);
+      rememberCursor();
       await refresh().catch(() => undefined);
     } finally {
       endRun();
@@ -775,21 +842,15 @@ export default function Library({
   const browsed = status?.platforms.find((item) => item.id === browsePlatform) ?? null;
 
   useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list || detailId == null) return;
-    const row = list.querySelector<HTMLElement>(`[data-file-id="${detailId}"]`);
+    const root = browseRef.current;
+    if (!root || detailId == null) return;
+    const row = root.querySelector<HTMLElement>(`[data-file-id="${detailId}"]`);
     if (!row) return;
-    const listRect = list.getBoundingClientRect();
-    const rowRect = row.getBoundingClientRect();
-    if (rowRect.top < listRect.top) {
-      list.scrollTop -= listRect.top - rowRect.top;
-    } else if (rowRect.bottom > listRect.bottom) {
-      list.scrollTop += rowRect.bottom - listRect.bottom;
-    }
+    row.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (!focusDetail.current) return;
     focusDetail.current = false;
-    row.querySelector("button")?.focus({ preventScroll: true });
-  }, [detailId, hits]);
+    row.querySelector<HTMLElement>("button.game-list-copy")?.focus({ preventScroll: true });
+  }, [detailId, hits, browseView]);
 
   useEffect(() => {
     const dialog = quotaDialogRef.current;
@@ -1043,11 +1104,13 @@ export default function Library({
                 setHits([]);
                 setSelectedIds([]);
                 setDetailId(null);
+                setPage(0);
+                setPageQuery(0);
                 setBrowsePlatform(event.currentTarget.value);
               }}
               disabled={locked}
             >
-              {(status?.platforms ?? [{ id: "snes", name: "Super Nintendo" }]).map((platform) => (
+              {(status?.platforms ?? [{ id: "snes", name: "Nintendo - Super Nintendo" }]).map((platform) => (
                 <option key={platform.id} value={platform.id}>
                   {platform.name}
                 </option>
@@ -1057,30 +1120,20 @@ export default function Library({
               className="browse-search"
               aria-label="Search"
               value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setPage(0);
+                setPageQuery(0);
+              }}
               placeholder="Title, year, publisher, or file name"
-              title={
-                hits.length === SEARCH_LIMIT
-                  ? `Showing the first ${SEARCH_LIMIT}. Type to narrow the list.`
-                  : `${hits.length.toLocaleString()} shown.`
-              }
             />
-            <div className="browse-views" role="group" aria-label="Browse view">
-              <button
-                type="button"
-                className={browseView === "cards" ? "active" : undefined}
-                onClick={() => setBrowseView("cards")}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                className={browseView === "list" ? "active" : undefined}
-                onClick={() => setBrowseView("list")}
-              >
-                List
-              </button>
-            </div>
+            <button
+              type="button"
+              title={browseView === "cards" ? "Switch to list" : "Switch to cards"}
+              onClick={() => setBrowseView((current) => (current === "cards" ? "list" : "cards"))}
+            >
+              {browseView === "cards" ? "Cards" : "List"}
+            </button>
             <Menu label="Scrape" align="end">
               <button
                 type="button"
@@ -1111,12 +1164,51 @@ export default function Library({
                 Scrape selected ({selectedIds.length.toLocaleString()})
               </button>
             </Menu>
+            <div className="browse-pager" role="navigation" aria-label="Pages">
+              <button type="button" onClick={() => showPage(0)} disabled={locked || page <= 0}>
+                First
+              </button>
+              <button
+                type="button"
+                aria-label="Previous page"
+                title="Previous page"
+                onClick={() => showPage(page - 1)}
+                disabled={locked || page <= 0}
+              >
+                &lt;
+              </button>
+              <span className="browse-pager-range">
+                {total === 0
+                  ? "No games"
+                  : `${(pageOffset + 1).toLocaleString()}–${(pageOffset + hits.length).toLocaleString()} of ${total.toLocaleString()}`}
+              </span>
+              <button
+                type="button"
+                aria-label="Next page"
+                title="Next page"
+                onClick={() => showPage(page + 1)}
+                disabled={locked || page >= Math.max(0, Math.ceil(total / SEARCH_LIMIT) - 1)}
+              >
+                &gt;
+              </button>
+              <button
+                type="button"
+                onClick={() => showPage(Math.max(0, Math.ceil(total / SEARCH_LIMIT) - 1))}
+                disabled={locked || page >= Math.max(0, Math.ceil(total / SEARCH_LIMIT) - 1)}
+              >
+                Last
+              </button>
+            </div>
           </div>
           {browseView === "cards" ? (
-          <div className="browse-results">
+          <div className="browse-results" ref={browseRef}>
           <div className="game-grid">
             {hits.map((hit) => (
-              <article key={hit.file_id} className="game-card">
+              <article
+                key={hit.file_id}
+                data-file-id={hit.file_id}
+                className={hit.file_id === detailId ? "game-card active" : "game-card"}
+              >
                 {hit.thumb_path ? (
                   <img src={coverSrc(hit.thumb_path, thumbRev)} alt="" />
                 ) : (
@@ -1177,13 +1269,23 @@ export default function Library({
           </div>
           </div>
           ) : (
-          <div className="browse-results game-browser">
+          <div className="browse-results game-browser" ref={browseRef}>
             <div
               className="game-list"
-              ref={listRef}
               onKeyDown={(event) => {
-                if (event.altKey || event.ctrlKey || event.metaKey || hits.length === 0) return;
+                if (event.altKey || event.ctrlKey || event.metaKey || hits.length === 0 || locked) return;
                 const index = hits.findIndex((hit) => hit.file_id === detailId);
+                const lastPage = Math.max(0, Math.ceil(total / SEARCH_LIMIT) - 1);
+                if (event.key === "ArrowDown" && index === hits.length - 1 && page < lastPage) {
+                  event.preventDefault();
+                  showPage(page + 1, "start");
+                  return;
+                }
+                if ((event.key === "ArrowUp" && (index === 0 || index < 0) && page > 0)) {
+                  event.preventDefault();
+                  showPage(page - 1, "end");
+                  return;
+                }
                 let next = index;
                 if (event.key === "ArrowDown") next = index < 0 ? 0 : Math.min(hits.length - 1, index + 1);
                 else if (event.key === "ArrowUp") next = index < 0 ? 0 : Math.max(0, index - 1);

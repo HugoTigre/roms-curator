@@ -5,7 +5,7 @@ use std::process::Command;
 use roms_curator::library::{
     allowed_game_page, default_library_db_path, delete_library_storage, discover_library_stopping,
     enrich_library_reporting, library_credentials_path, library_igdb_path, library_thumb_cache_dir,
-    platform, store_metadata, ArcadeCatalog, ArcadeSource, BrowseHit, DiscoverStats,
+    platform, store_metadata, ArcadeCatalog, ArcadeSource, BrowsePage, DiscoverStats,
     EnrichCallbacks, EnrichStats, Igdb, IgdbCandidate, IgdbCreds, LibraryDb, LibraryPrefs,
     MetadataProvider, PcSources, QuotaPause, ScreenScraper, ScreenScraperCreds, ScreenScraperQuota,
     UnmappedList,
@@ -136,6 +136,12 @@ fn platform_rows(db: Option<&LibraryDb>) -> Result<Vec<PlatformStatus>, String> 
             pending,
         });
     }
+    rows.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
     Ok(rows)
 }
 
@@ -166,14 +172,18 @@ fn provider_for(
     cover_pass: bool,
 ) -> Result<PreparedProvider, String> {
     let spec = platform::require(platform_id)?;
-    match spec.id {
-        "snes" => Ok(PreparedProvider {
+    if let Some(system_id) = spec.screenscraper_id {
+        return Ok(PreparedProvider {
             provider: Box::new(
-                ScreenScraper::new(creds_for_enrich()?).download_covers(download_covers),
+                ScreenScraper::new(creds_for_enrich()?)
+                    .download_covers(download_covers)
+                    .for_system(spec.id, system_id),
             ),
             note: None,
             calls_per_game: if download_covers { 2 } else { 1 },
-        }),
+        });
+    }
+    match spec.id {
         "pc" => {
             let igdb = igdb_for_enrich(download_covers)?;
             let screenscraper = match creds_for_enrich() {
@@ -687,21 +697,33 @@ pub fn library_search(
     platform: String,
     query: String,
     limit: u32,
-) -> Result<Vec<BrowseHit>, String> {
+    offset: i64,
+    anchor: Option<i64>,
+) -> Result<BrowsePage, String> {
     let spec = platform::require(&platform)?;
     let db_path = default_library_db_path().map_err(|error| error.to_string())?;
     let db = match LibraryDb::open_readonly(&db_path) {
         Ok(db) => db,
-        Err(_) if !db_path.is_file() => return Ok(Vec::new()),
+        Err(_) if !db_path.is_file() => {
+            return Ok(BrowsePage {
+                hits: Vec::new(),
+                total: 0,
+                offset: 0,
+            });
+        }
         Err(error) => return Err(error.to_string()),
     };
     let Some(library_id) = db
         .find_library(spec.id)
         .map_err(|error| error.to_string())?
     else {
-        return Ok(Vec::new());
+        return Ok(BrowsePage {
+            hits: Vec::new(),
+            total: 0,
+            offset: 0,
+        });
     };
-    db.search(library_id, &query, limit)
+    db.search(library_id, &query, limit, offset, anchor)
         .map_err(|error| error.to_string())
 }
 

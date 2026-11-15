@@ -527,7 +527,7 @@ mod tests {
             enrich_flag(&db, library, "Kill The Shadow.zip"),
             (FileState::Present, true)
         );
-        let hits = db.search(library, "Kill", 20).unwrap();
+        let hits = db.search(library, "Kill", 20, 0, None).unwrap().hits;
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name, "Kill The Shadow.zip");
         assert!(notes
